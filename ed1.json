@@ -49,8 +49,9 @@
     ],
     "Build": [
       "Makefile",
+      "README.md",
       "build.bat",
-      "README.md"
+      "tools/make-xcodeproj.py"
     ]
   }
 }

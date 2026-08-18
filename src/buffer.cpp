@@ -149,6 +149,102 @@ bool Buffer::save(std::string& error) {
     return true;
 }
 
+Range ordered(size_t rowA, size_t colA, size_t rowB, size_t colB) {
+    Range range;
+    bool firstIsEarlier = (rowA < rowB) || (rowA == rowB && colA <= colB);
+    range.fromRow = firstIsEarlier ? rowA : rowB;
+    range.fromCol = firstIsEarlier ? colA : colB;
+    range.toRow = firstIsEarlier ? rowB : rowA;
+    range.toCol = firstIsEarlier ? colB : colA;
+    return range;
+}
+
+std::string Buffer::textIn(const Range& range) const {
+    if (range.fromRow >= lines_.size()) return std::string();
+
+    size_t lastRow = range.toRow < lines_.size() ? range.toRow : lines_.size() - 1;
+    size_t from = range.fromCol < lines_[range.fromRow].size() ? range.fromCol
+                                                              : lines_[range.fromRow].size();
+    size_t to = range.toCol < lines_[lastRow].size() ? range.toCol : lines_[lastRow].size();
+
+    if (range.fromRow == lastRow) {
+        if (to <= from) return std::string();
+        return lines_[range.fromRow].substr(from, to - from);
+    }
+
+    std::string out = lines_[range.fromRow].substr(from);
+    for (size_t row = range.fromRow + 1; row < lastRow; ++row) {
+        out += "\n";
+        out += lines_[row];
+    }
+    out += "\n";
+    out += lines_[lastRow].substr(0, to);
+    return out;
+}
+
+void Buffer::eraseRange(const Range& range) {
+    if (range.fromRow >= lines_.size()) return;
+
+    size_t lastRow = range.toRow < lines_.size() ? range.toRow : lines_.size() - 1;
+    size_t from = range.fromCol < lines_[range.fromRow].size() ? range.fromCol
+                                                              : lines_[range.fromRow].size();
+    size_t to = range.toCol < lines_[lastRow].size() ? range.toCol : lines_[lastRow].size();
+
+    if (range.fromRow == lastRow) {
+        if (to <= from) return;
+        lines_[range.fromRow].erase(from, to - from);
+        dirty_ = true;
+        return;
+    }
+
+    // What is left of the first line, joined to what is left of the last, and
+    // everything between them gone.
+    lines_[range.fromRow] = lines_[range.fromRow].substr(0, from) +
+                            lines_[lastRow].substr(to);
+    lines_.erase(lines_.begin() + static_cast<long>(range.fromRow) + 1,
+                 lines_.begin() + static_cast<long>(lastRow) + 1);
+    dirty_ = true;
+}
+
+void Buffer::insertText(size_t row, size_t col, const std::string& text,
+                        size_t& endRow, size_t& endCol) {
+    if (row >= lines_.size()) row = lines_.size() - 1;
+    if (col > lines_[row].size()) col = lines_[row].size();
+
+    std::vector<std::string> pieces;
+    std::string piece;
+    for (size_t i = 0; i < text.size(); ++i) {
+        if (text[i] == '\n') {
+            pieces.push_back(piece);
+            piece.clear();
+        } else if (text[i] != '\r') {
+            piece += text[i];
+        }
+    }
+    pieces.push_back(piece);
+
+    if (pieces.size() == 1) {
+        lines_[row].insert(col, pieces[0]);
+        endRow = row;
+        endCol = col + pieces[0].size();
+        dirty_ = true;
+        return;
+    }
+
+    std::string tail = lines_[row].substr(col);
+    lines_[row] = lines_[row].substr(0, col) + pieces[0];
+
+    for (size_t i = 1; i < pieces.size(); ++i) {
+        std::string line = pieces[i];
+        if (i + 1 == pieces.size()) line += tail;
+        lines_.insert(lines_.begin() + static_cast<long>(row) + static_cast<long>(i), line);
+    }
+
+    endRow = row + pieces.size() - 1;
+    endCol = pieces[pieces.size() - 1].size();
+    dirty_ = true;
+}
+
 void Buffer::replaceLine(size_t row, const std::string& text) {
     if (lines_[row] == text) return;
     lines_[row] = text;

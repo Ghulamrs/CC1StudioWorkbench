@@ -21,6 +21,10 @@ Menu::Menu() : active_(false), dropped_(false), column_(0), item_(0) {
     edit.title = "Edit";
     edit.items.push_back({"Undo", "Ctrl-Z", ActionUndo});
     edit.items.push_back({"Redo", "Ctrl-Y", ActionRedo});
+    edit.items.push_back({"Cut", "Ctrl-X", ActionCut});
+    edit.items.push_back({"Copy", "Ctrl-C", ActionCopy});
+    edit.items.push_back({"Paste", "Ctrl-V", ActionPaste});
+    edit.items.push_back({"Select all", "", ActionSelectAll});
     edit.items.push_back({"Find...", "Ctrl-F", ActionFind});
     edit.items.push_back({"Find next", "Ctrl-G", ActionFindNext});
     edit.items.push_back({"Find previous", "", ActionFindPrevious});

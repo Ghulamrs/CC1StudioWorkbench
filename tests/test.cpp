@@ -17,6 +17,7 @@
 #include "json.h"
 #include "project.h"
 #include "toolchain.h"
+#include "utf8.h"
 
 namespace {
 
@@ -379,6 +380,84 @@ void routing() {
           "and the define reaches the command line");
 }
 
+void multiByte() {
+    std::printf("characters that take more than one byte\n");
+
+    // "café" - the e-acute is two bytes. "سلام" - four Arabic letters, two
+    // bytes each. "中文" - two Chinese characters, three bytes each and two
+    // columns each.
+    const std::string cafe = "caf\xc3\xa9";
+    const std::string salam = "\xd8\xb3\xd9\x84\xd8\xa7\xd9\x85";
+    const std::string chinese = "\xe4\xb8\xad\xe6\x96\x87";
+
+    check(editor::utf8::lengthFrom('a') == 1, "ASCII is one byte");
+    check(editor::utf8::lengthFrom(0xC3) == 2, "a two-byte lead says two");
+    check(editor::utf8::lengthFrom(0xE4) == 3, "a three-byte lead says three");
+    check(editor::utf8::lengthFrom(0xF0) == 4, "a four-byte lead says four");
+
+    check(cafe.size() == 5 && editor::utf8::count(cafe) == 4,
+          "five bytes, four characters");
+    check(salam.size() == 8 && editor::utf8::count(salam) == 4,
+          "and eight bytes, four letters");
+
+    // Moving over it lands on boundaries and nowhere else.
+    check(editor::utf8::next(cafe, 3) == 5, "stepping over the accented letter");
+    check(editor::utf8::previous(cafe, 5) == 3, "and back over it");
+    check(editor::utf8::startOf(cafe, 4) == 3, "a caret inside one is pulled to its start");
+
+    size_t at = 0, steps = 0;
+    while (at < salam.size()) { at = editor::utf8::next(salam, at); ++steps; }
+    check(steps == 4, "four steps cross four letters");
+
+    // Columns are not bytes and not characters either.
+    check(editor::utf8::columns(cafe, cafe.size()) == 4, "café takes four columns");
+    check(editor::utf8::columns(salam, salam.size()) == 4, "and so does سلام");
+    check(editor::utf8::columns(chinese, chinese.size()) == 4,
+          "two Chinese characters take four");
+    check(editor::utf8::widthOf(0x4E2D) == 2, "a Chinese character is two columns wide");
+    check(editor::utf8::widthOf(0x0633) == 1, "an Arabic letter is one");
+    check(editor::utf8::widthOf(0x064E) == 0, "and a mark drawn on top is none");
+
+    // Rubbish must not wedge anything: every step has to move forward.
+    std::string broken = "a\x80\x80z";
+    size_t walked = 0, guard = 0;
+    while (walked < broken.size() && guard < 100) {
+        size_t step = editor::utf8::next(broken, walked);
+        check(step > walked, "stepping through malformed bytes always moves on");
+        walked = step;
+        ++guard;
+    }
+}
+
+void ranges() {
+    std::printf("stretches of text\n");
+
+    editor::Buffer buf;
+    size_t endRow = 0, endCol = 0;
+    buf.insertText(0, 0, "one\ntwo\nthree", endRow, endCol);
+    check(buf.lineCount() == 3, "text with newlines in it becomes lines");
+    check(endRow == 2 && endCol == 5, "and says where it ended");
+
+    editor::Range within = editor::ordered(0, 1, 0, 3);
+    checkEqual(buf.textIn(within), "ne", "a stretch inside one line");
+
+    editor::Range across = editor::ordered(0, 1, 2, 3);
+    checkEqual(buf.textIn(across), "ne\ntwo\nthr", "and one across three");
+
+    // Given backwards, it is the same stretch.
+    editor::Range backwards = editor::ordered(2, 3, 0, 1);
+    checkEqual(buf.textIn(backwards), "ne\ntwo\nthr", "a selection made backwards");
+
+    editor::Buffer cut = buf;
+    cut.eraseRange(across);
+    check(cut.lineCount() == 1, "erasing across lines joins what is left");
+    checkEqual(cut.line(0), "oee", "of the first and the last");
+
+    editor::Buffer inside = buf;
+    inside.eraseRange(within);
+    checkEqual(inside.line(0), "o", "and erasing within a line leaves the rest");
+}
+
 void undoing() {
     std::printf("going back, and forward again\n");
 
@@ -703,6 +782,8 @@ int main() {
     typing();
     colours();
     routing();
+    multiByte();
+    ranges();
     undoing();
     savedState();
     searching();

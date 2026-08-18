@@ -34,6 +34,7 @@ endif
 SRC := src/main.cpp src/editor.cpp src/buffer.cpp src/compile.cpp \
        src/indent.cpp src/menu.cpp src/tree.cpp src/syntax.cpp \
        src/toolchain.cpp src/json.cpp src/project.cpp src/find.cpp \
+       src/utf8.cpp \
        src/terminal_common.cpp \
        $(TERM_SRC)
 
@@ -62,6 +63,7 @@ $(OBJDIR)/syntax.o:   src/syntax.h
 $(OBJDIR)/toolchain.o: src/toolchain.h src/syntax.h
 $(OBJDIR)/json.o:     src/json.h
 $(OBJDIR)/find.o:     src/find.h
+$(OBJDIR)/utf8.o:     src/utf8.h
 $(OBJDIR)/project.o:  src/project.h src/json.h src/indent.h src/toolchain.h
 $(OBJDIR)/compile.o:  src/compile.h src/toolchain.h
 $(OBJDIR)/buffer.o:   src/buffer.h
@@ -78,10 +80,12 @@ test: tests/test
 
 tests/test: tests/test.cpp src/compile.cpp src/indent.cpp src/syntax.cpp \
             src/toolchain.cpp src/json.cpp src/project.cpp src/find.cpp \
+       src/utf8.cpp \
             src/buffer.cpp src/compile.h src/indent.h src/syntax.h src/json.h \
             src/project.h src/buffer.h
 	$(CXX) $(CXXFLAGS) -Isrc -o $@ tests/test.cpp src/compile.cpp src/indent.cpp \
 	    src/syntax.cpp src/toolchain.cpp src/json.cpp src/project.cpp src/find.cpp \
+       src/utf8.cpp \
 	    src/buffer.cpp
 
 # The other half of the checking: the editor itself, driven by keystrokes.

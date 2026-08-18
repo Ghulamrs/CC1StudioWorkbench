@@ -85,6 +85,14 @@ private:
     void deleteForward();
     void realign();
     void undoEdit();
+    bool selection(Range& range) const;
+    bool selectionOn(size_t row, size_t& from, size_t& to) const;
+    void extendTo(int key);
+    void dropSelection() { marked_ = false; }
+    bool eraseSelection();
+    void copySelection(bool cut);
+    void pasteClipboard();
+    void selectAll();
     void redoEdit();
     void tabKey();
     void reindentAll();
@@ -158,6 +166,10 @@ private:
     size_t arch_;
     bool numbers_;
     bool needsDraw_;
+    bool marked_;             // whether one end of a selection has been put down
+    size_t markRow_, markCol_;
+    std::string clipboard_;   // the editor's own, not the machine's
+
     std::string needle_;      // what was last searched for
     std::string message_;
     int quitConfirm_;

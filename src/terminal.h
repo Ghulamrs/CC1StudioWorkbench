@@ -27,8 +27,23 @@ enum Key {
     KEY_F1,
     KEY_F2,
     KEY_F3,
-    KEY_F10
+    KEY_F10,
+
+    // The same keys with shift held, which is how a selection is made. A
+    // terminal sends these as the ordinary sequence with a modifier in it.
+    KEY_SHIFT_LEFT,
+    KEY_SHIFT_RIGHT,
+    KEY_SHIFT_UP,
+    KEY_SHIFT_DOWN,
+    KEY_SHIFT_HOME,
+    KEY_SHIFT_END,
+    KEY_SHIFT_PAGE_UP,
+    KEY_SHIFT_PAGE_DOWN
 };
+
+// Whether a key is the shifted form of a movement, and the plain key it shifts.
+bool isShiftedMove(int key);
+int unshifted(int key);
 
 // What the terminal sends for a key held down with control. 'q' and 'Q' both
 // come through as 17, which is why the editor's bindings are case-blind.

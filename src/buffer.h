@@ -7,6 +7,21 @@
 
 namespace editor {
 
+// A stretch of text between two places, the earlier one first. Used for what
+// is selected, and it is the whole of what copy, cut and paste need to know.
+struct Range {
+    size_t fromRow = 0;
+    size_t fromCol = 0;
+    size_t toRow = 0;
+    size_t toCol = 0;
+
+    bool empty() const { return fromRow == toRow && fromCol == toCol; }
+};
+
+// The two ends put in order, whichever way round they were given - a selection
+// made backwards is the same stretch of text as one made forwards.
+Range ordered(size_t rowA, size_t colA, size_t rowB, size_t colB);
+
 // What kind of change is being made, which decides where one undo step ends
 // and the next begins. A run of the same kind is one step: typing a word and
 // then undoing should give the word back, not one letter at a time.
@@ -61,6 +76,13 @@ public:
     bool canUndo() const { return !undo_.empty(); }
     bool canRedo() const { return !redo_.empty(); }
     size_t undoDepth() const { return undo_.size(); }
+
+    // The three things a selection is for. Newlines inside the text are real
+    // line breaks, so a stretch taken from several lines goes back as several.
+    std::string textIn(const Range& range) const;
+    void eraseRange(const Range& range);
+    void insertText(size_t row, size_t col, const std::string& text,
+                    size_t& endRow, size_t& endCol);
 
     void insertChar(size_t row, size_t col, char c);
     void eraseChar(size_t row, size_t col);   // erases the character at col

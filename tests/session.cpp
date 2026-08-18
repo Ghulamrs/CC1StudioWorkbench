@@ -44,6 +44,10 @@ const std::string kF10 = "\x1b[21~";
 const std::string kDown = "\x1b[B";
 const std::string kRight = "\x1b[C";
 const std::string kEnter = "\r";
+// Shift with an arrow is the arrow's own sequence with a modifier in it.
+const std::string kShiftRight = "\x1b[1;2C";
+const std::string kShiftDown = "\x1b[1;2B";
+const std::string kShiftEnd = "\x1b[1;2F";
 std::string ctrl(char c) { return std::string(1, static_cast<char>(c & 0x1f)); }
 std::string times(const std::string& key, int n) {
     std::string out;
@@ -274,6 +278,96 @@ void fileCommands(const std::string& ed1) {
     check(!fs::exists(dir / "src" / "moved.c"), "and answered with yes deletes it");
     check(readFile(dir / "ed1.json").find("src/moved.c") == std::string::npos,
           "and takes it out of the project too");
+
+    fs::remove_all(dir);
+}
+
+void selectingAndPasting(const std::string& ed1) {
+    std::printf("selecting, copying and pasting\n");
+
+    fs::path dir = freshProject("clip");
+    fs::path file = dir / "src" / "clip.c";
+    std::string args = "\"" + file.string() + "\" --project \"" + dir.string() + "\"";
+
+    // Select three characters, copy, go to the end of the line, paste.
+    writeFile(file, "abcdef\n");
+    drive(ed1, args,
+          times(kShiftRight, 3) + ctrl('c') + "\x1b[F" + ctrl('v') + ctrl('s') + ctrl('q'),
+          dir);
+    checkEqual(readFile(file), "abcdefabc\n", "copy and paste move a selection about");
+
+    // Cut takes it away.
+    writeFile(file, "abcdef\n");
+    drive(ed1, args, times(kShiftRight, 3) + ctrl('x') + ctrl('s') + ctrl('q'), dir);
+    checkEqual(readFile(file), "def\n", "cut takes the selection out");
+
+    // And puts it back where the caret goes next.
+    writeFile(file, "abcdef\n");
+    drive(ed1, args,
+          times(kShiftRight, 3) + ctrl('x') + "\x1b[F" + ctrl('v') + ctrl('s') + ctrl('q'),
+          dir);
+    checkEqual(readFile(file), "defabc\n", "and paste puts it back");
+
+    // With nothing selected, copy and cut take the whole line.
+    writeFile(file, "first\nsecond\n");
+    drive(ed1, args, ctrl('x') + ctrl('s') + ctrl('q'), dir);
+    checkEqual(readFile(file), "second\n", "cut with no selection takes the line");
+
+    // A selection crossing lines.
+    writeFile(file, "one\ntwo\nthree\n");
+    drive(ed1, args, kShiftDown + ctrl('x') + ctrl('s') + ctrl('q'), dir);
+    checkEqual(readFile(file), "two\nthree\n", "a selection can cross a line ending");
+
+    // Typing over a selection replaces it.
+    writeFile(file, "abcdef\n");
+    drive(ed1, args, times(kShiftRight, 3) + "X" + ctrl('s') + ctrl('q'), dir);
+    checkEqual(readFile(file), "Xdef\n", "typing over a selection replaces it");
+
+    // Backspace over a selection removes all of it.
+    writeFile(file, "abcdef\n");
+    drive(ed1, args, times(kShiftRight, 3) + "\x7f" + ctrl('s') + ctrl('q'), dir);
+    checkEqual(readFile(file), "def\n", "and backspace removes all of it");
+
+    // Undo puts a cut back in one step.
+    writeFile(file, "abcdef\n");
+    drive(ed1, args, times(kShiftRight, 3) + ctrl('x') + ctrl('z') + ctrl('s') + ctrl('q'),
+          dir);
+    checkEqual(readFile(file), "abcdef\n", "and undo puts a cut back");
+
+    Screen shown = drive(ed1, args, times(kShiftRight, 3) + ctrl('q'), dir);
+    check(shown.raw.find("\x1b[7m") != std::string::npos, "a selection is shown in reverse");
+
+    fs::remove_all(dir);
+}
+
+void multiByteText(const std::string& ed1) {
+    std::printf("text that is not ASCII\n");
+
+    fs::path dir = freshProject("utf8");
+    fs::path file = dir / "src" / "urdu.c";
+    // A comment in Urdu and a string with an accented letter in it.
+    const std::string text =
+        "/* \xd8\xb3\xd9\x84\xd8\xa7\xd9\x85 */\nchar *s = \"caf\xc3\xa9\";\n";
+    writeFile(file, text);
+
+    std::string args = "\"" + file.string() + "\" --project \"" + dir.string() + "\"";
+
+    // Opened and saved with nothing done to it, the bytes must be the same.
+    drive(ed1, args, ctrl('s') + ctrl('q'), dir);
+    checkEqual(readFile(file), text, "a file that is not ASCII survives being saved");
+
+    // Four steps right cross three ASCII characters and one Urdu letter, which
+    // is five bytes but four columns.
+    Screen moved = drive(ed1, args, times(kRight, 4) + ctrl('q'), dir);
+    check(onScreen(moved, "col 5"), "the caret moves by characters, not by bytes");
+
+    // Backspace takes the whole letter, not its last byte.
+    writeFile(file, text);
+    drive(ed1, args, times(kRight, 4) + "\x7f" + ctrl('s') + ctrl('q'), dir);
+    std::string after = readFile(file);
+    check(after.find("/* \xd9\x84") != std::string::npos,
+          "backspace removes a whole letter");
+    check(after.size() == text.size() - 2, "which is two bytes, not one");
 
     fs::remove_all(dir);
 }
@@ -591,6 +685,8 @@ int main(int argc, char** argv) {
     projectPane(ed1);
     findingAndReplacing(ed1);
     undoing(ed1);
+    selectingAndPasting(ed1);
+    multiByteText(ed1);
     compiling(ed1, cc1);
     buildingWithCl(ed1);
     configurations(ed1, cc1);

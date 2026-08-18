@@ -57,6 +57,21 @@ escaped quote ends nothing, and a block comment opened above the top of the
 screen still colours what is on it. Sixteen-colour codes throughout, because
 those are the ones a Windows console renders in virtual-terminal mode.
 
+**Selecting, cutting and pasting.** Shift with the arrows, Home, End or the
+page keys extends a selection from where the caret was; moving without shift
+lets it go. `Ctrl-C`, `Ctrl-X` and `Ctrl-V` copy, cut and paste, and with
+nothing selected the first two take the whole line, which is what is nearly
+always wanted. Typing or backspacing over a selection replaces it, and a cut is
+one undo step. The clipboard is the editor's own, not the machine's.
+
+**Text that is not ASCII.** The buffer stays bytes throughout, so a file opened
+and saved comes back byte for byte whatever is in it - but the caret moves by
+*characters*, never landing inside one, and backspace removes a whole letter
+rather than its last byte. Screen columns are counted properly too: an Urdu or
+accented letter is one column though it is two bytes, a Chinese character is
+two columns though it is three bytes, and a mark drawn on top of another letter
+is none. Tab stops line up on columns rather than bytes for the same reason.
+
 **Undo and redo**, on `Ctrl-Z` and `Ctrl-Y`. A run of typing is one step, so
 undoing gives a word back rather than one letter at a time; a newline, a
 re-layout and a replace are each a step of their own. Moving the caret ends the
@@ -235,7 +250,9 @@ that New file makes a file and puts it in the project, that a path two
 directories deep is refused, that Rename moves it and the project follows, that
 Delete answered with anything but `yes` keeps the file, and that undo takes back a run of
 typing and redo returns it, that the modified marker comes back when you undo
-past a save and goes when you redo to it, that find lands the caret on the right line and
+past a save and goes when you redo to it, that a selection can be copied,
+cut, pasted and typed over, that a file of Urdu and accented text survives
+being saved and that backspace takes a whole letter out of it, that find lands the caret on the right line and
 Ctrl-G moves on, that replace changes the text and quitting
 without saving leaves the file alone, and that a build lands the caret on the
 line the compiler named and that its two configurations produce different
@@ -264,7 +281,7 @@ house bug, and this is the one place it was easy to prevent.
 
 `buffer`, `indent`, `menu` and `tree` touch no screen and no OS. `indent`, `syntax`, `json`, `project` and
 the diagnostic parser are the pieces with a contract, and `tests/test.cpp`
-checks them - 198 cases, including that a Windows path's drive letter is not
+checks them - 224 cases, including that a Windows path's drive letter is not
 mistaken for a `line:col` separator, that a brace inside a string is not
 counted, and that `class` is a keyword in C++ and nothing in particular in C,
 and that cl's `bad.c(3,13)` is read as well as cc1's `bad.c:3:13`. They run on
@@ -293,6 +310,8 @@ because that is what cc1's own sources use, and they contain no tab at all.
 | `Ctrl-B` | build |
 | `Ctrl-F` / `Ctrl-G` | find / find the next |
 | `Ctrl-R` | replace |
+| shift + arrows | select |
+| `Ctrl-C` / `Ctrl-X` / `Ctrl-V` | copy / cut / paste |
 | `Ctrl-Z` / `Ctrl-Y` | undo / redo |
 | `Ctrl-A` | lay the whole file out |
 | `Tab` | lay this line out, in the leading space |

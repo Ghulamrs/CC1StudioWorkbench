@@ -1,5 +1,7 @@
 #include "editor.h"
 
+#include "utf8.h"
+
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
@@ -36,33 +38,72 @@ size_t digitsIn(size_t n) {
 
 // Tabs and their colours expand together, so that a mark still sits under the
 // character it was worked out for once the line has been widened.
+//
+// A tab stop is counted in screen columns rather than in bytes, or a line with
+// anything but ASCII in front of a tab would line up wrongly.
 void expandWithKinds(const std::string& s, const std::vector<unsigned char>& kinds,
                      std::string& text, std::vector<unsigned char>& out) {
-    for (size_t i = 0; i < s.size(); ++i) {
+    size_t column = 0;
+    for (size_t i = 0; i < s.size();) {
         unsigned char k = i < kinds.size() ? kinds[i] : KindNormal;
-        if (s[i] != '\t') {
-            text += s[i];
-            out.push_back(k);
+
+        if (s[i] == '\t') {
+            do {
+                text += ' ';
+                out.push_back(k);
+                ++column;
+            } while (column % kTabStop != 0);
+            ++i;
             continue;
         }
-        do {
-            text += ' ';
+
+        size_t step = utf8::next(s, i);
+        if (step <= i) step = i + 1;
+        for (size_t b = i; b < step && b < s.size(); ++b) {
+            text += s[b];
             out.push_back(k);
-        } while (text.size() % kTabStop != 0);
+        }
+        column += utf8::widthOf(utf8::codePointAt(s, i));
+        i = step;
     }
 }
 
-// A window of the line, written as runs of one colour. One escape per run
-// rather than one per character - a screen's worth of the latter is enough to
-// be seen redrawing on a slow console.
+// A window of the line, written as runs of one colour, with whatever is
+// selected shown in reverse. One escape per run rather than one per character -
+// a screen's worth of the latter is enough to be seen redrawing on a slow
+// console. selFrom and selTo are screen columns, and equal means nothing is
+// selected on this line.
 std::string colouredWindow(const std::string& text,
                            const std::vector<unsigned char>& kinds,
-                           size_t from, size_t width) {
+                           size_t from, size_t width,
+                           size_t selFrom, size_t selTo) {
     std::string out;
+    size_t column = 0;   // where the next character will be drawn
     size_t drawn = 0;
     int current = -1;
+    bool inverted = false;
 
-    for (size_t i = from; i < text.size() && drawn < width; ++i, ++drawn) {
+    // Walked a character at a time and counted in screen columns, not bytes:
+    // one Urdu letter is two bytes and one column, and one Chinese character
+    // is three bytes and two columns.
+    for (size_t i = 0; i < text.size();) {
+        size_t step = utf8::next(text, i);
+        if (step <= i) step = i + 1;
+        size_t wide = utf8::widthOf(utf8::codePointAt(text, i));
+
+        if (column + wide <= from) {   // still left of what is being shown
+            column += wide;
+            i = step;
+            continue;
+        }
+        if (drawn + wide > width) break;
+
+        bool wanted = (column >= selFrom && column < selTo);
+        if (wanted != inverted) {
+            out += wanted ? "\x1b[7m" : "\x1b[27m";
+            inverted = wanted;
+        }
+
         unsigned char k = i < kinds.size() ? kinds[i] : KindNormal;
         if (static_cast<int>(k) != current) {
             out += "\x1b[";
@@ -70,8 +111,14 @@ std::string colouredWindow(const std::string& text,
             out += "m";
             current = k;
         }
-        out += text[i];
+        for (size_t b = i; b < step && b < text.size(); ++b) out += text[b];
+
+        column += wide;
+        drawn += wide;
+        i = step;
     }
+
+    if (inverted) out += "\x1b[27m";
     if (current != -1 && current != KindNormal) out += "\x1b[39m";
     if (drawn < width) out.append(width - drawn, ' ');
     return out;
@@ -116,6 +163,7 @@ Editor::Editor()
       treeSel_(0), treeOff_(0), treeOpen_(true),
       panelOff_(0), panelOpen_(true), tab_(TabConsole),
       focus_(FocusText), lang_(LangPlain), config_(ConfigDebug), arch_(0), numbers_(true), needsDraw_(true),
+      marked_(false), markRow_(0), markCol_(0),
       quitConfirm_(0), running_(true),
       screenRows_(24), screenCols_(80),
       bodyRows_(14), panelRows_(kPanelRows),
@@ -323,14 +371,25 @@ void Editor::layout() {
 
 size_t Editor::renderCol(const std::string& line, size_t col) const {
     size_t r = 0;
-    for (size_t i = 0; i < col && i < line.size(); ++i)
-        r += (line[i] == '\t') ? kTabStop - (r % kTabStop) : 1;
+    for (size_t i = 0; i < col && i < line.size();) {
+        if (line[i] == '\t') {
+            r += kTabStop - (r % kTabStop);
+            ++i;
+            continue;
+        }
+        r += utf8::widthOf(utf8::codePointAt(line, i));
+        size_t step = utf8::next(line, i);
+        i = (step > i) ? step : i + 1;
+    }
     return r;
 }
 
 void Editor::clampCursor() {
     if (cy_ >= buf_.lineCount()) cy_ = buf_.lineCount() - 1;
     if (cx_ > buf_.line(cy_).size()) cx_ = buf_.line(cy_).size();
+    // Never inside a character. Everything else here can then assume the caret
+    // is somewhere a character begins.
+    cx_ = utf8::startOf(buf_.line(cy_), cx_);
 }
 
 void Editor::scroll() {
@@ -454,7 +513,17 @@ void Editor::drawBody(std::string& out) const {
             std::string text;
             std::vector<unsigned char> spread;
             expandWithKinds(buf_.line(row), kinds, text, spread);
-            out += colouredWindow(text, spread, coloff_, static_cast<size_t>(sourceCols_));
+
+            // The selection is measured in the line's own columns and drawn in
+            // the screen's, so a tab inside it highlights its whole width.
+            size_t selFrom = 0, selTo = 0;
+            size_t rawFrom = 0, rawTo = 0;
+            if (selectionOn(row, rawFrom, rawTo)) {
+                selFrom = renderCol(buf_.line(row), rawFrom);
+                selTo = renderCol(buf_.line(row), rawTo);
+            }
+            out += colouredWindow(text, spread, coloff_,
+                                  static_cast<size_t>(sourceCols_), selFrom, selTo);
         } else {
             std::string empty = numbers_ ? std::string() : std::string("~");
             empty.resize(static_cast<size_t>(sourceCols_), ' ');
@@ -512,7 +581,7 @@ void Editor::drawPanel(std::string& out) const {
         std::string text;
         std::vector<unsigned char> spread;
         expandWithKinds(lines[row], kinds, text, spread);
-        out += colouredWindow(text, spread, 0, static_cast<size_t>(screenCols_));
+        out += colouredWindow(text, spread, 0, static_cast<size_t>(screenCols_), 0, 0);
         out += "\x1b[K\r\n";
     }
 }
@@ -641,11 +710,12 @@ void Editor::moveCursor(int key) {
     const std::string& line = buf_.line(cy_);
     switch (key) {
         case KEY_ARROW_LEFT:
-            if (cx_ > 0) --cx_;
+            // A whole character at a time, so the caret never lands inside one.
+            if (cx_ > 0) cx_ = utf8::previous(line, cx_);
             else if (cy_ > 0) { --cy_; cx_ = buf_.line(cy_).size(); }
             break;
         case KEY_ARROW_RIGHT:
-            if (cx_ < line.size()) ++cx_;
+            if (cx_ < line.size()) cx_ = utf8::next(line, cx_);
             else if (cy_ + 1 < buf_.lineCount()) { ++cy_; cx_ = 0; }
             break;
         case KEY_ARROW_UP:   if (cy_ > 0) --cy_; break;
@@ -726,7 +796,105 @@ void Editor::insertChar(char c) {
     ++cx_;
 }
 
+bool Editor::selection(Range& range) const {
+    if (!marked_) return false;
+    if (markRow_ == cy_ && markCol_ == cx_) return false;
+    range = ordered(markRow_, markCol_, cy_, cx_);
+    return true;
+}
+
+bool Editor::selectionOn(size_t row, size_t& from, size_t& to) const {
+    Range range;
+    if (!selection(range)) return false;
+    if (row < range.fromRow || row > range.toRow) return false;
+
+    from = (row == range.fromRow) ? range.fromCol : 0;
+    to = (row == range.toRow) ? range.toCol : buf_.line(row).size();
+    return to > from;
+}
+
+void Editor::extendTo(int key) {
+    // The first shifted movement puts the mark down where the caret was; the
+    // rest just move, and the stretch between the two is what is selected.
+    if (!marked_) {
+        marked_ = true;
+        markRow_ = cy_;
+        markCol_ = cx_;
+    }
+    moveCursor(unshifted(key));
+}
+
+bool Editor::eraseSelection() {
+    Range range;
+    if (!selection(range)) return false;
+
+    buf_.beginEdit(EditOther, cx_, cy_);
+    buf_.eraseRange(range);
+    cy_ = range.fromRow;
+    cx_ = range.fromCol;
+    marked_ = false;
+    clampCursor();
+    return true;
+}
+
+void Editor::copySelection(bool cut) {
+    Range range;
+    if (selection(range)) {
+        clipboard_ = buf_.textIn(range);
+        if (cut) eraseSelection();
+        else marked_ = false;
+        say(number(clipboard_.size()) + " characters " + (cut ? "cut" : "copied"));
+        return;
+    }
+
+    // Nothing selected means the line the caret is on, which is what is nearly
+    // always wanted and saves selecting it first.
+    clipboard_ = buf_.line(cy_) + "\n";
+    if (cut) {
+        buf_.beginEdit(EditOther, cx_, cy_);
+        if (buf_.lineCount() == 1) {
+            buf_.replaceLine(0, std::string());
+        } else {
+            Range whole;
+            whole.fromRow = cy_;
+            whole.fromCol = 0;
+            whole.toRow = cy_ + 1;
+            whole.toCol = 0;
+            buf_.eraseRange(whole);
+        }
+        cx_ = 0;
+        clampCursor();
+    }
+    say(cut ? "line cut" : "line copied");
+}
+
+void Editor::pasteClipboard() {
+    if (clipboard_.empty()) { say("there is nothing to paste"); return; }
+
+    buf_.beginEdit(EditOther, cx_, cy_);
+    eraseSelection();
+
+    size_t endRow = cy_, endCol = cx_;
+    buf_.insertText(cy_, cx_, clipboard_, endRow, endCol);
+    cy_ = endRow;
+    cx_ = endCol;
+    marked_ = false;
+    clampCursor();
+    say(number(clipboard_.size()) + " characters pasted");
+}
+
+void Editor::selectAll() {
+    marked_ = true;
+    markRow_ = 0;
+    markCol_ = 0;
+    cy_ = buf_.lineCount() - 1;
+    cx_ = buf_.line(cy_).size();
+    focus_ = FocusText;
+    say("all of it selected");
+}
+
 void Editor::undoEdit() {
+    marked_ = false;
     if (!buf_.undo(cx_, cy_)) { say("nothing to undo"); return; }
     clampCursor();
     focus_ = FocusText;
@@ -764,8 +932,15 @@ void Editor::insertNewline() {
 void Editor::backspace() {
     buf_.beginEdit(EditErasing, cx_, cy_);
     if (cx_ > 0) {
-        buf_.eraseChar(cy_, cx_ - 1);
-        --cx_;
+        // The whole character, not its last byte - deleting half of one would
+        // leave the file holding something that is not text.
+        size_t start = utf8::previous(buf_.line(cy_), cx_);
+        Range range;
+        range.fromRow = range.toRow = cy_;
+        range.fromCol = start;
+        range.toCol = cx_;
+        buf_.eraseRange(range);
+        cx_ = start;
     } else if (cy_ > 0) {
         cx_ = buf_.line(cy_ - 1).size();
         buf_.joinLine(cy_ - 1);
@@ -775,8 +950,15 @@ void Editor::backspace() {
 
 void Editor::deleteForward() {
     buf_.beginEdit(EditErasing, cx_, cy_);
-    if (cx_ < buf_.line(cy_).size()) buf_.eraseChar(cy_, cx_);
-    else if (cy_ + 1 < buf_.lineCount()) buf_.joinLine(cy_);
+    if (cx_ < buf_.line(cy_).size()) {
+        Range range;
+        range.fromRow = range.toRow = cy_;
+        range.fromCol = cx_;
+        range.toCol = utf8::next(buf_.line(cy_), cx_);
+        buf_.eraseRange(range);
+    } else if (cy_ + 1 < buf_.lineCount()) {
+        buf_.joinLine(cy_);
+    }
 }
 
 void Editor::realign() {
@@ -1232,6 +1414,7 @@ void Editor::showKeys() {
     console_.push_back("Ctrl-E       bottom panel         Tab      lay this line out");
     console_.push_back("Ctrl-F       find                 Ctrl-G   find the next one");
     console_.push_back("Ctrl-R       replace              Ctrl-Z   undo, Ctrl-Y redo");
+    console_.push_back("shift+arrows select              Ctrl-C   copy, X cut, V paste");
     console_.push_back("Ctrl-S       save                 Ctrl-Q   leave");
     console_.push_back("In the project pane, enter opens. In the panel, left and right");
     console_.push_back("change tab - Console, Debug, Assembly - and on Console,");
@@ -1258,6 +1441,10 @@ void Editor::perform(Action action) {
         case ActionNextFile:     nextDocument(1); break;
         case ActionPrevFile:     nextDocument(-1); break;
         case ActionLayOut:       reindentAll(); break;
+        case ActionCopy:         copySelection(false); break;
+        case ActionCut:          copySelection(true); break;
+        case ActionPaste:        pasteClipboard(); break;
+        case ActionSelectAll:    selectAll(); break;
         case ActionUndo:         undoEdit(); break;
         case ActionRedo:         redoEdit(); break;
         case ActionFind:         findPrompt(); break;
@@ -1372,6 +1559,9 @@ void Editor::processKey(int key) {
 
         case ctrl('s'): perform(ActionSave); return;
         case ctrl('b'): perform(ActionBuild); return;
+        case ctrl('c'): perform(ActionCopy); return;
+        case ctrl('x'): perform(ActionCut); return;
+        case ctrl('v'): perform(ActionPaste); return;
         case ctrl('z'): perform(ActionUndo); return;
         case ctrl('y'): perform(ActionRedo); return;
         case ctrl('a'): perform(ActionLayOut); return;
@@ -1410,7 +1600,23 @@ void Editor::processKey(int key) {
         case KEY_PAGE_DOWN:
             if (focus_ == FocusTree) moveTree(key);
             else if (focus_ == FocusPanel) movePanel(key);
-            else moveCursor(key);
+            else {
+                // Moving without shift lets the selection go, which is what
+                // every editor does and what the arrow keys mean here.
+                dropSelection();
+                moveCursor(key);
+            }
+            return;
+
+        case KEY_SHIFT_UP:
+        case KEY_SHIFT_DOWN:
+        case KEY_SHIFT_LEFT:
+        case KEY_SHIFT_RIGHT:
+        case KEY_SHIFT_HOME:
+        case KEY_SHIFT_END:
+        case KEY_SHIFT_PAGE_UP:
+        case KEY_SHIFT_PAGE_DOWN:
+            if (focus_ == FocusText) extendTo(key);
             return;
 
         default: break;
@@ -1436,8 +1642,12 @@ void Editor::processKey(int key) {
             return;
 
         case KEY_BACKSPACE:
-        case ctrl('h'): backspace(); return;
-        case KEY_DELETE: deleteForward(); return;
+        case ctrl('h'):
+            if (!eraseSelection()) backspace();
+            return;
+        case KEY_DELETE:
+            if (!eraseSelection()) deleteForward();
+            return;
         case '\t': tabKey(); return;
 
         default: {
@@ -1446,6 +1656,8 @@ void Editor::processKey(int key) {
 
             // Three characters decide where their own line sits, and only these
             // three, so nothing moves under the caret unless it had to.
+            eraseSelection();
+
             std::string before = buf_.line(cy_).substr(0, cx_);
             bool atHead = before.find_first_not_of(" \t") == std::string::npos;
 

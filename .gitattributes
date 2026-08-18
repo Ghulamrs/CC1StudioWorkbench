@@ -1,0 +1,3 @@
+# A batch file with Unix line endings is mis-parsed by cmd - it ran the right
+# command and reported 'C:\Program is not recognized' until this was fixed.
+*.bat text eol=crlf

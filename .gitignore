@@ -1,0 +1,12 @@
+*.o
+*.obj
+obj/
+ed1
+ed1.exe
+test
+test.exe
+tests/test
+*.pdb
+*.ilk
+*.o.tmp
+.DS_Store

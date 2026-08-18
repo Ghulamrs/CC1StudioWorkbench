@@ -135,10 +135,27 @@ Screen drive(const std::string& ed1, const std::string& arguments,
     return screen;
 }
 
+// The bottom line, which is where the editor says what just happened.
+std::string message(const Screen& screen) {
+    for (size_t i = screen.rows.size(); i-- > 0;) {
+        std::string row = screen.rows[i];
+        while (!row.empty() && row[row.size() - 1] == ' ') row.resize(row.size() - 1);
+        if (!row.empty()) return row;
+    }
+    return std::string();
+}
+
 bool onScreen(const Screen& screen, const std::string& text) {
     for (size_t i = 0; i < screen.rows.size(); ++i)
         if (screen.rows[i].find(text) != std::string::npos) return true;
     return false;
+}
+
+// Anywhere in the whole session rather than on the last screen. A build shows
+// the console while it runs and then moves to the assembly when it works, so
+// what the console said is history by the time the editor is quit.
+bool wasShown(const Screen& screen, const std::string& text) {
+    return screen.raw.find(text) != std::string::npos;
 }
 
 fs::path freshProject(const std::string& name) {
@@ -173,16 +190,16 @@ void editingAndLayout(const std::string& ed1) {
     fs::path flat = dir / "src" / "flat.c";
     writeFile(flat, "int main(void)\n{\nif (x)\nreturn 1;\nreturn 0;\n}\n");
     drive(ed1, "\"" + flat.string() + "\" --project \"" + dir.string() + "\"",
-          ctrl('f') + ctrl('s') + ctrl('q'), dir);
+          ctrl('a') + ctrl('s') + ctrl('q'), dir);
     checkEqual(readFile(flat),
                "int main(void)\n{\n    if (x)\n        return 1;\n    return 0;\n}\n",
-               "Ctrl-F lays out a whole file");
+               "Ctrl-A lays out a whole file");
 
     // Tabs instead of spaces, asked for on the command line.
     fs::path tabbed = dir / "src" / "tabbed.c";
     writeFile(tabbed, "int f(void)\n{\nreturn 1;\n}\n");
     drive(ed1, "\"" + tabbed.string() + "\" --project \"" + dir.string() + "\" --tabs",
-          ctrl('f') + ctrl('s') + ctrl('q'), dir);
+          ctrl('a') + ctrl('s') + ctrl('q'), dir);
     check(readFile(tabbed).find("\treturn 1;") != std::string::npos,
           "--tabs indents with a tab");
 
@@ -261,6 +278,48 @@ void fileCommands(const std::string& ed1) {
     fs::remove_all(dir);
 }
 
+void findingAndReplacing(const std::string& ed1) {
+    std::printf("finding and replacing, in the editor\n");
+
+    fs::path dir = freshProject("find");
+    fs::path file = dir / "src" / "find.c";
+    const char* text =
+        "int one(void) { return 1; }\n"
+        "int two(void) { return 2; }\n"
+        "int three(void) { return 3; }\n";
+    writeFile(file, text);
+
+    std::string args = "\"" + file.string() + "\" --project \"" + dir.string() + "\"";
+
+    // Ctrl-F, the word, enter: the caret should land on line three.
+    Screen found = drive(ed1, args, ctrl('f') + "three" + kEnter + ctrl('q'), dir);
+    check(onScreen(found, "3/3"), "find moves the caret to the line it is on");
+    check(onScreen(found, "three - line 3"), "and says where it went");
+
+    Screen missing = drive(ed1, args, ctrl('f') + "absent" + kEnter + ctrl('q'), dir);
+    check(onScreen(missing, "is not in this file"), "and says when it is not there");
+
+    // Ctrl-F for the first, Ctrl-G for the next: 'return' is on every line.
+    Screen again = drive(ed1, args,
+                         ctrl('f') + "return" + kEnter + ctrl('g') + ctrl('q'), dir);
+    check(onScreen(again, "2/3"), "Ctrl-G moves on to the next one");
+
+    // Replace, then save, and look at the file.
+    drive(ed1, args, ctrl('r') + "return" + kEnter + "give" + kEnter + ctrl('s') + ctrl('q'),
+          dir);
+    std::string written = readFile(file);
+    check(written.find("give 1") != std::string::npos, "replace changes the text");
+    check(written.find("return") == std::string::npos, "everywhere it appeared");
+
+    // And nothing is written unless it is saved.
+    writeFile(file, text);
+    drive(ed1, args, ctrl('r') + "return" + kEnter + "gone" + kEnter + ctrl('q') + ctrl('q'),
+          dir);
+    checkEqual(readFile(file), text, "and quitting without saving leaves the file alone");
+
+    fs::remove_all(dir);
+}
+
 void projectPane(const std::string& ed1) {
     std::printf("the project pane\n");
 
@@ -287,7 +346,7 @@ void projectPane(const std::string& ed1) {
     fs::path flat = dir / "src" / "three.c";
     writeFile(flat, "int f(void)\n{\nreturn 3;\n}\n");
     drive(ed1, "\"" + flat.string() + "\" --project \"" + dir.string() + "\"",
-          ctrl('f') + ctrl('s') + ctrl('q'), dir);
+          ctrl('a') + ctrl('s') + ctrl('q'), dir);
     check(readFile(flat).find("\n  return 3;") != std::string::npos,
           "the project's indent of 2 is what gets used");
 
@@ -372,6 +431,83 @@ void compiling(const std::string& ed1, const std::string& cc1) {
     fs::remove_all(dir);
 }
 
+// A file that compiles to different code depending on NDEBUG, so that the two
+// configurations can be told apart by what came out rather than by what the
+// command line claimed.
+const char* kTwoWays =
+    "#ifdef NDEBUG\n"
+    "int value(void) { return 1; }\n"
+    "#else\n"
+    "int value(void) { return 1; }\n"
+    "int second(void) { return 2; }\n"
+    "int third(void) { return 3; }\n"
+    "int fourth(void) { return 4; }\n"
+    "#endif\n";
+
+void configurations(const std::string& ed1, const std::string& cc1) {
+    std::printf("debug and release\n");
+
+    fs::path dir = freshProject("config");
+    fs::path file = dir / "src" / "twoways.c";
+    writeFile(file, kTwoWays);
+
+    std::string common = "\"" + file.string() + "\" --project \"" + dir.string() + "\"";
+
+    // The word is in the status bar whether or not anything can be built.
+    Screen shown = drive(ed1, common + " --config release", ctrl('q'), dir);
+    check(onScreen(shown, "release"), "the status bar says which configuration");
+    Screen shownDebug = drive(ed1, common, ctrl('q'), dir);
+    check(onScreen(shownDebug, "debug"), "and debug is what it starts in");
+
+    // The project file remembers it.
+    writeFile(dir / "ed1.json",
+              "{\n  \"name\": \"Conf\",\n  \"config\": \"release\",\n"
+              "  \"groups\": { \"Sources\": [] }\n}\n");
+    Screen fromFile = drive(ed1, common, ctrl('q'), dir);
+    check(onScreen(fromFile, "release"), "the project's configuration is used");
+
+    Screen overridden = drive(ed1, common + " --config debug", ctrl('q'), dir);
+    check(onScreen(overridden, "debug"), "and the flag still overrides it");
+
+#ifdef _WIN32
+    // cl can show the difference whether or not cc1 is about: NDEBUG takes
+    // three functions out, and /O2 rewrites what is left.
+    {
+        Screen clDebug = drive(ed1, common + " --toolchain msvc --config debug",
+                               ctrl('b') + ctrl('q'), dir);
+        Screen clRelease = drive(ed1, common + " --toolchain msvc --config release",
+                                 ctrl('b') + ctrl('q'), dir);
+        check(wasShown(clDebug, "/Od"), "cl is given /Od for debug");
+        check(wasShown(clRelease, "/O2"), "and /O2 for release");
+        check(!message(clDebug).empty() && message(clDebug) != message(clRelease),
+              "and the two produce different code");
+    }
+#endif
+
+    if (cc1.empty()) {
+        std::printf("  (no cc1 named, so its two configurations are not compared)\n");
+        fs::remove_all(dir);
+        return;
+    }
+
+    std::string withCc1 = common + " --cc1 \"" + cc1 + "\"";
+    Screen debug = drive(ed1, withCc1 + " --config debug", ctrl('b') + ctrl('q'), dir);
+    Screen release = drive(ed1, withCc1 + " --config release", ctrl('b') + ctrl('q'), dir);
+
+    check(wasShown(debug, "-D_DEBUG=1"), "the debug define is on the command line");
+    check(wasShown(release, "-DNDEBUG=1"), "and the release one is");
+
+    // And it did something: the same file compiled two ways gives two different
+    // amounts of assembly, so the define reached the preprocessor rather than
+    // merely being printed.
+    check(!message(debug).empty() && message(debug) != message(release),
+          "the two configurations produce different code");
+    check(message(debug).find("lines of") != std::string::npos,
+          "and both of them built");
+
+    fs::remove_all(dir);
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -395,8 +531,10 @@ int main(int argc, char** argv) {
     colouring(ed1);
     fileCommands(ed1);
     projectPane(ed1);
+    findingAndReplacing(ed1);
     compiling(ed1, cc1);
     buildingWithCl(ed1);
+    configurations(ed1, cc1);
 
     std::printf("\n%d checks, %d failed\n", checks, failures);
     return failures == 0 ? 0 : 1;

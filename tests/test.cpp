@@ -12,6 +12,7 @@
 #include "compile.h"
 #include "indent.h"
 #include "syntax.h"
+#include "find.h"
 #include "json.h"
 #include "project.h"
 #include "toolchain.h"
@@ -333,14 +334,93 @@ void routing() {
     // The flags each compiler is given for each language.
     editor::Toolchain tool;
     std::string cpp = editor::shownCommand(tool, editor::ToolMsvc, "a.cpp",
-                                           editor::LangCpp, "x86_64-windows");
+                                           editor::LangCpp, "x86_64-windows",
+                                           editor::ConfigDebug);
     check(cpp.find("/TP") != std::string::npos, "C++ is compiled as C++, and said so");
     check(cpp.find("/EHsc") != std::string::npos, "with exceptions turned on");
 
     std::string c = editor::shownCommand(tool, editor::ToolMsvc, "a.c",
-                                         editor::LangC, "x86_64-windows");
+                                         editor::LangC, "x86_64-windows",
+                                         editor::ConfigDebug);
     check(c.find("/TC") != std::string::npos, "C is compiled as C");
     check(c.find("/TP") == std::string::npos, "and not as C++");
+
+    // Debug and release, and an honest account of what each compiler can do
+    // about them.
+    check(editor::configFlags(editor::ToolMsvc, editor::ConfigDebug).find("/Od") !=
+              std::string::npos,
+          "cl's debug turns the optimiser off");
+    check(editor::configFlags(editor::ToolMsvc, editor::ConfigRelease).find("/O2") !=
+              std::string::npos,
+          "and its release turns it up");
+    check(editor::configFlags(editor::ToolMsvc, editor::ConfigRelease).find("NDEBUG") !=
+              std::string::npos,
+          "with NDEBUG defined alongside");
+
+    // cc1 has no -O and no -g, so its configuration is the define and nothing
+    // else. Passing it a -O it would refuse would be worse than saying so.
+    std::string cc1Debug = editor::configFlags(editor::ToolCc1, editor::ConfigDebug);
+    std::string cc1Release = editor::configFlags(editor::ToolCc1, editor::ConfigRelease);
+    check(cc1Debug.find("_DEBUG") != std::string::npos, "cc1's debug defines _DEBUG");
+    check(cc1Release.find("NDEBUG") != std::string::npos, "and its release defines NDEBUG");
+    check(cc1Debug.find("-O") == std::string::npos &&
+              cc1Release.find("-O") == std::string::npos,
+          "and neither passes a -O, which cc1 has not got");
+    check(cc1Debug.find("-g") == std::string::npos, "nor a -g, which it has not got either");
+
+    check(editor::optimises(editor::ToolMsvc), "cl optimises");
+    check(!editor::optimises(editor::ToolCc1), "cc1 does not, and does not pretend to");
+
+    std::string release = editor::shownCommand(tool, editor::ToolCc1, "a.c",
+                                               editor::LangC, "arm64-darwin",
+                                               editor::ConfigRelease);
+    check(release.find("-DNDEBUG=1") != std::string::npos,
+          "and the define reaches the command line");
+}
+
+void searching() {
+    std::printf("finding and replacing\n");
+
+    std::vector<std::string> lines = split(
+        "int one(void) { return 1; }\n"
+        "int two(void) { return 2; }\n"
+        "int one_more(void) { return 3; }");
+
+    editor::Match first = editor::findNext(lines, "one", 0, 0);
+    check(first.found && first.row == 0 && first.col == 4, "the first one is found");
+
+    editor::Match second = editor::findNext(lines, "one", first.row, first.col + 1);
+    check(second.found && second.row == 2 && second.col == 4,
+          "and the next is the one after it");
+
+    // Round the end and back to where it started, once.
+    editor::Match wrapped = editor::findNext(lines, "one", second.row, second.col + 1);
+    check(wrapped.found && wrapped.row == 0, "searching wraps to the top");
+
+    editor::Match missing = editor::findNext(lines, "nowhere", 0, 0);
+    check(!missing.found, "what is not there is not found");
+    check(!editor::findNext(lines, "", 0, 0).found, "and nothing is not searched for");
+
+    editor::Match back = editor::findPrevious(lines, "one", 2, 4);
+    check(back.found && back.row == 0, "and it goes backwards too");
+
+    editor::Match onlyOne = editor::findNext(lines, "two", 1, 4);
+    check(onlyOne.found && onlyOne.row == 1 && onlyOne.col == 4,
+          "a match under the caret is found where it is");
+
+    std::vector<std::string> changed = lines;
+    check(editor::replaceAll(changed, "return", "give back") == 3, "every one is replaced");
+    check(changed[0].find("give back 1") != std::string::npos, "and the text is right");
+
+    // The one that could go round for ever if the replacement were searched
+    // again.
+    std::vector<std::string> growing = split("aaa");
+    check(editor::replaceAll(growing, "a", "aa") == 3, "a replacement holding the needle");
+    checkEqual(growing[0], "aaaaaa", "grows once and stops");
+
+    std::vector<std::string> untouched = split("nothing here");
+    check(editor::replaceAll(untouched, "absent", "x") == 0, "nothing found, nothing changed");
+    checkEqual(untouched[0], "nothing here", "and the line is as it was");
 }
 
 void jsonReading() {
@@ -454,6 +534,7 @@ void projects() {
     style.tabs = true;
     made.setIndent(style);
     made.setToolchain(editor::ToolMsvc);
+    made.setConfig(editor::ConfigRelease);
 
     std::string error;
     check(made.save(error), "it writes itself out");
@@ -466,6 +547,7 @@ void projects() {
     check(read.indent().width == 2 && read.indent().tabs, "the layout settings survive");
     check(read.groups()[0].name == "Sources", "and the groups keep their order");
     check(read.toolchain() == editor::ToolMsvc, "the compiler choice survives");
+    check(read.config() == editor::ConfigRelease, "and so does the configuration");
     check(read.groups().size() == 2, "the groups survive");
     check(read.groupOf("src/main.c") < read.groups().size(), "and what is in them");
 
@@ -486,6 +568,8 @@ void projects() {
     check(small.load(tiny.string(), error), "an empty object is a project");
     check(error.empty() && small.indent().width == 4 && !small.indent().tabs,
           "and every setting falls back to its default");
+    check(small.config() == editor::ConfigDebug,
+          "debug being the one you want while the code is still being written");
 
     std::filesystem::remove_all(dir);
 }
@@ -498,6 +582,7 @@ int main() {
     typing();
     colours();
     routing();
+    searching();
     jsonReading();
     projects();
 

@@ -19,7 +19,11 @@ Menu::Menu() : active_(false), dropped_(false), column_(0), item_(0) {
 
     MenuColumn edit;
     edit.title = "Edit";
-    edit.items.push_back({"Lay out file", "Ctrl-F", ActionLayOut});
+    edit.items.push_back({"Find...", "Ctrl-F", ActionFind});
+    edit.items.push_back({"Find next", "Ctrl-G", ActionFindNext});
+    edit.items.push_back({"Find previous", "", ActionFindPrevious});
+    edit.items.push_back({"Replace...", "Ctrl-R", ActionReplace});
+    edit.items.push_back({"Lay out file", "Ctrl-A", ActionLayOut});
     edit.items.push_back({"Project pane", "Ctrl-P", ActionToggleTree});
     edit.items.push_back({"Bottom panel", "Ctrl-E", ActionTogglePanel});
     edit.items.push_back({"Line numbers", "Ctrl-L", ActionToggleNumbers});
@@ -42,6 +46,8 @@ Menu::Menu() : active_(false), dropped_(false), column_(0), item_(0) {
     MenuColumn build;
     build.title = "Build";
     build.items.push_back({"Compile", "Ctrl-B", ActionBuild});
+    build.items.push_back({"Debug", "Ctrl-D", ActionConfigDebug});
+    build.items.push_back({"Release", "Ctrl-D", ActionConfigRelease});
     build.items.push_back({"Console", "", ActionShowConsole});
     build.items.push_back({"Debug", "", ActionShowDebug});
     build.items.push_back({"Assembly", "", ActionShowAssembly});

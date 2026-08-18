@@ -57,6 +57,26 @@ escaped quote ends nothing, and a block comment opened above the top of the
 screen still colours what is on it. Sixteen-colour codes throughout, because
 those are the ones a Windows console renders in virtual-terminal mode.
 
+**Find and replace.** `Ctrl-F` asks, `Ctrl-G` moves on to the next, `Ctrl-R`
+replaces. Searching wraps round the end of the file and stops when it arrives
+back where it began. Replace changes every occurrence and says how many - and
+since nothing is written until `Ctrl-S`, quitting without saving is the way
+back, which matters because there is no undo here yet.
+
+**Debug or release**, on `Ctrl-D` or in the Build menu, remembered in the
+project file. What each compiler can do about it differs, and the editor says
+which rather than pretending they are the same:
+
+| | debug | release |
+|---|---|---|
+| `cl` | `/Od /D_DEBUG` | `/O2 /DNDEBUG` |
+| `cc1` | `-D_DEBUG=1` | `-DNDEBUG=1` |
+
+cc1 has no `-O` and no `-g` at all, so for it a configuration is the define and
+nothing else. That is not nothing - it is what `assert` and every `#ifdef
+NDEBUG` in the source are looking for - but passing it a `-O` it would refuse
+would be worse than saying so plainly.
+
 **Line numbers down the left**, in the manner of Shalimar's, with the caret's
 own line picked out. `Ctrl-L` turns them off.
 
@@ -102,6 +122,7 @@ it the pane on the left shows the directory, as it always did.
 {
   "name": "ed1",
   "toolchain": "auto",
+  "config": "debug",
   "arch": "x86_64-windows",
   "indent": 4,
   "tabs": false,
@@ -112,7 +133,7 @@ it the pane on the left shows the directory, as it always did.
 }
 ```
 
-Six keys, flat except the groups, and every one has a default - so `{}` is a
+Seven keys, flat except the groups, and every one has a default - so `{}` is a
 valid project file. Comments with `//` are allowed, because a file people edit
 by hand is a file people leave notes in.
 
@@ -192,8 +213,11 @@ walks its menus, and then looks at what landed on the screen and on the disk:
 that a function typed flat comes back laid out, that keywords are coloured,
 that New file makes a file and puts it in the project, that a path two
 directories deep is refused, that Rename moves it and the project follows, that
-Delete answered with anything but `yes` keeps the file, and that a build lands
-the caret on the line the compiler named. One program for both machines, rather
+Delete answered with anything but `yes` keeps the file, and that find lands the caret on the
+right line and Ctrl-G moves on, that replace changes the text and quitting
+without saving leaves the file alone, and that a build lands the caret on the
+line the compiler named and that its two configurations produce different
+code. One program for both machines, rather
 than a shell script and a PowerShell script that would drift apart.
 
 Set `CC1` to run the cc1 build cases; the cl ones need nothing, since the
@@ -218,7 +242,7 @@ house bug, and this is the one place it was easy to prevent.
 
 `buffer`, `indent`, `menu` and `tree` touch no screen and no OS. `indent`, `syntax`, `json`, `project` and
 the diagnostic parser are the pieces with a contract, and `tests/test.cpp`
-checks them - 138 cases, including that a Windows path's drive letter is not
+checks them - 163 cases, including that a Windows path's drive letter is not
 mistaken for a `line:col` separator, that a brace inside a string is not
 counted, and that `class` is a keyword in C++ and nothing in particular in C,
 and that cl's `bad.c(3,13)` is read as well as cc1's `bad.c:3:13`. They run on
@@ -244,9 +268,12 @@ because that is what cc1's own sources use, and they contain no tab at all.
 | key | |
 |---|---|
 | `F10` | the menu |
-| `Ctrl-B` | build with cc1 |
-| `Ctrl-F` | lay the whole file out |
+| `Ctrl-B` | build |
+| `Ctrl-F` / `Ctrl-G` | find / find the next |
+| `Ctrl-R` | replace |
+| `Ctrl-A` | lay the whole file out |
 | `Tab` | lay this line out, in the leading space |
+| `Ctrl-D` | debug or release |
 | `F2` / `F3` | previous / next open file |
 | `Ctrl-L` | line numbers |
 | `Ctrl-K` | cc1 or cl |

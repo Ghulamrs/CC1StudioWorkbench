@@ -115,7 +115,7 @@ Editor::Editor()
       cx_(0), cy_(0), rx_(0), rowoff_(0), coloff_(0),
       treeSel_(0), treeOff_(0), treeOpen_(true),
       panelOff_(0), panelOpen_(true), tab_(TabConsole),
-      focus_(FocusText), lang_(LangPlain), arch_(0), numbers_(true), needsDraw_(true),
+      focus_(FocusText), lang_(LangPlain), config_(ConfigDebug), arch_(0), numbers_(true), needsDraw_(true),
       quitConfirm_(0), running_(true),
       screenRows_(24), screenCols_(80),
       bodyRows_(14), panelRows_(kPanelRows),
@@ -232,6 +232,7 @@ void Editor::applyProject() {
     // the file is what the project always does, the flag is what today needs.
     style_ = project_.indent();
     tool_.kind = project_.toolchain();
+    config_ = project_.config();
     for (size_t i = 0; i < 3; ++i)
         if (project_.arch() == kArches[i]) arch_ = i;
 }
@@ -527,6 +528,8 @@ void Editor::drawStatus(std::string& out) const {
     ToolchainKind kind = resolve(tool_, lang_);
     std::string right = languageName(lang_);
     right += "  ";
+    right += configName(config_);
+    right += "  ";
     right += toolchainName(kind);
     if (tool_.kind == ToolAuto) right += "*";
     // The target is only shown when it means something. cl generates for the
@@ -775,6 +778,60 @@ void Editor::tabKey() {
     }
     if (style_.tabs) { insertChar('\t'); return; }
     for (size_t i = 0; i < style_.width; ++i) insertChar(' ');
+}
+
+void Editor::findAgain(bool forwards) {
+    if (needle_.empty()) { say("nothing to look for yet - Ctrl-F asks"); return; }
+
+    // From one past the caret, so pressing it again moves on instead of
+    // finding the same place for ever.
+    Match match = forwards ? findNext(buf_.lines(), needle_, cy_, cx_ + 1)
+                           : findPrevious(buf_.lines(), needle_, cy_, cx_);
+    if (!match.found) { say(needle_ + " is not in this file"); return; }
+
+    cy_ = match.row;
+    cx_ = match.col;
+    focus_ = FocusText;
+    say(needle_ + " - line " + number(match.row + 1));
+}
+
+void Editor::findPrompt() {
+    bool cancelled = false;
+    std::string want = prompt("find: ", cancelled);
+    if (cancelled) { say("nothing looked for"); return; }
+    if (want.empty()) { findAgain(true); return; }
+
+    needle_ = want;
+    // From the caret itself this time, so a word already under it is found.
+    Match match = findNext(buf_.lines(), needle_, cy_, cx_);
+    if (!match.found) { say(needle_ + " is not in this file"); return; }
+
+    cy_ = match.row;
+    cx_ = match.col;
+    focus_ = FocusText;
+    say(needle_ + " - line " + number(match.row + 1) + ", Ctrl-G for the next");
+}
+
+void Editor::replacePrompt() {
+    bool cancelled = false;
+    std::string want = prompt("replace: ", cancelled);
+    if (cancelled || want.empty()) { say("nothing replaced"); return; }
+
+    std::string with = prompt("replace " + want + " with: ", cancelled);
+    if (cancelled) { say("nothing replaced"); return; }
+
+    std::vector<std::string> lines = buf_.lines();
+    size_t count = replaceAll(lines, want, with);
+    if (count == 0) { say(want + " is not in this file"); return; }
+
+    buf_.replaceAll(lines);
+    needle_ = with;
+    clampCursor();
+
+    // Nothing is written until Ctrl-S, which is the way back if this was not
+    // what you meant: there is no undo here yet.
+    say(number(count) + (count == 1 ? " change" : " changes") +
+        " - not saved yet, so Ctrl-Q undoes it");
 }
 
 void Editor::reindentAll() {
@@ -1046,6 +1103,8 @@ void Editor::resetDebug() {
     debug_.push_back("tab stays empty rather than inventing values.");
     debug_.push_back("");
     debug_.push_back("target: " + std::string(kArches[arch_]));
+    debug_.push_back("build:  " + std::string(configName(config_)) + " (" +
+                     configFlags(resolve(tool_, lang_), config_) + " )");
 }
 
 void Editor::goToProblem() {
@@ -1078,14 +1137,23 @@ void Editor::compile() {
     panelOpen_ = true;
     tab_ = TabConsole;
     console_.clear();
-    console_.push_back("$ " + shownCommand(tool_, kind, buf_.path(), lang_, kArches[arch_]));
+    // Shown with the compiler's own name and the file as the project knows it,
+    // rather than two absolute paths that push the flags off the right of an
+    // eighty-column console. The flags are the part worth reading.
+    Toolchain shownAs = tool_;
+    shownAs.cc1 = baseName(tool_.cc1);
+    shownAs.cl = baseName(tool_.cl);
+    std::string shownFile = project_.loaded() ? project_.relative(buf_.path())
+                                              : baseName(buf_.path());
+    console_.push_back("$ " + shownCommand(shownAs, kind, shownFile, lang_,
+                                           kArches[arch_], config_));
     panelOff_ = 0;
-    say(std::string("building with ") + toolchainName(kind) +
+    say(std::string("building ") + configName(config_) + " with " + toolchainName(kind) +
         (usesArch(kind) ? std::string(" for ") + kArches[arch_] : std::string()) +
         " ...");
     refresh();
 
-    Build result = build(tool_, kind, buf_.path(), lang_, kArches[arch_],
+    Build result = build(tool_, kind, buf_.path(), lang_, kArches[arch_], config_,
                          consoleSink, this);
 
     assembly_ = result.asmLines;
@@ -1129,9 +1197,12 @@ void Editor::showKeys() {
     console_.push_back("F10          the menu             Ctrl-B   build with cc1");
     console_.push_back("F2 / F3      previous / next file Ctrl-L   line numbers");
     console_.push_back("Ctrl-K       automatic, cc1, cl   Ctrl-T   next target");
+    console_.push_back("Ctrl-D       debug or release");
     console_.push_back("Ctrl-W       next pane            Ctrl-T   next target");
-    console_.push_back("Ctrl-P       project pane         Ctrl-F   lay the file out");
+    console_.push_back("Ctrl-P       project pane         Ctrl-A   lay the file out");
     console_.push_back("Ctrl-E       bottom panel         Tab      lay this line out");
+    console_.push_back("Ctrl-F       find                 Ctrl-G   find the next one");
+    console_.push_back("Ctrl-R       replace");
     console_.push_back("Ctrl-S       save                 Ctrl-Q   leave");
     console_.push_back("In the project pane, enter opens. In the panel, left and right");
     console_.push_back("change tab - Console, Debug, Assembly - and on Console,");
@@ -1158,6 +1229,10 @@ void Editor::perform(Action action) {
         case ActionNextFile:     nextDocument(1); break;
         case ActionPrevFile:     nextDocument(-1); break;
         case ActionLayOut:       reindentAll(); break;
+        case ActionFind:         findPrompt(); break;
+        case ActionFindNext:     findAgain(true); break;
+        case ActionFindPrevious: findAgain(false); break;
+        case ActionReplace:      replacePrompt(); break;
         case ActionToggleTree:
             treeOpen_ = !treeOpen_;
             if (!treeOpen_ && focus_ == FocusTree) focus_ = FocusText;
@@ -1171,6 +1246,22 @@ void Editor::perform(Action action) {
             if (!panelOpen_ && focus_ == FocusPanel) focus_ = FocusText;
             break;
         case ActionBuild:        compile(); break;
+        case ActionConfigDebug:
+            config_ = ConfigDebug;
+            if (project_.loaded()) project_.setConfig(config_);
+            resetDebug();
+            say(optimises(resolve(tool_, lang_))
+                    ? "debug: /Od /D_DEBUG"
+                    : "debug: -D_DEBUG=1, which is all cc1 has - no -O, no -g");
+            break;
+        case ActionConfigRelease:
+            config_ = ConfigRelease;
+            if (project_.loaded()) project_.setConfig(config_);
+            resetDebug();
+            say(optimises(resolve(tool_, lang_))
+                    ? "release: /O2 /DNDEBUG"
+                    : "release: -DNDEBUG=1, which is all cc1 has - no -O, no -g");
+            break;
         case ActionShowConsole:  panelOpen_ = true; tab_ = TabConsole; panelOff_ = 0; break;
         case ActionShowDebug:    panelOpen_ = true; tab_ = TabDebug; panelOff_ = 0; break;
         case ActionShowAssembly: panelOpen_ = true; tab_ = TabAssembly; panelOff_ = 0; break;
@@ -1250,10 +1341,17 @@ void Editor::processKey(int key) {
 
         case ctrl('s'): perform(ActionSave); return;
         case ctrl('b'): perform(ActionBuild); return;
-        case ctrl('f'): perform(ActionLayOut); return;
+        case ctrl('a'): perform(ActionLayOut); return;
+        case ctrl('f'): perform(ActionFind); return;
+        case ctrl('g'): perform(ActionFindNext); return;
+        case ctrl('r'): perform(ActionReplace); return;
         case ctrl('p'): perform(ActionToggleTree); return;
         case ctrl('e'): perform(ActionTogglePanel); return;
         case ctrl('l'): perform(ActionToggleNumbers); return;
+
+        case ctrl('d'):
+            perform(config_ == ConfigDebug ? ActionConfigRelease : ActionConfigDebug);
+            return;
 
         case ctrl('k'):
             // Round the three rather than between two, so automatic is never
@@ -1329,7 +1427,7 @@ void Editor::processKey(int key) {
 }
 
 void Editor::run() {
-    if (message_.empty()) say("F10 menu   Ctrl-B build   Ctrl-F lay out   F1 keys   Ctrl-Q quit");
+    if (message_.empty()) say("F10 menu  Ctrl-B build  Ctrl-A lay out  Ctrl-F find  F1 keys  Ctrl-Q quit");
 
     int wasRows = 0, wasCols = 0;
     while (running_) {

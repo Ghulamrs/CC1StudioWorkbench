@@ -136,6 +136,22 @@ const char* programOf(const Toolchain& tool, ToolchainKind kind) {
 
 bool usesArch(ToolchainKind kind) { return kind == ToolCc1; }
 
+const char* configName(Configuration config) {
+    return config == ConfigRelease ? "release" : "debug";
+}
+
+bool optimises(ToolchainKind kind) { return kind == ToolMsvc; }
+
+std::string configFlags(ToolchainKind kind, Configuration config) {
+    if (kind == ToolMsvc)
+        return config == ConfigRelease ? " /O2 /DNDEBUG" : " /Od /D_DEBUG";
+
+    // cc1 has no optimiser and emits no debug information, so this is the whole
+    // of what a configuration can mean to it. Saying so is better than passing
+    // a -O it would refuse.
+    return config == ConfigRelease ? " -DNDEBUG=1" : " -D_DEBUG=1";
+}
+
 bool canCompile(ToolchainKind kind, Language lang) {
     if (lang == LangCpp) return kind == ToolMsvc;
     if (lang == LangC) return true;
@@ -153,7 +169,7 @@ std::string refusal(ToolchainKind kind, Language lang) {
 
 Recipe assemblyRecipe(const Toolchain& tool, ToolchainKind kind,
                       const std::string& source, Language lang,
-                      const std::string& arch) {
+                      const std::string& arch, Configuration config) {
     Recipe recipe;
     std::string stem = tempDir() + kSep + "ed1-build";
     std::string program = programOf(tool, kind);
@@ -170,7 +186,7 @@ Recipe assemblyRecipe(const Toolchain& tool, ToolchainKind kind,
         // /diagnostics:column is what turns 'bad.c(3)' into 'bad.c(3,13)'; the
         // editor wants the column, and cl gives none without being asked.
         recipe.command = quote(program) + " /nologo /c /diagnostics:column /FAs" +
-                         forLanguage +
+                         forLanguage + configFlags(kind, config) +
                          " /Fa" + quote(recipe.assemblyPath) +
                          " /Fo" + quote(obj) + " " + quote(source);
         recipe.leftovers.push_back(obj);
@@ -179,18 +195,20 @@ Recipe assemblyRecipe(const Toolchain& tool, ToolchainKind kind,
 
     recipe.assemblyPath = stem + ".s";
     recipe.command = quote(program) + " -S " + quote(source) + " -o " +
-                     quote(recipe.assemblyPath) + " -arch " + arch;
+                     quote(recipe.assemblyPath) + " -arch " + arch +
+                     configFlags(kind, config);
     return recipe;
 }
 
 std::string shownCommand(const Toolchain& tool, ToolchainKind kind,
                          const std::string& source, Language lang,
-                         const std::string& arch) {
+                         const std::string& arch, Configuration config) {
     std::string program = programOf(tool, kind);
     if (kind == ToolMsvc)
         return program + " /c /diagnostics:column /FAs" +
-               ((lang == LangCpp) ? " /TP /EHsc /std:c++17 " : " /TC ") + source;
-    return program + " -S " + source + " -arch " + arch;
+               ((lang == LangCpp) ? " /TP /EHsc /std:c++17" : " /TC") +
+               configFlags(kind, config) + " " + source;
+    return program + " -S " + source + " -arch " + arch + configFlags(kind, config);
 }
 
 bool prepareFor(ToolchainKind kind) {

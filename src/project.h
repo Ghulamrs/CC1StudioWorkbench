@@ -27,6 +27,7 @@ struct Group {
 //     "indent": 4,
 //     "tabs": false,
 //     "toolchain": "auto",
+//     "config": "debug",
 //     "arch": "x86_64-windows",
 //     "groups": {
 //       "Examples": ["examples/hello.c", "examples/smart.cpp"]
@@ -58,10 +59,12 @@ public:
     const std::vector<Group>& groups() const { return groups_; }
     const IndentStyle& indent() const { return indent_; }
     ToolchainKind toolchain() const { return toolchain_; }
+    Configuration config() const { return config_; }
     const std::string& arch() const { return arch_; }
 
     void setIndent(const IndentStyle& style) { indent_ = style; }
     void setToolchain(ToolchainKind kind) { toolchain_ = kind; }
+    void setConfig(Configuration config) { config_ = config; }
     void setArch(const std::string& arch) { arch_ = arch; }
 
     // A project made up from a directory, with one group holding what is
@@ -103,6 +106,7 @@ private:
     std::vector<Group> groups_;
     IndentStyle indent_;
     ToolchainKind toolchain_;
+    Configuration config_;
     std::string arch_;
 };
 

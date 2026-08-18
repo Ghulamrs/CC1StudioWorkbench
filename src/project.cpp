@@ -38,7 +38,8 @@ const char* toolchainWord(ToolchainKind kind) {
 }  // namespace
 
 Project::Project()
-    : loaded_(false), toolchain_(ToolAuto), arch_("x86_64-windows") {}
+    : loaded_(false), toolchain_(ToolAuto), config_(ConfigDebug),
+      arch_("x86_64-windows") {}
 
 const char* Project::fileName() { return "ed1.json"; }
 
@@ -101,6 +102,9 @@ bool Project::load(const std::string& dir, std::string& error) {
     file_ = path;
     name_ = root.get("name").text(fs::path(base).filename().string());
     toolchain_ = toolchainFrom(root.get("toolchain").text("auto"));
+    // Debug unless the file says otherwise: the one you want while the code is
+    // still being written is the one you want by default.
+    config_ = root.get("config").text("debug") == "release" ? ConfigRelease : ConfigDebug;
     arch_ = root.get("arch").text("x86_64-windows");
 
     indent_.width = static_cast<size_t>(root.get("indent").integer(4));
@@ -149,6 +153,7 @@ bool Project::save(std::string& error) {
     Json root = Json::object();
     root.set("name", Json::fromText(name_));
     root.set("toolchain", Json::fromText(toolchainWord(toolchain_)));
+    root.set("config", Json::fromText(configName(config_)));
     root.set("arch", Json::fromText(arch_));
     root.set("indent", Json::fromNumber(static_cast<double>(indent_.width)));
     root.set("tabs", Json::fromBool(indent_.tabs));

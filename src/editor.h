@@ -7,6 +7,7 @@
 
 #include "buffer.h"
 #include "compile.h"
+#include "find.h"
 #include "indent.h"
 #include "menu.h"
 #include "project.h"
@@ -43,6 +44,7 @@ public:
     void setCc1(const std::string& path) { tool_.cc1 = path; }
     void setCl(const std::string& path) { tool_.cl = path; }
     void setToolchain(ToolchainKind kind) { tool_.kind = kind; }
+    void setConfig(Configuration config) { config_ = config; }
     void setStyle(const IndentStyle& style) { style_ = style; }
     // Applied one at a time, after the project has been read, so that a flag
     // overrides the project without wiping the settings it did not mention.
@@ -84,6 +86,9 @@ private:
     void realign();
     void tabKey();
     void reindentAll();
+    void findPrompt();
+    void findAgain(bool forwards);
+    void replacePrompt();
 
     bool save();
     void saveAs();
@@ -147,9 +152,11 @@ private:
 
     Focus focus_;
     Language lang_;
+    Configuration config_;
     size_t arch_;
     bool numbers_;
     bool needsDraw_;
+    std::string needle_;      // what was last searched for
     std::string message_;
     int quitConfirm_;
     bool running_;

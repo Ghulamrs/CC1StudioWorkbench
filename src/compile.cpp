@@ -102,7 +102,8 @@ Diagnostic parseDiagnostic(const std::string& text) {
 }
 
 Build build(const Toolchain& tool, ToolchainKind kind, const std::string& sourcePath,
-            Language lang, const std::string& arch, LineSink sink, void* context) {
+            Language lang, const std::string& arch, Configuration config,
+            LineSink sink, void* context) {
     Build result;
 
     // Puts this process into a Developer Command Prompt's environment if it is
@@ -114,7 +115,7 @@ Build build(const Toolchain& tool, ToolchainKind kind, const std::string& source
         return result;
     }
 
-    Recipe recipe = assemblyRecipe(tool, kind, sourcePath, lang, arch);
+    Recipe recipe = assemblyRecipe(tool, kind, sourcePath, lang, arch, config);
     std::string cmd = recipe.command + " 2>&1";
 
 #ifdef _WIN32

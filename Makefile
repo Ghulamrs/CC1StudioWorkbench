@@ -33,7 +33,7 @@ endif
 
 SRC := src/main.cpp src/editor.cpp src/buffer.cpp src/compile.cpp \
        src/indent.cpp src/menu.cpp src/tree.cpp src/syntax.cpp \
-       src/toolchain.cpp src/json.cpp src/project.cpp \
+       src/toolchain.cpp src/json.cpp src/project.cpp src/find.cpp \
        src/terminal_common.cpp \
        $(TERM_SRC)
 OBJ := $(SRC:.cpp=.o)
@@ -54,6 +54,7 @@ src/tree.o:     src/tree.h
 src/syntax.o:   src/syntax.h
 src/toolchain.o: src/toolchain.h src/syntax.h
 src/json.o:     src/json.h
+src/find.o:     src/find.h
 src/project.o:  src/project.h src/json.h src/indent.h src/toolchain.h
 src/compile.o:  src/compile.h src/toolchain.h
 src/buffer.o:   src/buffer.h
@@ -69,10 +70,10 @@ test: tests/test
 	./tests/test
 
 tests/test: tests/test.cpp src/compile.cpp src/indent.cpp src/syntax.cpp \
-            src/toolchain.cpp src/json.cpp src/project.cpp \
+            src/toolchain.cpp src/json.cpp src/project.cpp src/find.cpp \
             src/compile.h src/indent.h src/syntax.h src/json.h src/project.h
 	$(CXX) $(CXXFLAGS) -Isrc -o $@ tests/test.cpp src/compile.cpp src/indent.cpp \
-	    src/syntax.cpp src/toolchain.cpp src/json.cpp src/project.cpp
+	    src/syntax.cpp src/toolchain.cpp src/json.cpp src/project.cpp src/find.cpp
 
 # The other half of the checking: the editor itself, driven by keystrokes.
 # CC1 names a compiler for the build cases; without one they are skipped.

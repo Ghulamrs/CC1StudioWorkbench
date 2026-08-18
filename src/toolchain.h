@@ -19,6 +19,30 @@ enum ToolchainKind {
     ToolCount
 };
 
+// Debug or release. What each compiler can actually do about it differs, and
+// the editor says which rather than pretending they are the same:
+//
+//   cl   /Od /D_DEBUG  or  /O2 /DNDEBUG - a real difference in the code
+//   cc1  -D_DEBUG=1    or  -DNDEBUG=1   - the define and nothing else, because
+//        cc1 has no -O and no -g at all
+//
+// The define is not nothing: it is what assert and every #ifdef NDEBUG in the
+// source are looking for.
+enum Configuration {
+    ConfigDebug = 0,
+    ConfigRelease,
+    ConfigCount
+};
+
+const char* configName(Configuration config);
+
+// The flags this compiler is given for this configuration, already spaced.
+std::string configFlags(ToolchainKind kind, Configuration config);
+
+// Whether the configuration changes the code, or only what is defined while
+// compiling it.
+bool optimises(ToolchainKind kind);
+
 struct Toolchain {
     ToolchainKind kind;
     std::string cc1;   // the program to run for the cc1 toolchain
@@ -52,11 +76,11 @@ struct Recipe {
 
 Recipe assemblyRecipe(const Toolchain& tool, ToolchainKind kind,
                       const std::string& source, Language lang,
-                      const std::string& arch);
+                      const std::string& arch, Configuration config);
 
 std::string shownCommand(const Toolchain& tool, ToolchainKind kind,
                          const std::string& source, Language lang,
-                         const std::string& arch);
+                         const std::string& arch, Configuration config);
 
 // Puts this process into the environment a Developer Command Prompt would have,
 // once, so that cl can be found when the editor was started from an ordinary

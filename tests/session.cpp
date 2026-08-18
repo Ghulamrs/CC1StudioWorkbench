@@ -278,6 +278,54 @@ void fileCommands(const std::string& ed1) {
     fs::remove_all(dir);
 }
 
+void undoing(const std::string& ed1) {
+    std::printf("undo and redo, in the editor\n");
+
+    fs::path dir = freshProject("undo");
+    fs::path file = dir / "src" / "undo.c";
+    const char* text = "int one(void) { return 1; }\n";
+    std::string args = "\"" + file.string() + "\" --project \"" + dir.string() + "\"";
+
+    // Typed, then taken back, then saved: the file should be as it started.
+    writeFile(file, text);
+    drive(ed1, args, "xyz" + ctrl('z') + ctrl('s') + ctrl('q'), dir);
+    checkEqual(readFile(file), text, "undo takes back what was typed");
+
+    // A run of typing is one step, so one undo removes all three letters and
+    // one redo brings all three back.
+    writeFile(file, text);
+    drive(ed1, args, "xyz" + ctrl('z') + ctrl('y') + ctrl('s') + ctrl('q'), dir);
+    check(readFile(file).compare(0, 3, "xyz") == 0, "redo puts it back");
+
+    // Laying the file out is one step of its own.
+    fs::path flat = dir / "src" / "flat.c";
+    const char* crooked = "int main(void)\n{\nreturn 0;\n}\n";
+    writeFile(flat, crooked);
+    std::string flatArgs = "\"" + flat.string() + "\" --project \"" + dir.string() + "\"";
+    drive(ed1, flatArgs, ctrl('a') + ctrl('z') + ctrl('s') + ctrl('q'), dir);
+    checkEqual(readFile(flat), crooked, "and undo takes a whole re-layout back");
+
+    // So is a replace.
+    writeFile(file, text);
+    drive(ed1, args,
+          ctrl('r') + "one" + kEnter + "two" + kEnter + ctrl('z') + ctrl('s') + ctrl('q'),
+          dir);
+    checkEqual(readFile(file), text, "and a replace, in one step");
+
+    // And a newline is its own step, so undo gives back a line rather than
+    // everything typed since the file was opened.
+    writeFile(file, text);
+    drive(ed1, args, "abc\ndef" + ctrl('z') + ctrl('z') + ctrl('s') + ctrl('q'), dir);
+    check(readFile(file).find("abc") != std::string::npos,
+          "two undos after typing over a newline leave the first part");
+    check(readFile(file).find("def") == std::string::npos, "and remove the second");
+
+    Screen nothing = drive(ed1, args, ctrl('z') + ctrl('q'), dir);
+    check(onScreen(nothing, "nothing to undo"), "and with nothing done, it says so");
+
+    fs::remove_all(dir);
+}
+
 void findingAndReplacing(const std::string& ed1) {
     std::printf("finding and replacing, in the editor\n");
 
@@ -532,6 +580,7 @@ int main(int argc, char** argv) {
     fileCommands(ed1);
     projectPane(ed1);
     findingAndReplacing(ed1);
+    undoing(ed1);
     compiling(ed1, cc1);
     buildingWithCl(ed1);
     configurations(ed1, cc1);

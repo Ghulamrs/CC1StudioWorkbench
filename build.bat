@@ -23,10 +23,10 @@ setlocal
 if not "%VSCMD_ARG_TGT_ARCH%"=="x64" call :findvcvars
 if errorlevel 1 goto :fail
 
-if not exist obj mkdir obj
+if not exist src\obj mkdir src\obj
 
 cl /nologo /std:c++17 /W4 /WX /EHsc /permissive- /O2 /D_CRT_SECURE_NO_WARNINGS ^
-   /Fe:ed1.exe /Fo:obj\ ^
+   /Fe:ed1.exe /Fo:src\obj\ ^
    src\main.cpp src\editor.cpp src\buffer.cpp src\compile.cpp ^
    src\indent.cpp src\menu.cpp src\tree.cpp src\syntax.cpp src\toolchain.cpp ^
    src\json.cpp src\project.cpp src\find.cpp ^
@@ -42,9 +42,9 @@ goto :done
 :unit
 
 cl /nologo /std:c++17 /W4 /WX /EHsc /permissive- /D_CRT_SECURE_NO_WARNINGS ^
-   /I src /Fe:test.exe /Fo:obj\ ^
+   /I src /Fe:test.exe /Fo:src\obj\ ^
    tests\test.cpp src\compile.cpp src\indent.cpp src\syntax.cpp src\toolchain.cpp ^
-   src\json.cpp src\project.cpp src\find.cpp
+   src\json.cpp src\project.cpp src\find.cpp src\buffer.cpp
 if errorlevel 1 goto :fail
 test.exe
 if errorlevel 1 goto :fail
@@ -52,7 +52,7 @@ if not "%1"=="check" goto :done
 
 :session
 cl /nologo /std:c++17 /W4 /WX /EHsc /permissive- /D_CRT_SECURE_NO_WARNINGS ^
-   /Fe:session.exe /Fo:obj\ tests\session.cpp
+   /Fe:session.exe /Fo:src\obj\ tests\session.cpp
 if errorlevel 1 goto :fail
 session.exe ed1.exe %CC1%
 if errorlevel 1 goto :fail

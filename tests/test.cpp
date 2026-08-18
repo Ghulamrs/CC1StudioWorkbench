@@ -9,6 +9,7 @@
 #include <string>
 #include <vector>
 
+#include "buffer.h"
 #include "compile.h"
 #include "indent.h"
 #include "syntax.h"
@@ -378,6 +379,68 @@ void routing() {
           "and the define reaches the command line");
 }
 
+void undoing() {
+    std::printf("going back, and forward again\n");
+
+    editor::Buffer buf;
+    size_t cx = 0, cy = 0;
+
+    // A run of typing is one step, not one per letter.
+    const char* word = "hello";
+    for (size_t i = 0; word[i]; ++i) {
+        buf.beginEdit(editor::EditTyping, cx, cy);
+        buf.insertChar(0, cx, word[i]);
+        ++cx;
+    }
+    checkEqual(buf.line(0), "hello", "five letters typed");
+    check(buf.undoDepth() == 1, "are one step, not five");
+
+    check(buf.undo(cx, cy), "and one undo");
+    checkEqual(buf.line(0), "", "takes the word back");
+    check(cx == 0 && cy == 0, "and the caret with it");
+
+    check(buf.redo(cx, cy), "redo puts it back");
+    checkEqual(buf.line(0), "hello", "text and all");
+    check(cx == 5, "with the caret where it was");
+
+    // Moving the caret ends the run, so what comes next is its own step.
+    buf.breakRun();
+    buf.beginEdit(editor::EditTyping, cx, cy);
+    buf.insertChar(0, 5, '!');
+    check(buf.undoDepth() == 2, "after moving, the next typing is a new step");
+    check(buf.undo(cx, cy), "which undoes on its own");
+    checkEqual(buf.line(0), "hello", "leaving what came before it");
+
+    // A different kind of change is always its own step.
+    buf.beginEdit(editor::EditOther, 5, 0);
+    buf.splitLine(0, 5);
+    check(buf.lineCount() == 2, "a line is split");
+    check(buf.undo(cx, cy) && buf.lineCount() == 1, "and undoing joins it back");
+
+    // Doing something new throws away what was undone.
+    check(buf.canRedo(), "there is something to redo");
+    buf.beginEdit(editor::EditOther, 0, 0);
+    buf.insertChar(0, 0, 'x');
+    check(!buf.canRedo(), "until something else is done");
+
+    // Nothing to undo is not a failure, it is an answer.
+    editor::Buffer fresh;
+    size_t fx = 0, fy = 0;
+    check(!fresh.undo(fx, fy), "an untouched buffer has nothing to undo");
+    check(!fresh.redo(fx, fy), "and nothing to redo");
+
+    // The history is capped, and going past the cap does not break it.
+    editor::Buffer many;
+    size_t mx = 0, my = 0;
+    for (int i = 0; i < 150; ++i) {
+        many.beginEdit(editor::EditOther, mx, my);
+        many.insertChar(0, 0, 'a');
+    }
+    check(many.undoDepth() == 100, "the history stops at a hundred steps");
+    check(many.undo(mx, my), "and still undoes");
+    check(many.line(0).size() == 149, "one step at a time");
+}
+
 void searching() {
     std::printf("finding and replacing\n");
 
@@ -582,6 +645,7 @@ int main() {
     typing();
     colours();
     routing();
+    undoing();
     searching();
     jsonReading();
     projects();

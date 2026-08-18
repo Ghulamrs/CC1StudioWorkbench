@@ -662,6 +662,7 @@ void Editor::moveCursor(int key) {
         default: break;
     }
     clampCursor();
+    buf_.breakRun();
 }
 
 void Editor::moveTree(int key) {
@@ -719,9 +720,31 @@ void Editor::cycleFocus() {
     }
 }
 
-void Editor::insertChar(char c) { buf_.insertChar(cy_, cx_, c); ++cx_; }
+void Editor::insertChar(char c) {
+    buf_.beginEdit(EditTyping, cx_, cy_);
+    buf_.insertChar(cy_, cx_, c);
+    ++cx_;
+}
+
+void Editor::undoEdit() {
+    if (!buf_.undo(cx_, cy_)) { say("nothing to undo"); return; }
+    clampCursor();
+    focus_ = FocusText;
+    say("undone" + std::string(buf_.canUndo() ? "" : " - that was the last of it"));
+}
+
+void Editor::redoEdit() {
+    if (!buf_.redo(cx_, cy_)) { say("nothing to redo"); return; }
+    clampCursor();
+    focus_ = FocusText;
+    say("redone");
+}
 
 void Editor::insertNewline() {
+    // A newline stands alone, so undo gives back a line at a time rather than
+    // everything typed since the file was opened.
+    buf_.beginEdit(EditOther, cx_, cy_);
+
     std::string lead = indentAfterNewline(buf_.lines(), cy_, cx_, style_);
     buf_.splitLine(cy_, cx_);
 
@@ -739,6 +762,7 @@ void Editor::insertNewline() {
 }
 
 void Editor::backspace() {
+    buf_.beginEdit(EditErasing, cx_, cy_);
     if (cx_ > 0) {
         buf_.eraseChar(cy_, cx_ - 1);
         --cx_;
@@ -750,6 +774,7 @@ void Editor::backspace() {
 }
 
 void Editor::deleteForward() {
+    buf_.beginEdit(EditErasing, cx_, cy_);
     if (cx_ < buf_.line(cy_).size()) buf_.eraseChar(cy_, cx_);
     else if (cy_ + 1 < buf_.lineCount()) buf_.joinLine(cy_);
 }
@@ -760,6 +785,9 @@ void Editor::realign() {
     std::string want = indentFor(buf_.lines(), cy_, style_);
     if (want == line.substr(0, had)) return;
 
+    // Part of the keystroke that caused it, so undoing a typed brace takes the
+    // line's indentation back with it in one go.
+    buf_.beginEdit(EditTyping, cx_, cy_);
     buf_.replaceLine(cy_, want + line.substr(had));
     cx_ = (cx_ >= had) ? cx_ - had + want.size() : want.size();
 }
@@ -772,6 +800,7 @@ void Editor::tabKey() {
     // than 'add a step'. Anywhere else it is an ordinary indent.
     if (cx_ <= lead) {
         std::string want = indentFor(buf_.lines(), cy_, style_);
+        buf_.beginEdit(EditOther, cx_, cy_);
         buf_.replaceLine(cy_, want + line.substr(lead));
         cx_ = want.size();
         return;
@@ -824,17 +853,16 @@ void Editor::replacePrompt() {
     size_t count = replaceAll(lines, want, with);
     if (count == 0) { say(want + " is not in this file"); return; }
 
+    buf_.beginEdit(EditOther, cx_, cy_);
     buf_.replaceAll(lines);
     needle_ = with;
     clampCursor();
 
-    // Nothing is written until Ctrl-S, which is the way back if this was not
-    // what you meant: there is no undo here yet.
-    say(number(count) + (count == 1 ? " change" : " changes") +
-        " - not saved yet, so Ctrl-Q undoes it");
+    say(number(count) + (count == 1 ? " change" : " changes") + " - Ctrl-Z puts them back");
 }
 
 void Editor::reindentAll() {
+    buf_.beginEdit(EditOther, cx_, cy_);
     buf_.replaceAll(reindent(buf_.lines(), style_));
     clampCursor();
     cx_ = leadingSpace(buf_.line(cy_));
@@ -851,6 +879,7 @@ bool Editor::save() {
 
     std::string error;
     if (!buf_.save(error)) { say(error); return false; }
+    buf_.breakRun();
     say(buf_.path() + " written");
     refreshTree();
     return true;
@@ -1202,7 +1231,7 @@ void Editor::showKeys() {
     console_.push_back("Ctrl-P       project pane         Ctrl-A   lay the file out");
     console_.push_back("Ctrl-E       bottom panel         Tab      lay this line out");
     console_.push_back("Ctrl-F       find                 Ctrl-G   find the next one");
-    console_.push_back("Ctrl-R       replace");
+    console_.push_back("Ctrl-R       replace              Ctrl-Z   undo, Ctrl-Y redo");
     console_.push_back("Ctrl-S       save                 Ctrl-Q   leave");
     console_.push_back("In the project pane, enter opens. In the panel, left and right");
     console_.push_back("change tab - Console, Debug, Assembly - and on Console,");
@@ -1229,6 +1258,8 @@ void Editor::perform(Action action) {
         case ActionNextFile:     nextDocument(1); break;
         case ActionPrevFile:     nextDocument(-1); break;
         case ActionLayOut:       reindentAll(); break;
+        case ActionUndo:         undoEdit(); break;
+        case ActionRedo:         redoEdit(); break;
         case ActionFind:         findPrompt(); break;
         case ActionFindNext:     findAgain(true); break;
         case ActionFindPrevious: findAgain(false); break;
@@ -1341,6 +1372,8 @@ void Editor::processKey(int key) {
 
         case ctrl('s'): perform(ActionSave); return;
         case ctrl('b'): perform(ActionBuild); return;
+        case ctrl('z'): perform(ActionUndo); return;
+        case ctrl('y'): perform(ActionRedo); return;
         case ctrl('a'): perform(ActionLayOut); return;
         case ctrl('f'): perform(ActionFind); return;
         case ctrl('g'): perform(ActionFindNext); return;
@@ -1427,7 +1460,7 @@ void Editor::processKey(int key) {
 }
 
 void Editor::run() {
-    if (message_.empty()) say("F10 menu  Ctrl-B build  Ctrl-A lay out  Ctrl-F find  F1 keys  Ctrl-Q quit");
+    if (message_.empty()) say("F10 menu  Ctrl-B build  Ctrl-Z undo  Ctrl-F find  F1 keys  Ctrl-Q quit");
 
     int wasRows = 0, wasCols = 0;
     while (running_) {

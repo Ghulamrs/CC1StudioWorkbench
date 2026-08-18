@@ -57,11 +57,21 @@ escaped quote ends nothing, and a block comment opened above the top of the
 screen still colours what is on it. Sixteen-colour codes throughout, because
 those are the ones a Windows console renders in virtual-terminal mode.
 
+**Undo and redo**, on `Ctrl-Z` and `Ctrl-Y`. A run of typing is one step, so
+undoing gives a word back rather than one letter at a time; a newline, a
+re-layout and a replace are each a step of their own. Moving the caret ends the
+run, which is what stops a whole session collapsing into a single undo. The
+caret goes back to where it was, not just the text.
+
+It works by keeping snapshots rather than by inverting each operation. A source
+file is a few thousand short strings, the history is capped at a hundred steps,
+and the simple version is the one that cannot be subtly wrong - which for undo
+matters more than for anything else here.
+
 **Find and replace.** `Ctrl-F` asks, `Ctrl-G` moves on to the next, `Ctrl-R`
 replaces. Searching wraps round the end of the file and stops when it arrives
 back where it began. Replace changes every occurrence and says how many - and
-since nothing is written until `Ctrl-S`, quitting without saving is the way
-back, which matters because there is no undo here yet.
+`Ctrl-Z` puts them all back in one step.
 
 **Debug or release**, on `Ctrl-D` or in the Build menu, remembered in the
 project file. What each compiler can do about it differs, and the editor says
@@ -200,6 +210,9 @@ make
 make check
 ```
 
+Object files go to `src/obj`, so a listing of `src` is the code and nothing
+else.
+
 On Windows, where there is no make:
 
 ```
@@ -213,8 +226,9 @@ walks its menus, and then looks at what landed on the screen and on the disk:
 that a function typed flat comes back laid out, that keywords are coloured,
 that New file makes a file and puts it in the project, that a path two
 directories deep is refused, that Rename moves it and the project follows, that
-Delete answered with anything but `yes` keeps the file, and that find lands the caret on the
-right line and Ctrl-G moves on, that replace changes the text and quitting
+Delete answered with anything but `yes` keeps the file, and that undo takes back a run of
+typing and redo returns it, that find lands the caret on the right line and
+Ctrl-G moves on, that replace changes the text and quitting
 without saving leaves the file alone, and that a build lands the caret on the
 line the compiler named and that its two configurations produce different
 code. One program for both machines, rather
@@ -242,7 +256,7 @@ house bug, and this is the one place it was easy to prevent.
 
 `buffer`, `indent`, `menu` and `tree` touch no screen and no OS. `indent`, `syntax`, `json`, `project` and
 the diagnostic parser are the pieces with a contract, and `tests/test.cpp`
-checks them - 163 cases, including that a Windows path's drive letter is not
+checks them - 183 cases, including that a Windows path's drive letter is not
 mistaken for a `line:col` separator, that a brace inside a string is not
 counted, and that `class` is a keyword in C++ and nothing in particular in C,
 and that cl's `bad.c(3,13)` is read as well as cc1's `bad.c:3:13`. They run on
@@ -271,6 +285,7 @@ because that is what cc1's own sources use, and they contain no tab at all.
 | `Ctrl-B` | build |
 | `Ctrl-F` / `Ctrl-G` | find / find the next |
 | `Ctrl-R` | replace |
+| `Ctrl-Z` / `Ctrl-Y` | undo / redo |
 | `Ctrl-A` | lay the whole file out |
 | `Tab` | lay this line out, in the leading space |
 | `Ctrl-D` | debug or release |

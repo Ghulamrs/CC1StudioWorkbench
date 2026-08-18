@@ -6,7 +6,71 @@
 
 namespace editor {
 
-Buffer::Buffer() : lines_(1, std::string()), dirty_(false), finalNewline_(true) {}
+Buffer::Buffer()
+    : lines_(1, std::string()), lastKind_(EditNone), dirty_(false), finalNewline_(true) {}
+
+void Buffer::beginEdit(EditKind kind, size_t cx, size_t cy) {
+    // Only typing and erasing run together. EditOther means exactly what it
+    // says - a newline, a re-layout, a replace - and each one is its own step
+    // even when the last change was also one.
+    bool runs = (kind == EditTyping || kind == EditErasing);
+    if (runs && kind == lastKind_ && !undo_.empty()) return;
+
+    Snapshot before;
+    before.lines = lines_;
+    before.cx = cx;
+    before.cy = cy;
+    undo_.push_back(before);
+
+    if (undo_.size() > kMaxSteps) undo_.erase(undo_.begin());
+
+    // Anything done afresh throws away what was undone: there is one past, and
+    // a future only for as long as nothing else happens.
+    redo_.clear();
+    lastKind_ = kind;
+}
+
+bool Buffer::undo(size_t& cx, size_t& cy) {
+    if (undo_.empty()) return false;
+
+    Snapshot now;
+    now.lines = lines_;
+    now.cx = cx;
+    now.cy = cy;
+    redo_.push_back(now);
+
+    Snapshot before = undo_.back();
+    undo_.pop_back();
+    lines_ = before.lines;
+    cx = before.cx;
+    cy = before.cy;
+
+    // Marked changed either way. Undoing back to what was last saved leaves
+    // the file on disk right and the star showing, which errs the safe way.
+    dirty_ = true;
+    lastKind_ = EditNone;
+    return true;
+}
+
+bool Buffer::redo(size_t& cx, size_t& cy) {
+    if (redo_.empty()) return false;
+
+    Snapshot now;
+    now.lines = lines_;
+    now.cx = cx;
+    now.cy = cy;
+    undo_.push_back(now);
+
+    Snapshot ahead = redo_.back();
+    redo_.pop_back();
+    lines_ = ahead.lines;
+    cx = ahead.cx;
+    cy = ahead.cy;
+
+    dirty_ = true;
+    lastKind_ = EditNone;
+    return true;
+}
 
 Buffer::LoadResult Buffer::load(const std::string& path, std::string& error) {
     std::ifstream in(path.c_str(), std::ios::binary);
@@ -36,6 +100,10 @@ Buffer::LoadResult Buffer::load(const std::string& path, std::string& error) {
 
     lines_.swap(lines);
     path_ = path;
+    // A file just opened has no past worth going back to.
+    undo_.clear();
+    redo_.clear();
+    lastKind_ = EditNone;
     dirty_ = false;
     finalNewline_ = sawNewline || lines_.size() == 1;
     return Opened;

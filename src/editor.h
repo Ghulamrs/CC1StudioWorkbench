@@ -84,6 +84,8 @@ private:
     void backspace();
     void deleteForward();
     void realign();
+    void undoEdit();
+    void redoEdit();
     void tabKey();
     void reindentAll();
     void findPrompt();

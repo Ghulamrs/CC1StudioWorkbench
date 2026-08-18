@@ -7,6 +7,16 @@
 
 namespace editor {
 
+// What kind of change is being made, which decides where one undo step ends
+// and the next begins. A run of the same kind is one step: typing a word and
+// then undoing should give the word back, not one letter at a time.
+enum EditKind {
+    EditNone = 0,
+    EditTyping,
+    EditErasing,
+    EditOther      // anything that stands alone: a newline, a re-layout, a replace
+};
+
 // The text being edited, and nothing about how it is shown. A buffer always
 // holds at least one line, empty if need be, so that no caller has to ask
 // whether there is a line to put the cursor on.
@@ -35,13 +45,44 @@ public:
 
     bool dirty() const { return dirty_; }
 
+    // Called before a change, with where the caret is, so that undoing puts it
+    // back where it was as well as putting the text back. Snapshots rather
+    // than inverse operations: a source file is a few thousand short strings,
+    // and the simple version is the one that cannot be subtly wrong.
+    void beginEdit(EditKind kind, size_t cx, size_t cy);
+
+    // Ends the current run, so the next change of the same kind starts a new
+    // step. Moving the caret does this, which is what stops a whole session's
+    // typing from collapsing into one undo.
+    void breakRun() { lastKind_ = EditNone; }
+
+    bool undo(size_t& cx, size_t& cy);
+    bool redo(size_t& cx, size_t& cy);
+    bool canUndo() const { return !undo_.empty(); }
+    bool canRedo() const { return !redo_.empty(); }
+    size_t undoDepth() const { return undo_.size(); }
+
     void insertChar(size_t row, size_t col, char c);
     void eraseChar(size_t row, size_t col);   // erases the character at col
     void splitLine(size_t row, size_t col);   // col onwards becomes a new line
     void joinLine(size_t row);                // appends row + 1 onto row
 
 private:
+    // Where the text and the caret were before one step's worth of changes.
+    struct Snapshot {
+        std::vector<std::string> lines;
+        size_t cx;
+        size_t cy;
+    };
+
+    // Enough to go back a long way and not enough to matter: a hundred copies
+    // of a thousand-line file is a few megabytes, and files here are smaller.
+    static const size_t kMaxSteps = 100;
+
     std::vector<std::string> lines_;
+    std::vector<Snapshot> undo_;
+    std::vector<Snapshot> redo_;
+    EditKind lastKind_;
     std::string path_;
     bool dirty_;
     // Whether the file ended with a newline when it was read. Kept so that

@@ -36,32 +36,39 @@ SRC := src/main.cpp src/editor.cpp src/buffer.cpp src/compile.cpp \
        src/toolchain.cpp src/json.cpp src/project.cpp src/find.cpp \
        src/terminal_common.cpp \
        $(TERM_SRC)
-OBJ := $(SRC:.cpp=.o)
+
+# The objects go under src/obj rather than beside the sources they came from,
+# so that a listing of src/ is the code and nothing else.
+OBJDIR := src/obj
+OBJ := $(patsubst src/%.cpp,$(OBJDIR)/%.o,$(SRC))
 
 ed1: $(OBJ)
 	$(CXX) $(CXXFLAGS) -o $@ $(OBJ)
 
-%.o: %.cpp
+$(OBJDIR)/%.o: src/%.cpp | $(OBJDIR)
 	$(CXX) $(CXXFLAGS) -c -o $@ $<
 
-src/main.o:     src/editor.h src/buffer.h src/compile.h src/terminal.h src/indent.h \
+$(OBJDIR):
+	mkdir -p $(OBJDIR)
+
+$(OBJDIR)/main.o:     src/editor.h src/buffer.h src/compile.h src/terminal.h src/indent.h \
                 src/menu.h src/tree.h
-src/editor.o:   src/editor.h src/buffer.h src/compile.h src/terminal.h src/indent.h \
+$(OBJDIR)/editor.o:   src/editor.h src/buffer.h src/compile.h src/terminal.h src/indent.h \
                 src/menu.h src/tree.h
-src/indent.o:   src/indent.h
-src/menu.o:     src/menu.h src/terminal.h
-src/tree.o:     src/tree.h
-src/syntax.o:   src/syntax.h
-src/toolchain.o: src/toolchain.h src/syntax.h
-src/json.o:     src/json.h
-src/find.o:     src/find.h
-src/project.o:  src/project.h src/json.h src/indent.h src/toolchain.h
-src/compile.o:  src/compile.h src/toolchain.h
-src/buffer.o:   src/buffer.h
-src/compile.o:  src/compile.h
-src/terminal.o: src/terminal.h
-src/terminal_common.o: src/terminal.h
-src/terminal_win.o: src/terminal.h
+$(OBJDIR)/indent.o:   src/indent.h
+$(OBJDIR)/menu.o:     src/menu.h src/terminal.h
+$(OBJDIR)/tree.o:     src/tree.h
+$(OBJDIR)/syntax.o:   src/syntax.h
+$(OBJDIR)/toolchain.o: src/toolchain.h src/syntax.h
+$(OBJDIR)/json.o:     src/json.h
+$(OBJDIR)/find.o:     src/find.h
+$(OBJDIR)/project.o:  src/project.h src/json.h src/indent.h src/toolchain.h
+$(OBJDIR)/compile.o:  src/compile.h src/toolchain.h
+$(OBJDIR)/buffer.o:   src/buffer.h
+$(OBJDIR)/compile.o:  src/compile.h
+$(OBJDIR)/terminal.o: src/terminal.h
+$(OBJDIR)/terminal_common.o: src/terminal.h
+$(OBJDIR)/terminal_win.o: src/terminal.h
 
 # The two pieces with a contract: the layout rules, and the reading of cc1's
 # diagnostic - which has to cope with a Windows path whose drive letter is
@@ -71,9 +78,11 @@ test: tests/test
 
 tests/test: tests/test.cpp src/compile.cpp src/indent.cpp src/syntax.cpp \
             src/toolchain.cpp src/json.cpp src/project.cpp src/find.cpp \
-            src/compile.h src/indent.h src/syntax.h src/json.h src/project.h
+            src/buffer.cpp src/compile.h src/indent.h src/syntax.h src/json.h \
+            src/project.h src/buffer.h
 	$(CXX) $(CXXFLAGS) -Isrc -o $@ tests/test.cpp src/compile.cpp src/indent.cpp \
-	    src/syntax.cpp src/toolchain.cpp src/json.cpp src/project.cpp src/find.cpp
+	    src/syntax.cpp src/toolchain.cpp src/json.cpp src/project.cpp src/find.cpp \
+	    src/buffer.cpp
 
 # The other half of the checking: the editor itself, driven by keystrokes.
 # CC1 names a compiler for the build cases; without one they are skipped.
@@ -86,7 +95,7 @@ tests/session: tests/session.cpp
 check: test session
 
 clean:
-	rm -f $(OBJ) src/terminal.o src/terminal_win.o src/terminal_common.o ed1 \
-	      tests/test tests/session
+	rm -rf $(OBJDIR)
+	rm -f ed1 tests/test tests/session
 
 .PHONY: test session check clean

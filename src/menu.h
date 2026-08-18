@@ -21,6 +21,8 @@ enum Action {
     ActionCloseFile,
     ActionNextFile,
     ActionPrevFile,
+    ActionUndo,
+    ActionRedo,
     ActionLayOut,
     ActionFind,
     ActionFindNext,

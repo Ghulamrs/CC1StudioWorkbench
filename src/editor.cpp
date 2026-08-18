@@ -816,6 +816,14 @@ void Editor::goToProblem() {
 }
 
 void Editor::compile() {
+    // Said here rather than left to a wall of parse errors. cc1 is a C
+    // compiler; handed C++ it fails somewhere inside the first class, and the
+    // diagnostic it gives explains nothing about why.
+    if (lang_ == LangCpp && tool_.kind == ToolCc1) {
+        say("cc1 compiles C, not C++ - Ctrl-K switches to cl");
+        return;
+    }
+
     // cc1 reads a file, not a screen. Anything unsaved would not be in the
     // build, so saving is part of building rather than something to remember.
     if (buf_.dirty() || buf_.path().empty()) {

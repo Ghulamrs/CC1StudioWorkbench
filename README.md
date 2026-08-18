@@ -94,6 +94,26 @@ Three tabs:
   so rather than sitting blank, and filling it is compiler work.
 * **Assembly** - what `-S` produced.
 
+## Trying it
+
+```
+ed1 examples/smart.cpp --project examples --toolchain msvc
+```
+
+`examples/smart.cpp` is the one to open first. It is a small owning class - one
+object, deleted once, moved rather than copied, copying refused by the compiler
+rather than by the destructor - and something that exercises it and prints what
+it is doing. It is C++ on purpose: cc1 compiles C, so this is the file that
+shows the MSVC backend doing the work. Ctrl-B fills the assembly tab with cl's
+listing.
+
+`examples/hello.c` is the C one, for cc1, where Ctrl-T changes which of the
+three architectures the assembly is for.
+
+Handing C++ to cc1 is caught before it is run: the editor says so and points at
+Ctrl-K, rather than letting a C compiler fail somewhere inside the first class
+with a diagnostic that explains nothing.
+
 ## Building
 
 On a Mac or on Linux:

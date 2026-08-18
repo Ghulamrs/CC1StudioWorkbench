@@ -37,8 +37,9 @@ extern const char* const kArches[3];
 // is for: a build that says nothing until it is over looks like one that hung.
 typedef void (*LineSink)(void* context, const std::string& line);
 
-Build build(const Toolchain& tool, const std::string& sourcePath,
-            const std::string& arch, LineSink sink = 0, void* context = 0);
+Build build(const Toolchain& tool, ToolchainKind kind, const std::string& sourcePath,
+            Language lang, const std::string& arch, LineSink sink = 0,
+            void* context = 0);
 
 // Reads whichever of the two spellings a compiler used:
 //

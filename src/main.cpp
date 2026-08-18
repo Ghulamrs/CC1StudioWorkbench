@@ -10,7 +10,7 @@ int main(int argc, char** argv) {
     std::string cc1;
     std::string project;
     std::string toolchain;
-    std::string compiler;
+    std::string cl;
     editor::IndentStyle style;
 
     for (int i = 1; i < argc; ++i) {
@@ -18,8 +18,8 @@ int main(int argc, char** argv) {
             cc1 = argv[++i];
         } else if (std::strcmp(argv[i], "--toolchain") == 0 && i + 1 < argc) {
             toolchain = argv[++i];
-        } else if (std::strcmp(argv[i], "--compiler") == 0 && i + 1 < argc) {
-            compiler = argv[++i];
+        } else if (std::strcmp(argv[i], "--cl") == 0 && i + 1 < argc) {
+            cl = argv[++i];
         } else if (std::strcmp(argv[i], "--project") == 0 && i + 1 < argc) {
             project = argv[++i];
         } else if (std::strcmp(argv[i], "--width") == 0 && i + 1 < argc) {
@@ -32,17 +32,18 @@ int main(int argc, char** argv) {
         } else if (std::strcmp(argv[i], "-h") == 0 ||
                    std::strcmp(argv[i], "--help") == 0) {
             std::printf(
-                "usage: ed1 [file.c] [--project dir] [--toolchain cc1|msvc]\n"
-                "           [--compiler path] [--cc1 path]\n"
+                "usage: ed1 [file.c] [--project dir] [--toolchain auto|cc1|msvc]\n"
+                "           [--cc1 path] [--cl path]\n"
                 "           [--width n] [--tabs] [--case-indent]\n"
                 "  an editor for the cc1 compiler\n"
                 "\n"
-                "  --toolchain    cc1 (the default) or msvc; msvc runs cl, and\n"
-                "                 needs a Developer Command Prompt for it to be found\n"
-                "  --compiler     the program to run, whichever toolchain is chosen\n"
-                "  --cc1          the same thing, named for the usual case; $CC1\n"
-                "                 does it too, and without any of them the compiler\n"
-                "                 is looked for on PATH\n"
+                "  --toolchain    auto (the default) lets the file choose: C goes\n"
+                "                 to cc1, C++ to cl, since cc1 compiles C. Naming\n"
+                "                 cc1 or msvc uses that one for everything\n"
+                "  --cc1, --cl    the programs to run; $CC1 names the first, and\n"
+                "                 without either they are looked for on PATH. cl is\n"
+                "                 also found through Visual Studio 2022 itself, so\n"
+                "                 no Developer Command Prompt is needed\n"
                 "  --project      what the pane on the left shows; the file's own\n"
                 "                 directory by default\n"
                 "  --width n      columns per indent step (4)\n"
@@ -65,15 +66,15 @@ int main(int argc, char** argv) {
 
     if (toolchain == "msvc" || toolchain == "cl") {
         ed.setToolchain(editor::ToolMsvc);
-    } else if (!toolchain.empty() && toolchain != "cc1") {
+    } else if (toolchain == "cc1") {
+        ed.setToolchain(editor::ToolCc1);
+    } else if (!toolchain.empty() && toolchain != "auto") {
         std::fprintf(stderr, "ed1: unknown toolchain %s\n", toolchain.c_str());
         return 2;
     }
 
-    // --compiler is applied after the toolchain, so it overrides the default
-    // program that choosing a toolchain sets.
-    if (!compiler.empty()) ed.setCompiler(compiler);
     if (!cc1.empty()) ed.setCc1(cc1);
+    if (!cl.empty()) ed.setCl(cl);
 
     // The project pane opens on the file's own directory unless told otherwise,
     // which is nearly always the directory someone wants to see.

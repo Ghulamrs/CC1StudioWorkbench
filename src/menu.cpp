@@ -48,8 +48,9 @@ Menu::Menu() : active_(false), dropped_(false), column_(0), item_(0) {
     // be.
     MenuColumn tools;
     tools.title = "Tools";
-    tools.items.push_back({"cc1", "Ctrl-K", ActionToolCc1});
-    tools.items.push_back({"MSVC (cl)", "Ctrl-K", ActionToolMsvc});
+    tools.items.push_back({"By language", "Ctrl-K", ActionToolAuto});
+    tools.items.push_back({"cc1", "", ActionToolCc1});
+    tools.items.push_back({"MSVC (cl)", "", ActionToolMsvc});
     columns_.push_back(tools);
 
     MenuColumn help;

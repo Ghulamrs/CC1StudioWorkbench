@@ -4,46 +4,65 @@
 #include <string>
 #include <vector>
 
+#include "syntax.h"
+
 namespace editor {
 
-// What compiles the file. cc1 is what this editor was written for, but nothing
-// above this header knows that: a toolchain is a command to run, a file it
-// leaves the assembly in, and a way of reading what it complains about. MSVC is
-// the second one, and a third would be this much work again and no more.
+// What compiles the file. Nothing above this header knows which compiler is
+// running: a toolchain is a command, a file the assembly lands in, and a way of
+// reading complaints. Two are built in, and each is handed the language it is
+// good for rather than being left to guess from a suffix.
 enum ToolchainKind {
-    ToolCc1 = 0,
-    ToolMsvc,
+    ToolAuto = 0,   // the file's language chooses
+    ToolCc1,        // C, and the three architectures cc1 generates for
+    ToolMsvc,       // C and C++, on the host cl was installed for
     ToolCount
 };
 
 struct Toolchain {
     ToolchainKind kind;
-    std::string program;   // what to run; the default depends on the kind
+    std::string cc1;   // the program to run for the cc1 toolchain
+    std::string cl;    // the program to run for the MSVC one
 
-    Toolchain() : kind(ToolCc1), program("cc1") {}
+    Toolchain() : kind(ToolAuto), cc1("cc1"), cl("cl") {}
 };
 
+// Which one actually runs, once the file's language is known. This is the whole
+// of the routing rule: cc1 is a C compiler, so C++ goes to the one that can
+// take it, and C goes to the compiler this editor was written for.
+ToolchainKind resolve(const Toolchain& tool, Language lang);
+
 const char* toolchainName(ToolchainKind kind);
-const char* defaultProgram(ToolchainKind kind);
+const char* programOf(const Toolchain& tool, ToolchainKind kind);
 
 // Whether -arch means anything to it. cc1 generates for three architectures;
-// cl generates for the one it was installed as, and offering a choice that
-// does nothing would be a lie told by the status bar.
+// cl generates for the one it was installed as, and offering a choice that does
+// nothing would be the status bar telling a lie.
 bool usesArch(ToolchainKind kind);
 
-// What to run, where the assembly will be, and what to clear up afterwards.
+// Whether it can take the language at all, and why not when it cannot.
+bool canCompile(ToolchainKind kind, Language lang);
+std::string refusal(ToolchainKind kind, Language lang);
+
 struct Recipe {
     std::string command;
     std::string assemblyPath;
     std::vector<std::string> leftovers;
 };
 
-Recipe assemblyRecipe(const Toolchain& tool, const std::string& source,
+Recipe assemblyRecipe(const Toolchain& tool, ToolchainKind kind,
+                      const std::string& source, Language lang,
                       const std::string& arch);
 
-// The command without the redirection, for showing in the console.
-std::string shownCommand(const Toolchain& tool, const std::string& source,
+std::string shownCommand(const Toolchain& tool, ToolchainKind kind,
+                         const std::string& source, Language lang,
                          const std::string& arch);
+
+// Puts this process into the environment a Developer Command Prompt would have,
+// once, so that cl can be found when the editor was started from an ordinary
+// console. Does nothing anywhere but Windows, and nothing when already inside
+// one. Returns false if Visual Studio could not be found at all.
+bool prepareFor(ToolchainKind kind);
 
 }  // namespace editor
 

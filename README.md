@@ -64,12 +64,23 @@ own line picked out. `Ctrl-L` turns them off.
 F2 and F3 move between them. Each tab remembers its own caret and its own
 scroll, so coming back to a file puts you where you were rather than at the top.
 
-**It is not tied to cc1.** A toolchain is a command to run, a file it leaves the
-assembly in, and a way of reading what it complains about - so MSVC works too.
-`Ctrl-K`, or the Tools menu, switches between them; `--toolchain msvc` starts
-there. With `cl` selected the target chooser goes quiet, because cl builds for
-the host it was installed as and a menu offering a choice that does nothing
-would be the status bar telling a lie.
+**The file chooses its own compiler.** cc1 compiles C; C++ goes to cl. That is
+the whole routing rule, and it is the default - the status bar shows what will
+actually run, with a `*` when the file is what picked it. `Ctrl-K` cycles
+through automatic, cc1-for-everything and cl-for-everything when you want to
+say so yourself; a choice made by hand is kept rather than quietly overridden,
+and a file the chosen compiler cannot take is turned away with a reason instead
+of a wall of somebody else's parse errors.
+
+Each compiler is also *told* which language it is being handed - `/TC` or
+`/TP /EHsc /std:c++17` - rather than left to infer it from the suffix.
+
+**cl is found without a Developer Command Prompt.** ed1 asks Visual Studio 2022
+where it lives, runs `vcvars64` once, and keeps the environment for the rest of
+the session. Started from an ordinary console with `cl` nowhere on PATH, it
+still builds C++. With `cl` in use the target chooser goes quiet, because cl
+builds for the host it was installed as and a menu offering a choice that does
+nothing would be the status bar telling a lie.
 
 Both diagnostic spellings are read without being told which to expect:
 
@@ -149,7 +160,7 @@ house bug, and this is the one place it was easy to prevent.
 
 `buffer`, `indent`, `menu` and `tree` touch no screen and no OS. `indent`, `syntax` and
 the diagnostic parser are the pieces with a contract, and `tests/test.cpp`
-checks them - 61 cases, including that a Windows path's drive letter is not
+checks them - 76 cases, including that a Windows path's drive letter is not
 mistaken for a `line:col` separator, that a brace inside a string is not
 counted, and that `class` is a keyword in C++ and nothing in particular in C,
 and that cl's `bad.c(3,13)` is read as well as cc1's `bad.c:3:13`. They run on

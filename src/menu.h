@@ -32,6 +32,7 @@ enum Action {
     ActionArchWindows,
     ActionArchLinux,
     ActionArchDarwin,
+    ActionToolAuto,
     ActionToolCc1,
     ActionToolMsvc,
     ActionKeys

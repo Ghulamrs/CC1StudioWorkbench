@@ -10,6 +10,7 @@
 #include "compile.h"
 #include "indent.h"
 #include "syntax.h"
+#include "toolchain.h"
 
 namespace {
 
@@ -294,6 +295,50 @@ void colours() {
                "the mnemonic is the first word");
 }
 
+void routing() {
+    std::printf("which compiler gets the file\n");
+
+    editor::Toolchain automatic;   // ToolAuto by default
+
+    check(editor::resolve(automatic, editor::LangC) == editor::ToolCc1,
+          "C goes to cc1, which is what this editor is for");
+    check(editor::resolve(automatic, editor::LangCpp) == editor::ToolMsvc,
+          "C++ goes to cl, because cc1 compiles C");
+    check(editor::resolve(automatic, editor::LangPlain) == editor::ToolCc1,
+          "anything else falls to cc1, and is refused there rather than here");
+
+    // A choice made by hand is kept, even when it is the wrong one - the editor
+    // says why rather than quietly doing something else.
+    editor::Toolchain byHand;
+    byHand.kind = editor::ToolCc1;
+    check(editor::resolve(byHand, editor::LangCpp) == editor::ToolCc1,
+          "a hand-picked compiler is not overridden");
+
+    check(!editor::canCompile(editor::ToolCc1, editor::LangCpp),
+          "cc1 cannot take C++");
+    check(editor::canCompile(editor::ToolMsvc, editor::LangCpp), "cl can");
+    check(editor::canCompile(editor::ToolMsvc, editor::LangC), "cl takes C as well");
+    check(editor::canCompile(editor::ToolCc1, editor::LangC), "and so does cc1");
+    check(!editor::canCompile(editor::ToolCc1, editor::LangAsm),
+          "assembly is shown, not compiled");
+
+    check(editor::usesArch(editor::ToolCc1), "cc1 generates for three architectures");
+    check(!editor::usesArch(editor::ToolMsvc),
+          "cl generates for its own host, so no target is offered");
+
+    // The flags each compiler is given for each language.
+    editor::Toolchain tool;
+    std::string cpp = editor::shownCommand(tool, editor::ToolMsvc, "a.cpp",
+                                           editor::LangCpp, "x86_64-windows");
+    check(cpp.find("/TP") != std::string::npos, "C++ is compiled as C++, and said so");
+    check(cpp.find("/EHsc") != std::string::npos, "with exceptions turned on");
+
+    std::string c = editor::shownCommand(tool, editor::ToolMsvc, "a.c",
+                                         editor::LangC, "x86_64-windows");
+    check(c.find("/TC") != std::string::npos, "C is compiled as C");
+    check(c.find("/TP") == std::string::npos, "and not as C++");
+}
+
 }  // namespace
 
 int main() {
@@ -301,6 +346,7 @@ int main() {
     layout();
     typing();
     colours();
+    routing();
 
     std::printf("\n%d checks, %d failed\n", checks, failures);
     return failures == 0 ? 0 : 1;

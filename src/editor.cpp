@@ -127,7 +127,7 @@ Editor::Editor()
     arch_ = 1;
 #endif
     const char* fromEnv = std::getenv("CC1");
-    if (fromEnv && *fromEnv) tool_.program = fromEnv;
+    if (fromEnv && *fromEnv) tool_.cc1 = fromEnv;
 
     console_.push_back("cc1 output appears here.  Ctrl-B builds.");
     resetDebug();
@@ -486,13 +486,17 @@ void Editor::drawStatus(std::string& out) const {
     if (buf_.dirty()) left += " *";
     left += "  " + lineCountText(buf_.lineCount());
 
+    // What will actually run, not what was picked - with a mark when the file
+    // is what picked it.
+    ToolchainKind kind = resolve(tool_, lang_);
     std::string right = languageName(lang_);
     right += "  ";
-    right += toolchainName(tool_.kind);
+    right += toolchainName(kind);
+    if (tool_.kind == ToolAuto) right += "*";
     // The target is only shown when it means something. cl generates for the
     // host it was installed as, and offering a choice that does nothing would
     // be the status bar telling a lie.
-    if (usesArch(tool_.kind)) {
+    if (usesArch(kind)) {
         right += " ";
         right += kArches[arch_];
     }
@@ -816,11 +820,13 @@ void Editor::goToProblem() {
 }
 
 void Editor::compile() {
-    // Said here rather than left to a wall of parse errors. cc1 is a C
-    // compiler; handed C++ it fails somewhere inside the first class, and the
-    // diagnostic it gives explains nothing about why.
-    if (lang_ == LangCpp && tool_.kind == ToolCc1) {
-        say("cc1 compiles C, not C++ - Ctrl-K switches to cl");
+    // Which compiler runs is decided here, from the language, unless the
+    // choice was taken by hand. Said before anything else so that a file that
+    // cannot be compiled at all is turned away with a reason rather than with
+    // a wall of somebody else's parse errors.
+    ToolchainKind kind = resolve(tool_, lang_);
+    if (!canCompile(kind, lang_)) {
+        say(refusal(kind, lang_));
         return;
     }
 
@@ -833,14 +839,15 @@ void Editor::compile() {
     panelOpen_ = true;
     tab_ = TabConsole;
     console_.clear();
-    console_.push_back("$ " + shownCommand(tool_, buf_.path(), kArches[arch_]));
+    console_.push_back("$ " + shownCommand(tool_, kind, buf_.path(), lang_, kArches[arch_]));
     panelOff_ = 0;
-    say(std::string("building with ") + toolchainName(tool_.kind) +
-        (usesArch(tool_.kind) ? std::string(" for ") + kArches[arch_] : std::string()) +
+    say(std::string("building with ") + toolchainName(kind) +
+        (usesArch(kind) ? std::string(" for ") + kArches[arch_] : std::string()) +
         " ...");
     refresh();
 
-    Build result = build(tool_, buf_.path(), kArches[arch_], consoleSink, this);
+    Build result = build(tool_, kind, buf_.path(), lang_, kArches[arch_],
+                         consoleSink, this);
 
     assembly_ = result.asmLines;
     lastDiag_ = result.diag;
@@ -865,15 +872,14 @@ void Editor::compile() {
         say(number(result.diag.line) + ":" + number(result.diag.col) + ": error: " +
             result.diag.message);
     } else if (!result.ok) {
-        console_.push_back(std::string(toolchainName(tool_.kind)) + " failed");
-        say(std::string(toolchainName(tool_.kind)) + " failed - see the console");
+        console_.push_back(std::string(toolchainName(kind)) + " failed");
+        say(std::string(toolchainName(kind)) + " failed - see the console");
     } else {
         console_.push_back("ok - " + number(assembly_.size()) + " lines of assembly");
         tab_ = TabAssembly;
         panelOff_ = 0;
         say(number(assembly_.size()) + " lines of " +
-            (usesArch(tool_.kind) ? kArches[arch_] : toolchainName(tool_.kind)) +
-            " assembly");
+            (usesArch(kind) ? kArches[arch_] : toolchainName(kind)) + " assembly");
     }
 }
 
@@ -883,7 +889,7 @@ void Editor::showKeys() {
     console_.clear();
     console_.push_back("F10          the menu             Ctrl-B   build with cc1");
     console_.push_back("F2 / F3      previous / next file Ctrl-L   line numbers");
-    console_.push_back("Ctrl-K       cc1 or cl            Ctrl-T   next target");
+    console_.push_back("Ctrl-K       automatic, cc1, cl   Ctrl-T   next target");
     console_.push_back("Ctrl-W       next pane            Ctrl-T   next target");
     console_.push_back("Ctrl-P       project pane         Ctrl-F   lay the file out");
     console_.push_back("Ctrl-E       bottom panel         Tab      lay this line out");
@@ -931,15 +937,18 @@ void Editor::perform(Action action) {
                     ? std::string("target: ") + kArches[arch_]
                     : std::string("target is a cc1 setting - cl builds for its own host"));
             break;
+        case ActionToolAuto:
+            tool_.kind = ToolAuto;
+            say(std::string("compiler: chosen by the file - this one goes to ") +
+                toolchainName(resolve(tool_, lang_)));
+            break;
         case ActionToolCc1:
-            setToolchain(ToolCc1);
-            say("compiler: cc1");
+            tool_.kind = ToolCc1;
+            say("compiler: cc1, for every file");
             break;
         case ActionToolMsvc:
-            // cl is only on PATH inside a Developer Command Prompt, and saying
-            // so here saves a puzzled minute later.
-            setToolchain(ToolMsvc);
-            say("compiler: cl - run ed1 from a Developer Command Prompt");
+            tool_.kind = ToolMsvc;
+            say("compiler: cl, for every file");
             break;
         case ActionKeys:         showKeys(); break;
         case ActionNone:         break;
@@ -1001,7 +1010,11 @@ void Editor::processKey(int key) {
         case ctrl('l'): perform(ActionToggleNumbers); return;
 
         case ctrl('k'):
-            perform(tool_.kind == ToolCc1 ? ActionToolMsvc : ActionToolCc1);
+            // Round the three rather than between two, so automatic is never
+            // more than two presses away from wherever you are.
+            perform(tool_.kind == ToolAuto ? ActionToolCc1
+                                           : (tool_.kind == ToolCc1 ? ActionToolMsvc
+                                                                    : ActionToolAuto));
             return;
         case ctrl('w'): cycleFocus(); return;
 

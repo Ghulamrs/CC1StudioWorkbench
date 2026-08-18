@@ -39,12 +39,9 @@ public:
     void switchTo(size_t index);
     void nextDocument(int by);
     void openProject(const std::string& path);
-    void setCc1(const std::string& path) { tool_.program = path; }
-    void setToolchain(ToolchainKind kind) {
-        tool_.kind = kind;
-        tool_.program = defaultProgram(kind);
-    }
-    void setCompiler(const std::string& path) { tool_.program = path; }
+    void setCc1(const std::string& path) { tool_.cc1 = path; }
+    void setCl(const std::string& path) { tool_.cl = path; }
+    void setToolchain(ToolchainKind kind) { tool_.kind = kind; }
     void setStyle(const IndentStyle& style) { style_ = style; }
     void run();
 

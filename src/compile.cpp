@@ -101,11 +101,20 @@ Diagnostic parseDiagnostic(const std::string& text) {
     return d;
 }
 
-Build build(const Toolchain& tool, const std::string& sourcePath,
-            const std::string& arch, LineSink sink, void* context) {
+Build build(const Toolchain& tool, ToolchainKind kind, const std::string& sourcePath,
+            Language lang, const std::string& arch, LineSink sink, void* context) {
     Build result;
 
-    Recipe recipe = assemblyRecipe(tool, sourcePath, arch);
+    // Puts this process into a Developer Command Prompt's environment if it is
+    // not already in one, so that cl can be found when the editor was started
+    // from an ordinary console. Nothing happens off Windows.
+    if (!prepareFor(kind)) {
+        result.output = "no Visual Studio 2022 found - cl cannot be run\n";
+        if (sink) sink(context, "no Visual Studio 2022 found - cl cannot be run");
+        return result;
+    }
+
+    Recipe recipe = assemblyRecipe(tool, kind, sourcePath, lang, arch);
     std::string cmd = recipe.command + " 2>&1";
 
 #ifdef _WIN32
@@ -121,7 +130,7 @@ Build build(const Toolchain& tool, const std::string& sourcePath,
 
     FILE* pipe = POPEN(cmd.c_str(), "r");
     if (!pipe) {
-        result.output = "could not run " + tool.program;
+        result.output = std::string("could not run ") + programOf(tool, kind);
         return result;
     }
 
@@ -144,6 +153,18 @@ Build build(const Toolchain& tool, const std::string& sourcePath,
     int status = PCLOSE(pipe);
     result.ok = (status == 0);
     result.diag = parseDiagnostic(result.output);
+
+    // A shell that could not find the program says so in its own words, which
+    // differ per platform and explain nothing about how to fix it here.
+    if (!result.ok && !result.diag.present &&
+        (result.output.find("not found") != std::string::npos ||
+         result.output.find("not recognized") != std::string::npos ||
+         result.output.find("No such file") != std::string::npos)) {
+        std::string hint = std::string(programOf(tool, kind)) +
+                           " could not be run - name it with --compiler, or put it on PATH";
+        result.output += hint + "\n";
+        if (sink) sink(context, hint);
+    }
 
     if (result.ok) {
         std::ifstream in(recipe.assemblyPath.c_str());

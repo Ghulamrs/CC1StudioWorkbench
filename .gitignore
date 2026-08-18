@@ -10,3 +10,5 @@ tests/test
 *.ilk
 *.o.tmp
 .DS_Store
+.build/
+.swiftpm/

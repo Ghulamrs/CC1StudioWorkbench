@@ -235,6 +235,23 @@ make check
 Object files go to `src/obj`, so a listing of `src` is the code and nothing
 else.
 
+### In Xcode
+
+```
+open Package.swift
+```
+
+Xcode opens the manifest directly, offers an `ed1` scheme, and builds, indexes
+and debugs the same sources - nothing in `src/` is arranged to suit it, and
+`make` stays the authority. `xcodebuild -scheme ed1 build` does the same from a
+shell, and the binary it produces passes the whole session harness.
+
+One thing to know before reaching for the Run button: ed1 is a terminal
+program, and Xcode's console is a pipe rather than a terminal. Started from
+there it cannot put the terminal into raw mode and will print escape sequences
+instead of drawing. Build and debug it in Xcode; run it in Terminal, and attach
+from Xcode if you want breakpoints while it is running.
+
 On Windows, where there is no make:
 
 ```

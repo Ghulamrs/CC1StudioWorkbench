@@ -6,6 +6,8 @@
 #include <string>
 #include <vector>
 
+#include "project.h"
+
 namespace editor {
 
 // The project down the left. Directories are read with std::filesystem rather
@@ -16,6 +18,7 @@ struct TreeEntry {
     std::string path;
     std::string name;
     bool directory = false;
+    bool group = false;    // a project's group, which is not a directory
     bool open = false;
     int depth = 0;
 };
@@ -25,6 +28,11 @@ public:
     Tree();
 
     void setRoot(const std::string& path);
+
+    // Shows the project's groups instead of the directory. A group is not a
+    // directory and nothing on disk matches it, which is the point: it is the
+    // project's own arrangement of the same files.
+    void showProject(const Project& project);
     const std::string& root() const { return root_; }
     const std::string& error() const { return error_; }
 
@@ -41,6 +49,7 @@ public:
 
 private:
     void gather(const std::string& dir, int depth);
+    bool showingProject_;
 
     std::string root_;
     std::string error_;

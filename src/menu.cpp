@@ -25,6 +25,20 @@ Menu::Menu() : active_(false), dropped_(false), column_(0), item_(0) {
     edit.items.push_back({"Line numbers", "Ctrl-L", ActionToggleNumbers});
     columns_.push_back(edit);
 
+    // Everything that changes what the project holds, in one place. The file
+    // commands act on whatever the project pane is standing on, or on the file
+    // being edited when it is not.
+    MenuColumn project;
+    project.title = "Project";
+    project.items.push_back({"New project", "", ActionProjectNew});
+    project.items.push_back({"Save project", "", ActionProjectSave});
+    project.items.push_back({"Add this file", "", ActionProjectAdd});
+    project.items.push_back({"New file...", "", ActionFileCreate});
+    project.items.push_back({"Rename...", "", ActionFileRename});
+    project.items.push_back({"Move to group...", "", ActionFileRegroup});
+    project.items.push_back({"Delete...", "", ActionFileDelete});
+    columns_.push_back(project);
+
     MenuColumn build;
     build.title = "Build";
     build.items.push_back({"Compile", "Ctrl-B", ActionBuild});

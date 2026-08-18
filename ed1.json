@@ -1,0 +1,56 @@
+{
+  "name": "ed1",
+  "toolchain": "auto",
+  "arch": "x86_64-windows",
+  "indent": 4,
+  "tabs": false,
+  "groups": {
+    "Editor": [
+      "src/buffer.cpp",
+      "src/buffer.h",
+      "src/editor.cpp",
+      "src/editor.h",
+      "src/main.cpp",
+      "src/menu.cpp",
+      "src/menu.h",
+      "src/tree.cpp",
+      "src/tree.h"
+    ],
+    "Rules": [
+      "src/indent.cpp",
+      "src/indent.h",
+      "src/json.cpp",
+      "src/json.h",
+      "src/project.cpp",
+      "src/project.h",
+      "src/syntax.cpp",
+      "src/syntax.h"
+    ],
+    "Compilers": [
+      "src/compile.cpp",
+      "src/compile.h",
+      "src/toolchain.cpp",
+      "src/toolchain.h"
+    ],
+    "Terminal": [
+      "src/terminal.cpp",
+      "src/terminal.h",
+      "src/terminal.o",
+      "src/terminal_common.cpp",
+      "src/terminal_common.o",
+      "src/terminal_win.cpp"
+    ],
+    "Tests": [
+      "tests/test.cpp"
+    ],
+    "Examples": [
+      "examples/hello.c",
+      "examples/smart.cpp"
+    ],
+    "Build": [
+      "Makefile",
+      "build.bat",
+      "README.md"
+    ]
+  }
+}

@@ -21,17 +21,51 @@ bool skip(const std::string& name) {
 
 }  // namespace
 
-Tree::Tree() {}
+Tree::Tree() : showingProject_(false) {}
 
 void Tree::setRoot(const std::string& path) {
     std::error_code ec;
     fs::path p = fs::absolute(fs::path(path), ec);
     root_ = ec ? path : p.lexically_normal().string();
+    showingProject_ = false;
     opened_.clear();
     reread();
 }
 
+void Tree::showProject(const Project& project) {
+    showingProject_ = true;
+    root_ = project.root();
+    error_.clear();
+    entries_.clear();
+
+    for (size_t i = 0; i < project.groups().size(); ++i) {
+        const Group& group = project.groups()[i];
+
+        TreeEntry head;
+        head.name = group.name;
+        // Marked with a name no path can collide with, so a group called src
+        // and a directory called src do not open and close together.
+        head.path = "group:" + group.name;
+        head.directory = true;
+        head.group = true;
+        head.depth = 0;
+        head.open = opened_.count(head.path) > 0 || opened_.empty();
+        entries_.push_back(head);
+
+        if (!head.open) continue;
+
+        for (size_t j = 0; j < group.files.size(); ++j) {
+            TreeEntry file;
+            file.name = group.files[j];
+            file.path = project.absolute(group.files[j]);
+            file.depth = 1;
+            entries_.push_back(file);
+        }
+    }
+}
+
 void Tree::reread() {
+    if (showingProject_) return;   // the project decides what is shown, not the disk
     entries_.clear();
     error_.clear();
     if (root_.empty()) return;
@@ -81,8 +115,21 @@ void Tree::gather(const std::string& dir, int depth) {
 
 void Tree::toggle(size_t index) {
     if (index >= entries_.size()) return;
-    const TreeEntry& entry = entries_[index];
+    TreeEntry entry = entries_[index];
     if (!entry.directory) return;
+
+    if (entry.group) {
+        // Groups start open, so the set holds the ones that are, and closing
+        // the first one has to put every other group into it first.
+        if (opened_.empty())
+            for (size_t i = 0; i < entries_.size(); ++i)
+                if (entries_[i].group) opened_.insert(entries_[i].path);
+        if (opened_.count(entry.path))
+            opened_.erase(entry.path);
+        else
+            opened_.insert(entry.path);
+        return;   // the caller shows the project again
+    }
 
     if (opened_.count(entry.path))
         opened_.erase(entry.path);

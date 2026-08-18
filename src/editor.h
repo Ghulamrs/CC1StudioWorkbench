@@ -9,6 +9,7 @@
 #include "compile.h"
 #include "indent.h"
 #include "menu.h"
+#include "project.h"
 #include "syntax.h"
 #include "toolchain.h"
 #include "terminal.h"
@@ -43,6 +44,11 @@ public:
     void setCl(const std::string& path) { tool_.cl = path; }
     void setToolchain(ToolchainKind kind) { tool_.kind = kind; }
     void setStyle(const IndentStyle& style) { style_ = style; }
+    // Applied one at a time, after the project has been read, so that a flag
+    // overrides the project without wiping the settings it did not mention.
+    void setIndentWidth(size_t width) { style_.width = width; }
+    void setTabs(bool tabs) { style_.tabs = tabs; }
+    void setCaseIndent(size_t levels) { style_.caseIndent = levels; }
     void run();
 
     // Where the console's lines come from while cc1 is running.
@@ -86,6 +92,17 @@ private:
     void compile();
     void openSelected();
     void goToProblem();
+
+    void refreshTree();
+    void applyProject();
+    std::string targetFile() const;
+    void createFile();
+    void renameFile();
+    void deleteFile();
+    void regroupFile();
+    void addToProject();
+    void newProject();
+    void saveProject();
     void resetDebug();
     void showKeys();
 
@@ -109,6 +126,8 @@ private:
     size_t doc_;
     Menu menu_;
     Tree tree_;
+    Project project_;
+    std::string projectDir_;
     IndentStyle style_;
     Toolchain tool_;
 

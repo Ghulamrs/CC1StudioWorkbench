@@ -93,6 +93,51 @@ so pointing it at a third compiler that speaks either one needs no new code. A
 `cl` run wants a Developer Command Prompt - that is where `cl.exe` is on PATH -
 and cl's own listing is MASM, which the assembly tab already colours.
 
+## The project
+
+A project is one file, `ed1.json`, and there does not have to be one - without
+it the pane on the left shows the directory, as it always did.
+
+```json
+{
+  "name": "ed1",
+  "toolchain": "auto",
+  "arch": "x86_64-windows",
+  "indent": 4,
+  "tabs": false,
+  "groups": {
+    "Rules": ["src/indent.cpp", "src/syntax.cpp"],
+    "Examples": ["examples/hello.c", "examples/smart.cpp"]
+  }
+}
+```
+
+Six keys, flat except the groups, and every one has a default - so `{}` is a
+valid project file. Comments with `//` are allowed, because a file people edit
+by hand is a file people leave notes in.
+
+Two things are deliberately *not* in it. Where cc1 and cl live is a fact about
+a machine rather than about a project, and a path written into a shared file is
+a path that is wrong on the other machine - those come from `--cc1`, `--cl`,
+`$CC1` or PATH. And the indent settings are a number and a flag rather than a
+nested object, because an object with two members in it is a nest for no gain.
+
+A group is the project's own arrangement, not a directory: moving a file
+between groups changes two lists and nothing on disk. The Project menu makes
+files, renames them, moves them between groups and deletes them - the last one
+asks you to type `yes`, because it is the only thing here that cannot be
+undone.
+
+**The structure is limited to two levels**, and that is a rule the project
+keeps rather than a habit anyone is asked to remember: a file sits in the root
+or in one directory under it, and never deeper. As many directories as you like
+may sit side by side - `src`, `tests`, `examples`, `docs` and any others - but
+none of them holds another. A structure nobody has to explore is one anyone can
+read at a glance.
+
+Settings in the project are what this project always does; anything named on
+the command line is applied after it and wins, which is what today needs.
+
 ## The panel
 
 Three tabs:
@@ -125,21 +170,34 @@ Handing C++ to cc1 is caught before it is run: the editor says so and points at
 Ctrl-K, rather than letting a C compiler fail somewhere inside the first class
 with a diagnostic that explains nothing.
 
-## Building
+## Building and checking
 
 On a Mac or on Linux:
 
 ```
 make
-make test
+make check
 ```
 
 On Windows, where there is no make:
 
 ```
 build
-build test
+build check
 ```
+
+`check` runs both halves. `tests/test.cpp` checks the pieces that never see a
+terminal. `tests/session.cpp` drives the editor itself - it types into it,
+walks its menus, and then looks at what landed on the screen and on the disk:
+that a function typed flat comes back laid out, that keywords are coloured,
+that New file makes a file and puts it in the project, that a path two
+directories deep is refused, that Rename moves it and the project follows, that
+Delete answered with anything but `yes` keeps the file, and that a build lands
+the caret on the line the compiler named. One program for both machines, rather
+than a shell script and a PowerShell script that would drift apart.
+
+Set `CC1` to run the cc1 build cases; the cl ones need nothing, since the
+editor finds Visual Studio itself.
 
 `build.bat` finds Visual Studio 2022 itself. The search is pinned to `[17.0,18.0)`
 on purpose - a bare `vswhere -latest` reaches past 2022 to any newer Visual
@@ -158,9 +216,9 @@ on both machines. The key decoding in particular lives in `terminal_common.cpp`
 rather than in each platform file: two copies of that drifting apart is the
 house bug, and this is the one place it was easy to prevent.
 
-`buffer`, `indent`, `menu` and `tree` touch no screen and no OS. `indent`, `syntax` and
+`buffer`, `indent`, `menu` and `tree` touch no screen and no OS. `indent`, `syntax`, `json`, `project` and
 the diagnostic parser are the pieces with a contract, and `tests/test.cpp`
-checks them - 76 cases, including that a Windows path's drive letter is not
+checks them - 138 cases, including that a Windows path's drive letter is not
 mistaken for a `line:col` separator, that a brace inside a string is not
 counted, and that `class` is a keyword in C++ and nothing in particular in C,
 and that cl's `bad.c(3,13)` is read as well as cc1's `bad.c:3:13`. They run on

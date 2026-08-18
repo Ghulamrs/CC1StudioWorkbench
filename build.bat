@@ -4,7 +4,9 @@ rem for. There is no make on that box, and none is needed: seven translation
 rem units and one link.
 rem
 rem   build            builds ed1.exe
-rem   build test       builds it, then builds and runs the test binary
+rem   build test       builds it, then builds and runs the unit tests
+rem   build session    builds it, then drives the editor itself with keystrokes
+rem   build check      both
 rem
 rem Run it from a Developer Command Prompt, or run it from anywhere and let it
 rem find vcvars64 itself.
@@ -27,17 +29,32 @@ cl /nologo /std:c++17 /W4 /WX /EHsc /permissive- /O2 /D_CRT_SECURE_NO_WARNINGS ^
    /Fe:ed1.exe /Fo:obj\ ^
    src\main.cpp src\editor.cpp src\buffer.cpp src\compile.cpp ^
    src\indent.cpp src\menu.cpp src\tree.cpp src\syntax.cpp src\toolchain.cpp ^
+   src\json.cpp src\project.cpp ^
    src\terminal_common.cpp ^
    src\terminal_win.cpp
 if errorlevel 1 goto :fail
 
-if not "%1"=="test" goto :done
+if "%1"=="test" goto :unit
+if "%1"=="check" goto :unit
+if "%1"=="session" goto :session
+goto :done
+
+:unit
 
 cl /nologo /std:c++17 /W4 /WX /EHsc /permissive- /D_CRT_SECURE_NO_WARNINGS ^
    /I src /Fe:test.exe /Fo:obj\ ^
-   tests\test.cpp src\compile.cpp src\indent.cpp src\syntax.cpp src\toolchain.cpp
+   tests\test.cpp src\compile.cpp src\indent.cpp src\syntax.cpp src\toolchain.cpp ^
+   src\json.cpp src\project.cpp
 if errorlevel 1 goto :fail
 test.exe
+if errorlevel 1 goto :fail
+if not "%1"=="check" goto :done
+
+:session
+cl /nologo /std:c++17 /W4 /WX /EHsc /permissive- /D_CRT_SECURE_NO_WARNINGS ^
+   /Fe:session.exe /Fo:obj\ tests\session.cpp
+if errorlevel 1 goto :fail
+session.exe ed1.exe %CC1%
 if errorlevel 1 goto :fail
 
 :done

@@ -3,6 +3,8 @@
 // neither is checked by typing into one and looking.
 
 #include <cstdio>
+#include <filesystem>
+#include <fstream>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -10,6 +12,8 @@
 #include "compile.h"
 #include "indent.h"
 #include "syntax.h"
+#include "json.h"
+#include "project.h"
 #include "toolchain.h"
 
 namespace {
@@ -339,6 +343,153 @@ void routing() {
     check(c.find("/TP") == std::string::npos, "and not as C++");
 }
 
+void jsonReading() {
+    std::printf("the project file's format\n");
+
+    std::string why;
+    editor::Json one = editor::Json::parse(
+        "{\"name\": \"Editor\", \"indent\": {\"width\": 4, \"tabs\": false},"
+        " \"groups\": [\"a\", \"b\"]}", why);
+    check(why.empty(), "a plain object reads");
+    checkEqual(one.get("name").text(), "Editor", "a string member");
+    check(one.get("indent").get("width").integer() == 4, "a number inside an object");
+    check(one.get("indent").get("tabs").boolean() == false, "a false");
+    check(one.get("groups").size() == 2, "an array's length");
+    checkEqual(one.get("groups").at(1).text(), "b", "an array's contents");
+
+    check(one.get("missing").text("fallback") == "fallback",
+          "what is not there gives the default back");
+
+    // Comments are not JSON, and are allowed on purpose: this is a file people
+    // open and edit, and people leave notes in files they edit.
+    editor::Json noted = editor::Json::parse(
+        "{\n  // which compiler\n  \"toolchain\": \"auto\"\n}", why);
+    check(why.empty() && noted.get("toolchain").text() == "auto",
+          "a comment is skipped rather than refused");
+
+    std::string broken;
+    editor::Json::parse("{\"a\": }", broken);
+    check(!broken.empty(), "a malformed file says what went wrong");
+
+    editor::Json::parse("{} and then some", broken);
+    check(!broken.empty(), "text after the end is an error too");
+
+    // What goes out must read back as what went in.
+    editor::Json out = editor::Json::object();
+    out.set("name", editor::Json::fromText("has \"quotes\" in it"));
+    out.set("width", editor::Json::fromNumber(4));
+    editor::Json back = editor::Json::parse(out.write(), why);
+    check(why.empty(), "what it writes, it can read");
+    checkEqual(back.get("name").text(), "has \"quotes\" in it", "quotes survive the trip");
+    check(out.write().find("4") != std::string::npos &&
+              out.write().find("4.0") == std::string::npos,
+          "a whole number is written whole");
+}
+
+void projects() {
+    std::printf("the project\n");
+
+    std::filesystem::path dir =
+        std::filesystem::temp_directory_path() / "ed1-project-test";
+    std::filesystem::remove_all(dir);
+    std::filesystem::create_directories(dir);
+
+    editor::Project made;
+    made.begin(dir.string(), "Trial");
+    check(made.loaded(), "a project begun is a project loaded");
+    check(made.groups().size() == 1, "and starts with one group");
+
+    check(made.addFile("src/main.c", "Sources"), "a file is added");
+    check(!made.addFile("src/main.c", "Sources"), "and not added twice");
+    check(made.addFile("src/util.c", "Sources"), "another one");
+    check(made.addFile("docs/notes.txt", "Notes"), "a file into a group not yet there");
+    check(made.groups().size() == 2, "which makes the group");
+
+    check(made.groupOf("docs/notes.txt") < made.groups().size(), "and it is findable");
+    check(made.moveToGroup("docs/notes.txt", "Sources"), "regrouping moves it");
+    checkEqual(made.groups()[made.groupOf("docs/notes.txt")].name, "Sources",
+               "to the group asked for");
+
+    check(made.renameFile("src/util.c", "src/helper.c"), "renaming follows it");
+    check(made.groupOf("src/util.c") == made.groups().size(), "the old name is gone");
+    check(made.groupOf("src/helper.c") < made.groups().size(), "the new one is there");
+
+    check(made.removeFile("src/helper.c"), "removing takes it out of the list");
+    check(made.groupOf("src/helper.c") == made.groups().size(), "and it is not found after");
+
+    // Two levels and no more. A structure nobody has to explore is one anyone
+    // can read, so this is a rule the project keeps rather than a convention.
+    std::string why;
+    check(editor::Project::allows("main.c", why), "a file at the root");
+    check(editor::Project::allows("src/main.c", why), "and one directory down");
+    check(!editor::Project::allows("src/deep/main.c", why), "but no deeper");
+    check(!why.empty(), "and it says why");
+    check(!editor::Project::allows("/etc/passwd", why), "nothing absolute");
+    check(!editor::Project::allows("../outside.c", why), "and no going up and out");
+    check(!editor::Project::allows("src/", why), "a directory is not a file");
+
+    check(!made.addFile("a/b/c.c", "Sources"), "a file too deep is not added");
+
+    // Depth is limited; width is not. As many directories as a project wants
+    // may sit side by side on the ground floor.
+    {
+        editor::Project wide;
+        wide.begin(dir.string(), "Wide");
+        const char* dirs[7] = {"src", "tests", "examples", "docs", "tools",
+                               "extra", "more"};
+        for (int i = 0; i < 7; ++i)
+            check(wide.addFile(std::string(dirs[i]) + "/a.c", "Sources"),
+                  std::string("directory ") + dirs[i] + " sits alongside the rest");
+        check(wide.directories().size() == 7, "seven of them, and none refused");
+        check(wide.addFile("root.c", "Sources"), "a file on the ground floor too");
+        check(!wide.addFile("src/deeper/a.c", "Sources"), "but still nothing two deep");
+    }
+
+    check(made.addFile("src/ok.c", "Sources"), "one at the right depth is");
+    check(!made.renameFile("src/ok.c", "a/b/c.c"), "nor renamed into somewhere too deep");
+    check(made.removeFile("src/ok.c"), "tidy that away again");
+
+    editor::IndentStyle style;
+    style.width = 2;
+    style.tabs = true;
+    made.setIndent(style);
+    made.setToolchain(editor::ToolMsvc);
+
+    std::string error;
+    check(made.save(error), "it writes itself out");
+    check(error.empty(), "with nothing to report");
+
+    // And the file that comes back is the project that went in.
+    editor::Project read;
+    check(read.load(dir.string(), error), "and reads back");
+    checkEqual(read.name(), "Trial", "the name survives");
+    check(read.indent().width == 2 && read.indent().tabs, "the layout settings survive");
+    check(read.groups()[0].name == "Sources", "and the groups keep their order");
+    check(read.toolchain() == editor::ToolMsvc, "the compiler choice survives");
+    check(read.groups().size() == 2, "the groups survive");
+    check(read.groupOf("src/main.c") < read.groups().size(), "and what is in them");
+
+    // A directory with no project file is not a failure - it means there is no
+    // project, and the pane shows the directory instead.
+    std::filesystem::path bare = dir / "empty";
+    std::filesystem::create_directories(bare);
+    editor::Project none;
+    check(!none.load(bare.string(), error), "a directory with no project file");
+    check(error.empty(), "is not an error");
+
+    // The smallest file that works. Everything has a default, so an empty
+    // object is a valid project.
+    std::filesystem::path tiny = dir / "tiny";
+    std::filesystem::create_directories(tiny);
+    { std::ofstream f((tiny / "ed1.json").string().c_str()); f << "{}\n"; }
+    editor::Project small;
+    check(small.load(tiny.string(), error), "an empty object is a project");
+    check(error.empty() && small.indent().width == 4 && !small.indent().tabs,
+          "and every setting falls back to its default");
+
+    std::filesystem::remove_all(dir);
+}
+
 }  // namespace
 
 int main() {
@@ -347,6 +498,8 @@ int main() {
     typing();
     colours();
     routing();
+    jsonReading();
+    projects();
 
     std::printf("\n%d checks, %d failed\n", checks, failures);
     return failures == 0 ? 0 : 1;

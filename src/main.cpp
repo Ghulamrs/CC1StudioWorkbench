@@ -11,7 +11,9 @@ int main(int argc, char** argv) {
     std::string project;
     std::string toolchain;
     std::string cl;
-    editor::IndentStyle style;
+    long width = 0;
+    int tabs = -1;
+    int caseIndent = -1;
 
     for (int i = 1; i < argc; ++i) {
         if (std::strcmp(argv[i], "--cc1") == 0 && i + 1 < argc) {
@@ -24,11 +26,11 @@ int main(int argc, char** argv) {
             project = argv[++i];
         } else if (std::strcmp(argv[i], "--width") == 0 && i + 1 < argc) {
             long w = std::atol(argv[++i]);
-            if (w >= 1 && w <= 16) style.width = static_cast<size_t>(w);
+            if (w >= 1 && w <= 16) width = w;
         } else if (std::strcmp(argv[i], "--tabs") == 0) {
-            style.tabs = true;
+            tabs = 1;
         } else if (std::strcmp(argv[i], "--case-indent") == 0) {
-            style.caseIndent = 1;
+            caseIndent = 1;
         } else if (std::strcmp(argv[i], "-h") == 0 ||
                    std::strcmp(argv[i], "--help") == 0) {
             std::printf(
@@ -61,20 +63,13 @@ int main(int argc, char** argv) {
         }
     }
 
-    editor::Editor ed;
-    ed.setStyle(style);
-
-    if (toolchain == "msvc" || toolchain == "cl") {
-        ed.setToolchain(editor::ToolMsvc);
-    } else if (toolchain == "cc1") {
-        ed.setToolchain(editor::ToolCc1);
-    } else if (!toolchain.empty() && toolchain != "auto") {
+    if (!toolchain.empty() && toolchain != "auto" && toolchain != "cc1" &&
+        toolchain != "msvc" && toolchain != "cl") {
         std::fprintf(stderr, "ed1: unknown toolchain %s\n", toolchain.c_str());
         return 2;
     }
 
-    if (!cc1.empty()) ed.setCc1(cc1);
-    if (!cl.empty()) ed.setCl(cl);
+    editor::Editor ed;
 
     // The project pane opens on the file's own directory unless told otherwise,
     // which is nearly always the directory someone wants to see.
@@ -82,7 +77,22 @@ int main(int argc, char** argv) {
         size_t at = file.find_last_of("/\\");
         project = (at == std::string::npos) ? std::string(".") : file.substr(0, at);
     }
+
+    // Read first, so that anything named on the command line below overrides
+    // it. The project file is what this project always does; a flag is what
+    // today needs.
     ed.openProject(project);
+
+    if (toolchain == "msvc" || toolchain == "cl") ed.setToolchain(editor::ToolMsvc);
+    else if (toolchain == "cc1") ed.setToolchain(editor::ToolCc1);
+    else if (toolchain == "auto") ed.setToolchain(editor::ToolAuto);
+
+    if (width > 0) ed.setIndentWidth(static_cast<size_t>(width));
+    if (tabs >= 0) ed.setTabs(true);
+    if (caseIndent >= 0) ed.setCaseIndent(1);
+
+    if (!cc1.empty()) ed.setCc1(cc1);
+    if (!cl.empty()) ed.setCl(cl);
 
     if (!file.empty()) ed.open(file);
     ed.run();

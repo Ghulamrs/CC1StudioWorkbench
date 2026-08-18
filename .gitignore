@@ -10,5 +10,6 @@ tests/test
 *.ilk
 *.o.tmp
 .DS_Store
-.build/
-.swiftpm/
+*.xcodeproj/xcuserdata/
+*.xcodeproj/project.xcworkspace/
+DerivedData/

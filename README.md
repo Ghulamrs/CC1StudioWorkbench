@@ -238,13 +238,19 @@ else.
 ### In Xcode
 
 ```
-open Package.swift
+open Editor.xcodeproj
 ```
 
-Xcode opens the manifest directly, offers an `ed1` scheme, and builds, indexes
-and debugs the same sources - nothing in `src/` is arranged to suit it, and
-`make` stays the authority. `xcodebuild -scheme ed1 build` does the same from a
-shell, and the binary it produces passes the whole session harness.
+An ordinary macOS command line tool target, compiled by clang++ - `Editor.xcodeproj`
+holds nothing but a target, two configurations and the same files `src` already
+had. Debug and Release both build, and the binary Xcode produces was put
+through the whole session harness rather than merely run once: 70 checks, the
+same as make's.
+
+The project file is **generated**, by `make xcodeproj`, and its source list is
+read out of the Makefile. A hand-kept project drifts - someone adds a file to
+the Makefile, forgets the other one, and Xcode quietly builds yesterday's
+editor. There is one source list and it is the Makefile's.
 
 One thing to know before reaching for the Run button: ed1 is a terminal
 program, and Xcode's console is a pipe rather than a terminal. Started from

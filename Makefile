@@ -98,8 +98,13 @@ tests/session: tests/session.cpp
 
 check: test session
 
+# The Xcode project is generated from the source list above rather than kept by
+# hand, so it cannot fall behind it. Run this after adding or removing a file.
+xcodeproj:
+	python3 tools/make-xcodeproj.py
+
 clean:
 	rm -rf $(OBJDIR)
 	rm -f ed1 tests/test tests/session
 
-.PHONY: test session check clean
+.PHONY: test session check xcodeproj clean

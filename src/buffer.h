@@ -83,6 +83,13 @@ private:
     std::vector<Snapshot> undo_;
     std::vector<Snapshot> redo_;
     EditKind lastKind_;
+
+    // How deep the history was when the file was last written. Undoing back to
+    // that depth is undoing back to what is on disk, so the file is not
+    // modified any more - which is the only way to know that without comparing
+    // the whole text. -1 means the saved point has fallen off the end of the
+    // capped history and can no longer be recognised.
+    long savedAt_;
     std::string path_;
     bool dirty_;
     // Whether the file ended with a newline when it was read. Kept so that

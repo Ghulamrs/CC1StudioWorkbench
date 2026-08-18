@@ -320,6 +320,16 @@ void undoing(const std::string& ed1) {
           "two undos after typing over a newline leave the first part");
     check(readFile(file).find("def") == std::string::npos, "and remove the second");
 
+    // The star that says 'modified' has to follow undo as well as typing.
+    writeFile(file, text);
+    Screen back = drive(ed1, args, "q" + ctrl('s') + ctrl('z') + ctrl('q') + ctrl('q'), dir);
+    check(onScreen(back, "undo.c *"), "undoing past a save shows as modified again");
+
+    writeFile(file, text);
+    Screen forward = drive(ed1, args,
+                           "q" + ctrl('s') + ctrl('z') + ctrl('y') + ctrl('q'), dir);
+    check(!onScreen(forward, "undo.c *"), "and redoing back to it shows as saved");
+
     Screen nothing = drive(ed1, args, ctrl('z') + ctrl('q'), dir);
     check(onScreen(nothing, "nothing to undo"), "and with nothing done, it says so");
 

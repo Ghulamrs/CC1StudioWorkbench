@@ -7,7 +7,8 @@
 namespace editor {
 
 Buffer::Buffer()
-    : lines_(1, std::string()), lastKind_(EditNone), dirty_(false), finalNewline_(true) {}
+    : lines_(1, std::string()), lastKind_(EditNone), savedAt_(0), dirty_(false),
+      finalNewline_(true) {}
 
 void Buffer::beginEdit(EditKind kind, size_t cx, size_t cy) {
     // Only typing and erasing run together. EditOther means exactly what it
@@ -22,7 +23,13 @@ void Buffer::beginEdit(EditKind kind, size_t cx, size_t cy) {
     before.cy = cy;
     undo_.push_back(before);
 
-    if (undo_.size() > kMaxSteps) undo_.erase(undo_.begin());
+    if (undo_.size() > kMaxSteps) {
+        undo_.erase(undo_.begin());
+        // Everything below has shifted down one. If the saved point was the
+        // one just dropped, it can never be recognised again.
+        if (savedAt_ > 0) --savedAt_;
+        else savedAt_ = -1;
+    }
 
     // Anything done afresh throws away what was undone: there is one past, and
     // a future only for as long as nothing else happens.
@@ -45,9 +52,8 @@ bool Buffer::undo(size_t& cx, size_t& cy) {
     cx = before.cx;
     cy = before.cy;
 
-    // Marked changed either way. Undoing back to what was last saved leaves
-    // the file on disk right and the star showing, which errs the safe way.
-    dirty_ = true;
+    // Back at the depth the file was written at is back at what is on disk.
+    dirty_ = !(savedAt_ >= 0 && static_cast<size_t>(savedAt_) == undo_.size());
     lastKind_ = EditNone;
     return true;
 }
@@ -67,7 +73,7 @@ bool Buffer::redo(size_t& cx, size_t& cy) {
     cx = ahead.cx;
     cy = ahead.cy;
 
-    dirty_ = true;
+    dirty_ = !(savedAt_ >= 0 && static_cast<size_t>(savedAt_) == undo_.size());
     lastKind_ = EditNone;
     return true;
 }
@@ -104,6 +110,7 @@ Buffer::LoadResult Buffer::load(const std::string& path, std::string& error) {
     undo_.clear();
     redo_.clear();
     lastKind_ = EditNone;
+    savedAt_ = 0;
     dirty_ = false;
     finalNewline_ = sawNewline || lines_.size() == 1;
     return Opened;
@@ -131,6 +138,13 @@ bool Buffer::save(std::string& error) {
         return false;
     }
 
+    // Where the history stood when this text reached the disk, so that undoing
+    // back to here can be recognised as being unmodified again.
+    savedAt_ = static_cast<long>(undo_.size());
+    // Whatever is typed next starts a step of its own rather than joining the
+    // run that was in progress - otherwise the saved depth would be a depth
+    // the text no longer matches.
+    lastKind_ = EditNone;
     dirty_ = false;
     return true;
 }

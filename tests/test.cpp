@@ -441,6 +441,64 @@ void undoing() {
     check(many.line(0).size() == 149, "one step at a time");
 }
 
+void savedState() {
+    std::printf("knowing when the file matches the disk\n");
+
+    std::filesystem::path dir = std::filesystem::temp_directory_path() / "ed1-saved-test";
+    std::filesystem::remove_all(dir);
+    std::filesystem::create_directories(dir);
+
+    editor::Buffer buf;
+    buf.setPath((dir / "saved.c").string());
+    size_t cx = 0, cy = 0;
+    std::string error;
+
+    buf.beginEdit(editor::EditTyping, cx, cy);
+    buf.insertChar(0, 0, 'a');
+    check(buf.dirty(), "typing makes it modified");
+
+    check(buf.save(error), "it saves");
+    check(!buf.dirty(), "and is not modified once written");
+
+    check(buf.undo(cx, cy), "undoing past the save");
+    check(buf.dirty(), "makes it modified again - the disk says otherwise");
+
+    check(buf.redo(cx, cy), "and coming back");
+    check(!buf.dirty(), "makes it match the disk once more");
+
+    // A change after a save is its own step, so undoing it lands exactly on
+    // what was written.
+    buf.beginEdit(editor::EditTyping, cx, cy);
+    buf.insertChar(0, 0, 'b');
+    check(buf.dirty(), "a change after saving shows as modified");
+    check(buf.undo(cx, cy) && !buf.dirty(),
+          "and undoing it shows as saved, without writing anything");
+
+    // Saving further along moves the mark with it.
+    buf.beginEdit(editor::EditTyping, cx, cy);
+    buf.insertChar(0, 0, 'c');
+    check(buf.save(error), "saving again");
+    check(!buf.dirty(), "clears it");
+    check(buf.undo(cx, cy) && buf.dirty(), "and undo past the newer save is modified");
+
+    // When the saved point falls off the end of the capped history it cannot
+    // be recognised again, and the safe answer is 'modified'.
+    editor::Buffer long_;
+    long_.setPath((dir / "long.c").string());
+    size_t lx = 0, ly = 0;
+    check(long_.save(error), "an empty file is written");
+    check(!long_.dirty(), "and is unmodified");
+    for (int i = 0; i < 150; ++i) {
+        long_.beginEdit(editor::EditOther, lx, ly);
+        long_.insertChar(0, 0, 'z');
+    }
+    while (long_.canUndo()) long_.undo(lx, ly);
+    check(long_.dirty(),
+          "undoing to the bottom of a capped history still says modified");
+
+    std::filesystem::remove_all(dir);
+}
+
 void searching() {
     std::printf("finding and replacing\n");
 
@@ -646,6 +704,7 @@ int main() {
     colours();
     routing();
     undoing();
+    savedState();
     searching();
     jsonReading();
     projects();

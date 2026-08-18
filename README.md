@@ -63,6 +63,13 @@ re-layout and a replace are each a step of their own. Moving the caret ends the
 run, which is what stops a whole session collapsing into a single undo. The
 caret goes back to where it was, not just the text.
 
+The `*` that marks a modified file follows undo properly: undoing back to the
+point the file was written at clears it, because the text and the disk agree
+again. That is done by remembering how deep the history stood when the file was
+saved rather than by comparing the whole text - and when the saved point falls
+off the end of the capped history it says modified, which is the safe way to be
+wrong.
+
 It works by keeping snapshots rather than by inverting each operation. A source
 file is a few thousand short strings, the history is capped at a hundred steps,
 and the simple version is the one that cannot be subtly wrong - which for undo
@@ -227,7 +234,8 @@ that a function typed flat comes back laid out, that keywords are coloured,
 that New file makes a file and puts it in the project, that a path two
 directories deep is refused, that Rename moves it and the project follows, that
 Delete answered with anything but `yes` keeps the file, and that undo takes back a run of
-typing and redo returns it, that find lands the caret on the right line and
+typing and redo returns it, that the modified marker comes back when you undo
+past a save and goes when you redo to it, that find lands the caret on the right line and
 Ctrl-G moves on, that replace changes the text and quitting
 without saving leaves the file alone, and that a build lands the caret on the
 line the compiler named and that its two configurations produce different
@@ -256,7 +264,7 @@ house bug, and this is the one place it was easy to prevent.
 
 `buffer`, `indent`, `menu` and `tree` touch no screen and no OS. `indent`, `syntax`, `json`, `project` and
 the diagnostic parser are the pieces with a contract, and `tests/test.cpp`
-checks them - 183 cases, including that a Windows path's drive letter is not
+checks them - 198 cases, including that a Windows path's drive letter is not
 mistaken for a `line:col` separator, that a brace inside a string is not
 counted, and that `class` is a keyword in C++ and nothing in particular in C,
 and that cl's `bad.c(3,13)` is read as well as cc1's `bad.c:3:13`. They run on

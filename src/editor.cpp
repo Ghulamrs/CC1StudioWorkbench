@@ -1506,8 +1506,8 @@ void Editor::debug() {
     if (!canCompile(kind, lang_)) { say(refusal(kind, lang_)); return; }
     if (!runsHere(kind, kArches[arch_])) { say(whyNotRun(kind, kArches[arch_])); return; }
 
-    if (debuggerHere() == DebuggerNone) {
-        say(noDebuggerBecause(kArches[arch_]));
+    if (debuggerFor(kind, kArches[arch_]) == DebuggerNone) {
+        say(noDebuggerBecause(kind, kArches[arch_]));
         return;
     }
     if (config_ != ConfigDebug) {
@@ -1547,8 +1547,9 @@ void Editor::debug() {
     }
 
     if (!debugger_.start(debugBuilt_.program)) {
-        console_.push_back(std::string(debuggerName(debuggerHere())) + " could not be started");
-        say(std::string(debuggerName(debuggerHere())) + " could not be started - is it installed?");
+        const char* named = debuggerName(debuggerFor(kind, kArches[arch_]));
+        console_.push_back(std::string(named) + " could not be started");
+        say(std::string(named) + " could not be started - is it installed?");
         removeProgram(debugBuilt_);
         debugBuilt_ = Built();
         return;

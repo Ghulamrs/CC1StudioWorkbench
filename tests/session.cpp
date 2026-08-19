@@ -898,8 +898,13 @@ void stoppingAndStepping(const std::string& ed1, const std::string& cc1) {
     // for the compiler named here to do. Said out loud because MSVC at /W4 /WX
     // treats an untouched parameter as an error, where clang and gcc do not.
     (void)cc1;
+    // The reason is about this compiler and this target rather than about the
+    // machine: the C file here goes to cc1, and what cc1 writes for Windows is
+    // MASM. A C++ file on the same machine goes to cl and is a different story.
     Screen refused = drive(ed1, common, toLoopBody + kF9 + kF8 + ctrl('q'), dir);
-    check(wasShown(refused, "no debugger here"), "and debugging says why it cannot start");
+    check(wasShown(refused, "carries no line table"),
+          "and debugging says why it cannot start");
+    check(wasShown(refused, "cc1"), "naming the compiler it is talking about");
     file::remove_all(dir);
     return;
 #else

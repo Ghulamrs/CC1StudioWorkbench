@@ -45,17 +45,21 @@ std::string configFlags(ToolchainKind kind, Configuration config,
 // compiling it.
 bool optimises(ToolchainKind kind);
 
-// Whether cc1 writes debug information for this target, and so whether a debug
-// build is given -g.
+// Whether this compiler writes debug information for this target, and so
+// whether a debug build asks for it.
 //
-// It writes DWARF for x86_64-linux and arm64-darwin - line tables, types,
+// cc1 writes DWARF for x86_64-linux and arm64-darwin - line tables, types,
 // objects and lexical blocks - and gdb and lldb both read it. The Windows
-// target is where it stops: cc1 generates MASM there, MASM carries no line
+// target is where cc1 stops: it generates MASM there, MASM carries no line
 // table, and the assembler cannot spell the relocations CodeView would need.
 // cc1 does take -g for that target in the GNU spelling, which routes the DWARF
 // out of the Linux emitter, but this editor asks for the assembly the target's
-// own assembler reads. So a Windows debug build gets the define and nothing
-// more, which is better than passing a -g that run would refuse.
+// own assembler reads.
+//
+// cl is a different matter and always could: /Zi writes CodeView into a .pdb,
+// which is what a Windows debugger reads. So on this machine C and C++ are not
+// in the same position - the C file goes to cc1 and carries no line table,
+// while the C++ file goes to cl and carries everything.
 bool emitsDebugInfo(ToolchainKind kind, const std::string& arch);
 
 // What the Debug panel says above its listing: what this build has by way of

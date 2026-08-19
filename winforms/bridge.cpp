@@ -20,6 +20,7 @@
 #endif
 
 #include "compile.h"
+#include "debugger.h"
 #include "find.h"
 #include "indent.h"
 #include "project.h"
@@ -33,12 +34,17 @@ namespace {
 // The numbers in bridge.h are the editor's own, written out as plain integers
 // for a header that may not name a C++ type. If either side is renumbered this
 // stops the build rather than mis-colouring a screen.
-static_assert(ED1_KIND_KEYWORD == editor::KindKeyword, "kind numbering has drifted");
-static_assert(ED1_KIND_LABEL == editor::KindLabel, "kind numbering has drifted");
-static_assert(ED1_LANG_CPP == editor::LangCpp, "language numbering has drifted");
-static_assert(ED1_LANG_ASM == editor::LangAsm, "language numbering has drifted");
-static_assert(ED1_TOOL_MSVC == editor::ToolMsvc, "toolchain numbering has drifted");
-static_assert(ED1_CONFIG_RELEASE == editor::ConfigRelease, "config numbering has drifted");
+//
+// The cast is not decoration: one side is an unnamed enum from a C header and
+// the other a named C++ one, and gcc refuses to compare the two. It only
+// started mattering when the tests began linking this file, which is the first
+// time anything but MSVC and clang had read it.
+static_assert(ED1_KIND_KEYWORD == static_cast<int>(editor::KindKeyword), "kind numbering has drifted");
+static_assert(ED1_KIND_LABEL == static_cast<int>(editor::KindLabel), "kind numbering has drifted");
+static_assert(ED1_LANG_CPP == static_cast<int>(editor::LangCpp), "language numbering has drifted");
+static_assert(ED1_LANG_ASM == static_cast<int>(editor::LangAsm), "language numbering has drifted");
+static_assert(ED1_TOOL_MSVC == static_cast<int>(editor::ToolMsvc), "toolchain numbering has drifted");
+static_assert(ED1_CONFIG_RELEASE == static_cast<int>(editor::ConfigRelease), "config numbering has drifted");
 
 // A copy the caller owns. Allocated and freed on this side of the seam, which
 // is the whole point.
@@ -181,6 +187,20 @@ struct Ed1Build {
 
 struct Ed1Ran {
     editor::Ran ran;
+};
+
+struct Ed1Program {
+    editor::Built built;
+};
+
+// The debugger, what it last said, and what was in scope when it said it. All
+// three are kept together because the managed side reads them one string at a
+// time and must not have to hold any of them itself.
+struct Ed1Debugger {
+    editor::Debugger debugger;
+    editor::Stop stop;
+    std::vector<editor::Variable> locals;
+    std::string answer;
 };
 
 extern "C" {
@@ -525,6 +545,127 @@ int ed1_ran_has_error(Ed1Ran* ran) { return ran->ran.diag.present ? 1 : 0; }
 int ed1_ran_error_line(Ed1Ran* ran) { return static_cast<int>(ran->ran.diag.line); }
 int ed1_ran_error_column(Ed1Ran* ran) { return static_cast<int>(ran->ran.diag.col); }
 const char* ed1_ran_error_message(Ed1Ran* ran) { return ran->ran.diag.message.c_str(); }
+
+Ed1Program* ed1_build_program(const char* cc1, const char* cl, int kind, const char* source,
+                              int language, const char* arch, int config) {
+    editor::Toolchain tool;
+    if (cc1 && *cc1) tool.cc1 = cc1;
+    if (cl && *cl) tool.cl = cl;
+
+    Ed1Program* out = new Ed1Program();
+    out->built = editor::buildProgram(tool, static_cast<editor::ToolchainKind>(kind),
+                                      source ? source : "",
+                                      static_cast<editor::Language>(language),
+                                      arch ? arch : "",
+                                      static_cast<editor::Configuration>(config));
+    return out;
+}
+
+void ed1_program_free(Ed1Program* built) {
+    if (!built) return;
+    editor::removeProgram(built->built);   // the program goes with the handle
+    delete built;
+}
+
+int ed1_program_ok(Ed1Program* built) { return built->built.ok ? 1 : 0; }
+const char* ed1_program_path(Ed1Program* built) { return built->built.program.c_str(); }
+const char* ed1_program_output(Ed1Program* built) { return built->built.output.c_str(); }
+int ed1_program_has_error(Ed1Program* built) { return built->built.diag.present ? 1 : 0; }
+int ed1_program_error_line(Ed1Program* built) {
+    return static_cast<int>(built->built.diag.line);
+}
+int ed1_program_error_column(Ed1Program* built) {
+    return static_cast<int>(built->built.diag.col);
+}
+const char* ed1_program_error_message(Ed1Program* built) {
+    return built->built.diag.message.c_str();
+}
+
+int ed1_debugger_for(int kind, const char* arch) {
+    return static_cast<int>(editor::debuggerFor(static_cast<editor::ToolchainKind>(kind),
+                                                arch ? arch : ""));
+}
+
+const char* ed1_debugger_name(int kind) {
+    return editor::debuggerName(static_cast<editor::DebuggerKind>(kind));
+}
+
+const char* ed1_no_debugger_because(int kind, const char* arch) {
+    scratch() = editor::noDebuggerBecause(static_cast<editor::ToolchainKind>(kind),
+                                          arch ? arch : "");
+    return scratch().c_str();
+}
+
+Ed1Debugger* ed1_debugger_new(void) { return new Ed1Debugger(); }
+void ed1_debugger_free(Ed1Debugger* debugger) { delete debugger; }
+
+int ed1_debugger_start(Ed1Debugger* debugger, const char* program) {
+    debugger->stop = editor::Stop();
+    debugger->locals.clear();
+    return debugger->debugger.start(program ? program : "") ? 1 : 0;
+}
+
+int ed1_debugger_running(Ed1Debugger* debugger) {
+    return debugger->debugger.running() ? 1 : 0;
+}
+
+void ed1_debugger_stop(Ed1Debugger* debugger) {
+    debugger->debugger.stop();
+    debugger->stop = editor::Stop();
+    debugger->locals.clear();
+}
+
+int ed1_debugger_break(Ed1Debugger* debugger, const char* file, int line) {
+    if (line < 1) return 0;
+    return debugger->debugger.breakAt(file ? file : "", static_cast<size_t>(line)) ? 1 : 0;
+}
+
+int ed1_debugger_clear(Ed1Debugger* debugger) {
+    return debugger->debugger.clearBreakpoints() ? 1 : 0;
+}
+
+namespace {
+// Every move ends the same way: keep where it stopped, and ask what is in
+// scope there while it is still standing still.
+void afterMoving(Ed1Debugger* debugger, const editor::Stop& stop) {
+    debugger->stop = stop;
+    debugger->locals.clear();
+    if (stop.stopped) debugger->locals = debugger->debugger.locals();
+}
+}  // namespace
+
+void ed1_debugger_run(Ed1Debugger* debugger) { afterMoving(debugger, debugger->debugger.run()); }
+void ed1_debugger_resume(Ed1Debugger* debugger) { afterMoving(debugger, debugger->debugger.resume()); }
+void ed1_debugger_step_over(Ed1Debugger* debugger) { afterMoving(debugger, debugger->debugger.stepOver()); }
+void ed1_debugger_step_into(Ed1Debugger* debugger) { afterMoving(debugger, debugger->debugger.stepInto()); }
+void ed1_debugger_step_out(Ed1Debugger* debugger) { afterMoving(debugger, debugger->debugger.stepOut()); }
+
+int ed1_stop_stopped(Ed1Debugger* debugger) { return debugger->stop.stopped ? 1 : 0; }
+int ed1_stop_exited(Ed1Debugger* debugger) { return debugger->stop.exited ? 1 : 0; }
+int ed1_stop_status(Ed1Debugger* debugger) { return debugger->stop.status; }
+const char* ed1_stop_file(Ed1Debugger* debugger) { return debugger->stop.file.c_str(); }
+int ed1_stop_line(Ed1Debugger* debugger) { return static_cast<int>(debugger->stop.line); }
+const char* ed1_stop_function(Ed1Debugger* debugger) { return debugger->stop.function.c_str(); }
+
+int ed1_locals_count(Ed1Debugger* debugger) {
+    return static_cast<int>(debugger->locals.size());
+}
+
+namespace {
+bool holds(Ed1Debugger* debugger, int index) {
+    return index >= 0 && static_cast<size_t>(index) < debugger->locals.size();
+}
+}  // namespace
+
+const char* ed1_local_name(Ed1Debugger* debugger, int index) {
+    return holds(debugger, index) ? debugger->locals[index].name.c_str() : "";
+}
+const char* ed1_local_type(Ed1Debugger* debugger, int index) {
+    return holds(debugger, index) ? debugger->locals[index].type.c_str() : "";
+}
+const char* ed1_local_value(Ed1Debugger* debugger, int index) {
+    return holds(debugger, index) ? debugger->locals[index].value.c_str() : "";
+}
 
 Ed1Build* ed1_build(const char* cc1, const char* cl, int kind, const char* source,
                     int language, const char* arch, int config) {

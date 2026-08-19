@@ -81,6 +81,21 @@ box, both spoken through `src/debugger.cpp`, which is the one place their two
 vocabularies differ. `x86_64-windows` has no debugging at all and says so -
 cc1 generates MASM there, which carries no line table.
 
+Both front ends have it, from that same core: the window has a Debug menu with
+the same keys, a red dot in its gutter where a breakpoint is and an arrow where
+the program is standing, and the same words in its Debug tab. There is an
+awkwardness worth stating plainly, though. The window only runs on Windows, and
+Windows is exactly where there is nothing to debug - so on the one machine that
+can run the GUI, F8 will always answer "no debugger here". What it does there is
+set breakpoints, which are the editor's own note and need no debugger, and give
+the reason for the rest.
+
+That is why `tests/test.cpp` links `winforms/bridge.cpp` and drives the
+window's own seam - `ed1_build_program`, `ed1_debugger_start`, the stop and the
+locals - on the machines that do have a debugger. Everything the window asks
+the core to do is checked there; what is left untested is the Windows Forms
+glue around it, and nothing else.
+
 Two things about driving lldb are worth writing down, because both cost an hour
 and neither is guessable. It must be put in synchronous mode with `script
 lldb.debugger.SetAsync(False)`, or over a pipe it forwards each command to the

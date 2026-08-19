@@ -42,10 +42,11 @@ goto :done
 :unit
 
 cl /nologo /std:c++14 /W4 /WX /EHsc /permissive- /D_CRT_SECURE_NO_WARNINGS ^
-   /I src /Fe:test.exe /Fo:src\obj\ ^
+   /I src /I winforms /Fe:test.exe /Fo:src\obj\ ^
    tests\test.cpp src\compile.cpp src\indent.cpp src\syntax.cpp src\toolchain.cpp ^
    src\json.cpp src\project.cpp src\find.cpp src\buffer.cpp src\utf8.cpp src\workspace.cpp src\symbols.cpp ^
-   src\demangle_win.cpp src\path.cpp src\process.cpp src\debugger.cpp
+   src\demangle_win.cpp src\path.cpp src\process.cpp src\debugger.cpp ^
+   winforms\bridge.cpp
 if errorlevel 1 goto :fail
 test.exe
 if errorlevel 1 goto :fail

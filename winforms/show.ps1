@@ -31,6 +31,9 @@
 
 .EXAMPLE
     .\show.ps1 -Project C:\work\thing -Out C:\temp\thing.png
+
+.EXAMPLE
+    .\show.ps1 -Files examples\hello.c -Keys "{F9}{F8}" -Panel Debug
 #>
 param(
     # The directory holding ed1.json, and where paths are counted from.
@@ -44,6 +47,15 @@ param(
 
     # Press F7 once the window is up, and wait for the compiler.
     [switch]$Build,
+
+    # Anything else to press, in SendKeys spelling - "{F9}{F8}" sets a
+    # breakpoint on the caret's line and starts the debugger. Sent after the
+    # build, if there is one, and before the panel is chosen.
+    [string]$Keys = "",
+
+    # How long to wait after those keys. Starting a debugger takes longer than
+    # pressing a key usually does, since it compiles first.
+    [int]$KeySeconds = 12,
 
     # The editor to run. Found beside this script by default.
     [string]$Editor = "",
@@ -124,6 +136,11 @@ Start-Sleep -Milliseconds 700
 if ($Build) {
     [System.Windows.Forms.SendKeys]::SendWait("{F7}")
     Start-Sleep -Seconds $BuildSeconds
+}
+
+if ($Keys -ne "") {
+    [System.Windows.Forms.SendKeys]::SendWait($Keys)
+    Start-Sleep -Seconds $KeySeconds
 }
 
 if ($Panel -ne "") {

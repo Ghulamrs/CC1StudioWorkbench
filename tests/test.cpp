@@ -12,6 +12,12 @@
 #include "path.h"
 #include "process.h"
 #include "debugger.h"
+
+// The seam the window is built on. It is tested from here because the window
+// itself only runs on Windows, where cc1 emits MASM and there is no debugging
+// to be had - so the one machine that can run the GUI is the one machine that
+// cannot exercise what it calls.
+#include "bridge.h"
 #include "compile.h"
 #include "indent.h"
 #include "symbols.h"
@@ -433,8 +439,17 @@ void routing() {
               editor::emitsDebugInfo(editor::ToolCc1, kDarwin),
           "cc1 writes DWARF for two of its three targets");
     check(!editor::emitsDebugInfo(editor::ToolCc1, kWindows), "and not for the third");
-    check(!editor::emitsDebugInfo(editor::ToolMsvc, kWindows),
-          "and cl is not asked for debug information at all");
+    // cl is the other half of this machine's story, and not in the same
+    // position: the C file goes to cc1 and carries no line table, while the
+    // C++ file goes to cl, which writes CodeView into a .pdb and always could.
+    check(editor::emitsDebugInfo(editor::ToolMsvc, kWindows),
+          "cl writes debug information for the target it builds for");
+    check(editor::configFlags(editor::ToolMsvc, editor::ConfigDebug, kWindows)
+              .find("/Zi") != std::string::npos,
+          "and a debug build asks it for that, not only for /Od");
+    check(editor::configFlags(editor::ToolMsvc, editor::ConfigRelease, kWindows)
+              .find("/Zi") == std::string::npos,
+          "while a release build does not");
 
     // The words the panel says are the core's, and they follow the target
     // rather than being written out once and left.
@@ -493,7 +508,10 @@ void routing() {
           "cl is not told to stop at an object");
     check(clProgram.command.find("/Fe") != std::string::npos, "and is told what to call the program");
     check(clProgram.command.find("/TP") != std::string::npos, "and that this one is C++");
-    check(clProgram.leftovers.size() == 1, "and the object it goes through is cleared up");
+    check(clProgram.command.find("/link /DEBUG") != std::string::npos,
+          "and the linker is told as well, since /Zi only describes the object");
+    check(clProgram.leftovers.size() == 3,
+          "and the object, the .pdb and the .ilk are all cleared up after");
 
     // C++14, which is what this arena holds itself to - the editor tells cl so
     // rather than leaving it on whatever that compiler defaults to.
@@ -1390,11 +1408,122 @@ void debuggingForReal() {
     editor::path::removeTree(dir);
 }
 
+// Everything the Windows front end does to stop a program on a line, done
+// through the same seam it uses, on a machine where a debugger exists.
+void theSeamTheWindowUses() {
+    std::printf("what the window asks the core to do\n");
+
+    std::string host = editor::hostArch();
+    check(ed1_debugger_for(editor::ToolCc1, host.c_str()) ==
+              static_cast<int>(editor::debuggerFor(editor::ToolCc1, host)),
+          "the window is told the same debugger the editor found");
+    check(std::string(ed1_debugger_name(ed1_debugger_for(editor::ToolCc1, host.c_str()))) ==
+              editor::debuggerName(editor::debuggerFor(editor::ToolCc1, host)),
+          "and the same name for it");
+
+    // The two compilers are not in the same position on the same machine, and
+    // the reason given has to say which one it is talking about.
+    check(ed1_debugger_for(editor::ToolCc1, "x86_64-windows") == 0,
+          "what cc1 builds for Windows can never be debugged");
+    check(std::string(ed1_no_debugger_because(editor::ToolCc1, "x86_64-windows"))
+              .find("MASM") != std::string::npos,
+          "and the reason names the MASM that has no line table");
+    check(std::string(ed1_no_debugger_because(editor::ToolMsvc, "x86_64-windows"))
+              .find("pdb") != std::string::npos,
+          "while cl's reason is a .pdb nothing here reads, which is a different problem");
+
+    if (editor::debuggerFor(editor::ToolCc1, host) == editor::DebuggerNone) {
+        std::printf("  (no debugger on this machine, so the rest is not tried)\n");
+        return;
+    }
+
+    const char* cc1 = std::getenv("CC1");
+    if (!cc1 || !*cc1) {
+        std::printf("  (no $CC1, so nothing is built to stop inside)\n");
+        return;
+    }
+
+    std::string dir = editor::path::join(editor::path::tempDir(), "ed1-bridge-test");
+    editor::path::removeTree(dir);
+    editor::path::makeDirectories(dir);
+    std::string source = editor::path::join(dir, "seam.c");
+    writeSource(source,
+                "static int twice(int n)\n"
+                "{\n"
+                "    return n * 2;\n"
+                "}\n"
+                "\n"
+                "int main(void)\n"
+                "{\n"
+                "    int total = 0;\n"
+                "    for (int i = 1; i <= 3; ++i) {\n"
+                "        total = total + twice(i);\n"
+                "    }\n"
+                "    return total;\n"
+                "}\n");
+
+    // Built through the bridge, exactly as the window builds it.
+    Ed1Program* built = ed1_build_program(cc1, "cl", editor::ToolCc1, source.c_str(),
+                                          editor::LangC, editor::hostArch(),
+                                          editor::ConfigDebug);
+    check(ed1_program_ok(built) != 0, "the window's build makes a program");
+    if (ed1_program_ok(built) == 0) { ed1_program_free(built); editor::path::removeTree(dir); return; }
+    check(editor::path::exists(ed1_program_path(built)),
+          "and leaves it where it said it did, for a debugger to open");
+
+    Ed1Debugger* debugger = ed1_debugger_new();
+    check(ed1_debugger_start(debugger, ed1_program_path(built)) != 0,
+          "the debugger starts on it");
+    check(ed1_debugger_running(debugger) != 0, "and says it is running");
+
+    check(ed1_debugger_break(debugger, source.c_str(), 10) != 0, "a breakpoint is set");
+
+    ed1_debugger_run(debugger);
+    check(ed1_stop_stopped(debugger) != 0, "running stops on it");
+    check(ed1_stop_line(debugger) == 10, "on the line asked for");
+    check(std::string(ed1_stop_function(debugger)) == "main", "in the right function");
+
+    // The locals are read once when it stops and handed over one string at a
+    // time, because the managed side cannot hold a std::vector.
+    int howMany = ed1_locals_count(debugger);
+    bool sawTotal = false;
+    for (int i = 0; i < howMany; ++i)
+        if (std::string(ed1_local_name(debugger, i)) == "total" &&
+            std::string(ed1_local_value(debugger, i)) == "0") sawTotal = true;
+    check(howMany > 0 && sawTotal, "and what is in scope comes back one name at a time");
+    check(std::string(ed1_local_name(debugger, howMany + 5)).empty(),
+          "an index past the end answers with nothing rather than reading past it");
+
+    ed1_debugger_step_into(debugger);
+    check(std::string(ed1_stop_function(debugger)) == "twice", "stepping into arrives inside");
+
+    ed1_debugger_step_out(debugger);
+    check(std::string(ed1_stop_function(debugger)) == "main", "and stepping out comes back");
+
+    ed1_debugger_clear(debugger);
+    ed1_debugger_resume(debugger);
+    check(ed1_stop_exited(debugger) != 0, "with no breakpoints left it runs to the end");
+    check(ed1_stop_status(debugger) == 12, "returning what it worked out");
+
+    ed1_debugger_stop(debugger);
+    check(ed1_debugger_running(debugger) == 0, "and stops when it is told to");
+    ed1_debugger_free(debugger);
+
+    // Freeing the handle takes the program with it, which is what stops a
+    // debugging session leaving one behind in the temporary directory.
+    std::string was = ed1_program_path(built);
+    ed1_program_free(built);
+    check(!editor::path::exists(was), "freeing the build removes the program it made");
+
+    editor::path::removeTree(dir);
+}
+
 int main() {
     paths();
     talkingToAChild();
     whatADebuggerSays();
     debuggingForReal();
+    theSeamTheWindowUses();
     diagnostics();
     layout();
     typing();

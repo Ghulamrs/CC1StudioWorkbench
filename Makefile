@@ -73,9 +73,11 @@ test: tests/test
 tests/test: tests/test.cpp src/compile.cpp src/indent.cpp src/syntax.cpp \
             src/toolchain.cpp src/json.cpp src/project.cpp src/find.cpp \
        src/utf8.cpp src/workspace.cpp src/symbols.cpp src/demangle_win.cpp \
-            src/path.cpp src/process.cpp src/debugger.cpp src/buffer.cpp src/compile.h src/indent.h src/syntax.h \
+            src/path.cpp src/process.cpp src/debugger.cpp src/buffer.cpp \
+            winforms/bridge.cpp winforms/bridge.h src/compile.h src/indent.h src/syntax.h \
             src/json.h src/project.h src/path.h src/buffer.h
-	$(CXX) $(CXXFLAGS) -Isrc -o $@ tests/test.cpp src/compile.cpp src/indent.cpp \
+	$(CXX) $(CXXFLAGS) -Isrc -Iwinforms -o $@ tests/test.cpp winforms/bridge.cpp \
+	    src/compile.cpp src/indent.cpp \
 	    src/syntax.cpp src/toolchain.cpp src/json.cpp src/project.cpp src/find.cpp \
        src/utf8.cpp src/workspace.cpp src/symbols.cpp src/demangle_win.cpp \
 	    src/path.cpp src/process.cpp src/debugger.cpp src/buffer.cpp

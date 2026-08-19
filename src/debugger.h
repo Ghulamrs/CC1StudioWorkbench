@@ -6,6 +6,7 @@
 #include <vector>
 
 #include "process.h"
+#include "toolchain.h"
 
 namespace editor {
 
@@ -27,15 +28,23 @@ enum DebuggerKind {
     DebuggerGdb        // what the Linux box has
 };
 
-// The one this machine has, and the program to run for it. Windows gets none:
-// cc1 generates MASM there, which carries no line table, so there would be
-// nothing for a debugger to read even if one were installed.
+// The DWARF debugger this machine has: lldb on a Mac, gdb on Linux, and none
+// on Windows, where neither is installed.
 DebuggerKind debuggerHere();
 const char* debuggerName(DebuggerKind kind);
 const char* debuggerProgram(DebuggerKind kind);
 
-// Why there is no debugging here, when there is not.
-std::string noDebuggerBecause(const std::string& arch);
+// Which debugger can read what this compiler writes for this target - which is
+// not a question about the machine alone. On Windows the two compilers are in
+// different positions: a C file goes to cc1 and comes out as MASM with no line
+// table, while a C++ file goes to cl and comes out with CodeView in a .pdb.
+// The first can never be debugged there; the second could be, by something
+// that reads a .pdb.
+DebuggerKind debuggerFor(ToolchainKind kind, const std::string& arch);
+
+// Why there is none, when there is none - in the terms that apply to this
+// compiler and this target rather than in general.
+std::string noDebuggerBecause(ToolchainKind kind, const std::string& arch);
 
 // Where the program is, now that it has stopped. `stopped` and `exited` are
 // both false when the answer could not be read at all, which is a debugger

@@ -48,6 +48,17 @@ protected:
             ed1_project_free(project_);
             project_ = nullptr;
         }
+        // A debugger left running would outlive the window that started it,
+        // and the program it is attached to would be left in the temporary
+        // directory. Freeing the handle removes both.
+        if (built_ != nullptr) {
+            ed1_program_free(built_);
+            built_ = nullptr;
+        }
+        if (debugger_ != nullptr) {
+            ed1_debugger_free(debugger_);
+            debugger_ = nullptr;
+        }
     }
 
 private:
@@ -63,6 +74,17 @@ private:
     int indentWidth_;
     int indentTabs_;
     int indentCase_;
+
+    // Stopping the program and walking through it. The breakpoints are the
+    // editor's own note and are kept by file, so they survive a file being
+    // closed and opened again; the debugger and the program it is attached to
+    // are native and are freed in OnFormClosed.
+    Ed1Debugger* debugger_;
+    Ed1Program* built_;
+    System::Collections::Generic::Dictionary<String^,
+        System::Collections::Generic::List<int>^>^ breaks_;
+    String^ stopFile_;
+    int stopLine_;          // 0 when the program is not standing still
 
     String^ path_;
     String^ projectDirectory_;
@@ -121,6 +143,12 @@ private:
         cl_ = "cl";
         toolKind_ = ED1_TOOL_AUTO;
         config_ = ED1_CONFIG_DEBUG;
+        debugger_ = ed1_debugger_new();
+        built_ = nullptr;
+        breaks_ = gcnew System::Collections::Generic::Dictionary<String^,
+            System::Collections::Generic::List<int>^>();
+        stopFile_ = nullptr;
+        stopLine_ = 0;
         indentWidth_ = 4;
         indentTabs_ = 0;
         indentCase_ = 0;
@@ -213,6 +241,23 @@ private:
         build->DropDownItems->Add("Release build", nullptr,
                                   gcnew EventHandler(this, &MainForm::OnReleaseConfig));
         bar->Items->Add(build);
+
+        // Its own column, as in the other front end: once the program has
+        // stopped, most of what you do next is one of these.
+        ToolStripMenuItem^ debug = gcnew ToolStripMenuItem("&Debug");
+        debug->DropDownItems->Add(Item("Start / continue", Keys::F8,
+                                       gcnew EventHandler(this, &MainForm::OnDebug)));
+        debug->DropDownItems->Add(Item("Toggle breakpoint", Keys::F9,
+                                       gcnew EventHandler(this, &MainForm::OnToggleBreak)));
+        debug->DropDownItems->Add(Item("Step over", Keys::F7,
+                                       gcnew EventHandler(this, &MainForm::OnStepOver)));
+        debug->DropDownItems->Add(Item("Step into", Keys::F6,
+                                       gcnew EventHandler(this, &MainForm::OnStepInto)));
+        debug->DropDownItems->Add("Step out", nullptr,
+                                  gcnew EventHandler(this, &MainForm::OnStepOut));
+        debug->DropDownItems->Add("Stop debugging", nullptr,
+                                  gcnew EventHandler(this, &MainForm::OnDebugStop));
+        bar->Items->Add(debug);
 
         // The panel's three tabs, reachable without the mouse.
         ToolStripMenuItem^ view = gcnew ToolStripMenuItem("&View");
@@ -494,11 +539,43 @@ private:
         System::Drawing::Brush^ here =
             gcnew System::Drawing::SolidBrush(System::Drawing::Color::FromArgb(60, 60, 60));
 
+        // Which file this gutter belongs to, so that its breakpoints can be
+        // found. The sheet knows; the panel only knows its box.
+        String^ file = nullptr;
+        for each (Sheet^ sheet in sheets_)
+            if (sheet->gutter == panel) file = sheet->path;
+
+        System::Collections::Generic::List<int>^ marks = nullptr;
+        if (file != nullptr) breaks_->TryGetValue(file, marks);
+
+        bool sameFile = file != nullptr && stopFile_ != nullptr &&
+                        System::IO::Path::GetFileName(file) ==
+                            System::IO::Path::GetFileName(stopFile_);
+
+        System::Drawing::Brush^ breakMark =
+            gcnew System::Drawing::SolidBrush(System::Drawing::Color::FromArgb(200, 60, 60));
+        System::Drawing::Brush^ stopMark =
+            gcnew System::Drawing::SolidBrush(System::Drawing::Color::FromArgb(40, 150, 60));
+
         for (int row = first; row < lines; ++row) {
             int at = box->GetFirstCharIndexFromLine(row);
             if (at < 0) break;
             System::Drawing::Point where = box->GetPositionFromCharIndex(at);
             if (where.Y > panel->Height) break;
+
+            // The left of the gutter is the debugger's: a breakpoint waiting,
+            // and an arrow on the line the program is standing on. The numbers
+            // are right-aligned away from it, so nothing moves when one appears.
+            float top = static_cast<float>(where.Y) + 3.0f;
+            if (marks != nullptr && marks->Contains(row + 1))
+                e->Graphics->FillEllipse(breakMark, 3.0f, top, 9.0f, 9.0f);
+            if (sameFile && stopLine_ == row + 1) {
+                array<System::Drawing::PointF>^ arrow = gcnew array<System::Drawing::PointF>(3);
+                arrow[0] = System::Drawing::PointF(3.0f, top);
+                arrow[1] = System::Drawing::PointF(12.0f, top + 4.5f);
+                arrow[2] = System::Drawing::PointF(3.0f, top + 9.0f);
+                e->Graphics->FillPolygon(stopMark, arrow);
+            }
 
             String^ number = (row + 1).ToString();
             System::Drawing::SizeF size = e->Graphics->MeasureString(number, box->Font);
@@ -1277,6 +1354,230 @@ private:
         console_->Text += String::Format("\r\n[program returned {0}]\r\n", status);
         what_->Text = String::Format("{0} ran - it returned {1}",
                                      System::IO::Path::GetFileName(path_), status);
+    }
+
+    // ---- stopping on a line ------------------------------------------------
+
+    System::Collections::Generic::List<int>^ BreaksFor(String^ file) {
+        if (file == nullptr) return nullptr;
+        System::Collections::Generic::List<int>^ lines = nullptr;
+        if (!breaks_->TryGetValue(file, lines)) {
+            lines = gcnew System::Collections::Generic::List<int>();
+            breaks_[file] = lines;
+        }
+        return lines;
+    }
+
+    int CaretLine() {
+        return text_->GetLineFromCharIndex(text_->SelectionStart) + 1;
+    }
+
+    void OnToggleBreak(Object^, EventArgs^) {
+        if (path_ == nullptr) {
+            what_->Text = "save the file first - a breakpoint is on a line of a file";
+            return;
+        }
+
+        System::Collections::Generic::List<int>^ lines = BreaksFor(path_);
+        int line = CaretLine();
+
+        if (lines->Contains(line)) {
+            lines->Remove(line);
+            if (ed1_debugger_running(debugger_) != 0) SetEveryBreakpoint();
+            what_->Text = String::Format("breakpoint off line {0}", line);
+        } else {
+            lines->Add(line);
+            if (ed1_debugger_running(debugger_) != 0) {
+                array<Byte>^ bytes = Utf8Of(path_);
+                pin_ptr<Byte> pinned = &bytes[0];
+                ed1_debugger_break(debugger_, reinterpret_cast<const char*>(pinned), line);
+            }
+            what_->Text = String::Format("breakpoint on line {0}", line);
+        }
+        Current()->gutter->Invalidate();
+    }
+
+    // The whole set, rather than one taken away: neither debugger promises the
+    // numbering of what it hands out, and there are never enough breakpoints
+    // here for the difference to matter.
+    void SetEveryBreakpoint() {
+        ed1_debugger_clear(debugger_);
+        for each (System::Collections::Generic::KeyValuePair<String^,
+                      System::Collections::Generic::List<int>^> pair in breaks_) {
+            array<Byte>^ bytes = Utf8Of(pair.Key);
+            pin_ptr<Byte> pinned = &bytes[0];
+            for each (int line in pair.Value)
+                ed1_debugger_break(debugger_, reinterpret_cast<const char*>(pinned), line);
+        }
+    }
+
+    void OnDebug(Object^, EventArgs^) {
+        if (ed1_debugger_running(debugger_) != 0) {
+            ed1_debugger_resume(debugger_);
+            ShowStop();
+            return;
+        }
+
+        if (path_ == nullptr) { what_->Text = "open a file first"; return; }
+        OnSave(nullptr, nullptr);
+
+        int language = LanguageNow();
+        int kind = ed1_resolve(toolKind_, language);
+        if (ed1_can_compile(kind, language) == 0) {
+            what_->Text = FromUtf8(ed1_refusal(kind, language));
+            return;
+        }
+
+        array<Byte>^ archBytes = Utf8Of(arch_);
+        pin_ptr<Byte> arch = &archBytes[0];
+
+        if (ed1_runs_here(kind, reinterpret_cast<const char*>(arch)) == 0) {
+            what_->Text = FromUtf8(ed1_why_not_run(kind, reinterpret_cast<const char*>(arch)));
+            return;
+        }
+        if (ed1_debugger_for(kind, reinterpret_cast<const char*>(arch)) == 0) {
+            what_->Text = FromUtf8(
+                ed1_no_debugger_because(kind, reinterpret_cast<const char*>(arch)));
+            return;
+        }
+        if (config_ != ED1_CONFIG_DEBUG) {
+            what_->Text = "release is built without -g - choose Debug build, then F8";
+            return;
+        }
+
+        array<Byte>^ sourceBytes = Utf8Of(path_);
+        pin_ptr<Byte> source = &sourceBytes[0];
+        array<Byte>^ cc1Bytes = Utf8Of(cc1_);
+        pin_ptr<Byte> cc1 = &cc1Bytes[0];
+        array<Byte>^ clBytes = Utf8Of(cl_);
+        pin_ptr<Byte> cl = &clBytes[0];
+
+        console_->Text = "$ building for the debugger\r\n";
+        panel_->SelectedIndex = 0;
+        what_->Text = "building for the debugger ...";
+        Application::DoEvents();
+
+        if (built_ != nullptr) { ed1_program_free(built_); built_ = nullptr; }
+        built_ = ed1_build_program(reinterpret_cast<const char*>(cc1),
+                                   reinterpret_cast<const char*>(cl), kind,
+                                   reinterpret_cast<const char*>(source), language,
+                                   reinterpret_cast<const char*>(arch), config_);
+
+        console_->Text += FromUtf8(ed1_program_output(built_))->Replace("\n", "\r\n");
+
+        if (ed1_program_ok(built_) == 0) {
+            if (ed1_program_has_error(built_) != 0) {
+                int line = ed1_program_error_line(built_);
+                int column = ed1_program_error_column(built_);
+                String^ message = FromUtf8(ed1_program_error_message(built_));
+                GoTo(line, column);
+                what_->Text = String::Format("{0}:{1}: error: {2}", line, column, message);
+            } else {
+                what_->Text = FromUtf8(ed1_toolchain_name(kind)) + " built no program - see the console";
+            }
+            ed1_program_free(built_);
+            built_ = nullptr;
+            return;
+        }
+
+        if (ed1_debugger_start(debugger_, ed1_program_path(built_)) == 0) {
+            what_->Text = FromUtf8(ed1_debugger_name(
+                              ed1_debugger_for(kind, reinterpret_cast<const char*>(arch)))) +
+                          " could not be started - is it installed?";
+            ed1_program_free(built_);
+            built_ = nullptr;
+            return;
+        }
+
+        SetEveryBreakpoint();
+        ed1_debugger_run(debugger_);
+        ShowStop();
+    }
+
+    void OnStepOver(Object^, EventArgs^) { Step(0); }
+    void OnStepInto(Object^, EventArgs^) { Step(1); }
+    void OnStepOut(Object^, EventArgs^) { Step(2); }
+
+    void Step(int how) {
+        if (ed1_debugger_running(debugger_) == 0) {
+            what_->Text = "nothing is running - F8 starts it";
+            return;
+        }
+        if (how == 1) ed1_debugger_step_into(debugger_);
+        else if (how == 2) ed1_debugger_step_out(debugger_);
+        else ed1_debugger_step_over(debugger_);
+        ShowStop();
+    }
+
+    void OnDebugStop(Object^, EventArgs^) {
+        if (ed1_debugger_running(debugger_) == 0) { what_->Text = "nothing is running"; return; }
+        EndDebugging();
+        what_->Text = "debugging stopped";
+    }
+
+    void EndDebugging() {
+        ed1_debugger_stop(debugger_);
+        if (built_ != nullptr) { ed1_program_free(built_); built_ = nullptr; }
+        stopFile_ = nullptr;
+        stopLine_ = 0;
+        Current()->gutter->Invalidate();
+    }
+
+    void ShowStop() {
+        panel_->SelectedIndex = 1;   // the Debug tab
+
+        if (ed1_stop_exited(debugger_) != 0) {
+            int status = ed1_stop_status(debugger_);
+            debug_->Text = String::Format(
+                "the program ran to the end and returned {0}\r\n\r\n"
+                "F8 starts it again. The breakpoints are still where you put them.", status);
+            EndDebugging();
+            what_->Text = String::Format("the program returned {0}", status);
+            return;
+        }
+
+        if (ed1_stop_stopped(debugger_) == 0) {
+            debug_->Text = "the debugger stopped answering";
+            EndDebugging();
+            what_->Text = "the debugger stopped answering - see the Debug tab";
+            return;
+        }
+
+        stopFile_ = FromUtf8(ed1_stop_file(debugger_));
+        stopLine_ = ed1_stop_line(debugger_);
+        String^ function = FromUtf8(ed1_stop_function(debugger_));
+
+        // The caret follows it, but only into the file it is actually in.
+        if (path_ != nullptr && stopLine_ > 0 &&
+            System::IO::Path::GetFileName(stopFile_) == System::IO::Path::GetFileName(path_)) {
+            GoTo(stopLine_, 1);
+        }
+
+        System::Text::StringBuilder^ said = gcnew System::Text::StringBuilder();
+        said->AppendFormat("stopped at {0}:{1}",
+                           System::IO::Path::GetFileName(stopFile_), stopLine_);
+        if (!String::IsNullOrEmpty(function)) said->AppendFormat(" in {0}", function);
+        said->Append("\r\n\r\n");
+
+        int howMany = ed1_locals_count(debugger_);
+        if (howMany == 0) {
+            said->Append("  (nothing in scope here)\r\n");
+        } else {
+            for (int i = 0; i < howMany; ++i) {
+                String^ type = FromUtf8(ed1_local_type(debugger_, i));
+                said->AppendFormat("  {0} = {1}", FromUtf8(ed1_local_name(debugger_, i)),
+                                   FromUtf8(ed1_local_value(debugger_, i)));
+                if (!String::IsNullOrEmpty(type)) said->AppendFormat("   [{0}]", type);
+                said->Append("\r\n");
+            }
+        }
+        said->Append("\r\nF8 carries on   F7 steps over   F6 steps into   F9 sets a breakpoint");
+        debug_->Text = said->ToString();
+
+        Current()->gutter->Invalidate();
+        what_->Text = String::Format("{0}:{1}{2}", System::IO::Path::GetFileName(stopFile_),
+                                     stopLine_,
+                                     String::IsNullOrEmpty(function) ? "" : " in " + function);
     }
 
     void GoTo(int line, int column) {

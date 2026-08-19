@@ -146,14 +146,19 @@ bool optimises(ToolchainKind kind) { return kind == ToolMsvc; }
 // this file and cannot be reached from it. There are three of them and they do
 // not move.
 bool emitsDebugInfo(ToolchainKind kind, const std::string& arch) {
+    // cl has always been able to. What was missing was being asked.
+    if (kind == ToolMsvc) return true;
     if (kind != ToolCc1) return false;
     return arch == "x86_64-linux" || arch == "arm64-darwin";
 }
 
 std::string configFlags(ToolchainKind kind, Configuration config,
                         const std::string& arch) {
+    // /Zi is what makes cl's debug build a debug build. Without it the word
+    // meant the optimiser was off and a macro was defined, and nothing that
+    // could stop on a line - the same thing that used to be wrong for cc1.
     if (kind == ToolMsvc)
-        return config == ConfigRelease ? " /O2 /DNDEBUG" : " /Od /D_DEBUG";
+        return config == ConfigRelease ? " /O2 /DNDEBUG" : " /Od /Zi /D_DEBUG";
 
     // cc1 has no optimiser, so release is the define and nothing else. Debug is
     // more than a define wherever cc1 can write the debug information.
@@ -245,11 +250,21 @@ Recipe programRecipe(const Toolchain& tool, ToolchainKind kind,
         // object it goes through; the object is the editor's mess to clear up.
         std::string obj = tempDir() + kSep + "ed1-run.obj";
         std::string forLanguage = (lang == LangCpp) ? " /TP /EHsc /std:c++14" : " /TC";
+        // The .pdb goes where the program goes rather than beside the source,
+        // and the linker is told as well as the compiler - /Zi alone describes
+        // the object, and /DEBUG is what puts it in the program.
+        std::string pdb = tempDir() + kSep + "ed1-run.pdb";
         recipe.command = quote(program) + " /nologo /diagnostics:column" + forLanguage +
                          configFlags(kind, config, arch) +
+                         (config == ConfigDebug ? " /Fd" + quote(pdb) : std::string()) +
                          " /Fe" + quote(recipe.assemblyPath) +
-                         " /Fo" + quote(obj) + " " + quote(source);
+                         " /Fo" + quote(obj) + " " + quote(source) +
+                         (config == ConfigDebug ? " /link /DEBUG" : std::string());
         recipe.leftovers.push_back(obj);
+        if (config == ConfigDebug) {
+            recipe.leftovers.push_back(pdb);
+            recipe.leftovers.push_back(tempDir() + kSep + "ed1-run.ilk");
+        }
         return recipe;
     }
 

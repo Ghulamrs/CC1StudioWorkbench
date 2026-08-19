@@ -131,10 +131,27 @@ const char* debuggerName(DebuggerKind kind) {
 
 const char* debuggerProgram(DebuggerKind kind) { return debuggerName(kind); }
 
-std::string noDebuggerBecause(const std::string& arch) {
-    if (debuggerHere() == DebuggerNone)
-        return "no debugger here - cc1 generates MASM for " + arch + ", which has no line table";
-    return std::string();
+DebuggerKind debuggerFor(ToolchainKind kind, const std::string& arch) {
+    // Nothing to read is the first way to have no debugger.
+    if (!emitsDebugInfo(kind, arch)) return DebuggerNone;
+
+    // cl writes CodeView into a .pdb, which gdb and lldb-on-Unix do not read
+    // and which nothing on the Windows box is set up to read either: no cdb,
+    // no WinDbg. The debug information is real and unused - what is missing is
+    // a debugger to point at it, and that is a decision rather than a defect.
+    if (kind == ToolMsvc) return DebuggerNone;
+
+    return debuggerHere();
+}
+
+std::string noDebuggerBecause(ToolchainKind kind, const std::string& arch) {
+    if (debuggerFor(kind, arch) != DebuggerNone) return std::string();
+
+    if (kind == ToolMsvc)
+        return "cl writes a .pdb, and nothing here reads one - no cdb, no WinDbg";
+    if (!emitsDebugInfo(kind, arch))
+        return "cc1 generates MASM for " + arch + ", which carries no line table";
+    return std::string("no ") + debuggerName(debuggerHere()) + " on this machine";
 }
 
 // ---- reading what they say -------------------------------------------------

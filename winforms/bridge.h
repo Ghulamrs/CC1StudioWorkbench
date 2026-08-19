@@ -205,6 +205,65 @@ const char* ed1_shown_run_command(const char* cc1, const char* cl, int kind,
                                   const char* source, int language, const char* arch,
                                   int config);
 
+/* ---- stopping on a line ------------------------------------------------- */
+
+/* A program built and left where it is, which is what a debugger attaches to.
+   Freeing the handle removes the program with it. */
+typedef struct Ed1Program Ed1Program;
+
+Ed1Program* ed1_build_program(const char* cc1, const char* cl, int kind, const char* source,
+                              int language, const char* arch, int config);
+void ed1_program_free(Ed1Program* built);
+
+int ed1_program_ok(Ed1Program* built);
+const char* ed1_program_path(Ed1Program* built);
+const char* ed1_program_output(Ed1Program* built);
+int ed1_program_has_error(Ed1Program* built);
+int ed1_program_error_line(Ed1Program* built);
+int ed1_program_error_column(Ed1Program* built);
+const char* ed1_program_error_message(Ed1Program* built);
+
+/* Which debugger can read what this compiler writes for this target: 0 none,
+   1 lldb, 2 gdb. Not a question about the machine alone - on Windows a C file
+   goes to cc1 and comes out as MASM with no line table, while a C++ file goes
+   to cl and comes out with CodeView in a .pdb. */
+int ed1_debugger_for(int kind, const char* arch);
+const char* ed1_debugger_name(int kind);
+const char* ed1_no_debugger_because(int kind, const char* arch);
+
+typedef struct Ed1Debugger Ed1Debugger;
+
+Ed1Debugger* ed1_debugger_new(void);
+void ed1_debugger_free(Ed1Debugger* debugger);
+
+int ed1_debugger_start(Ed1Debugger* debugger, const char* program);
+int ed1_debugger_running(Ed1Debugger* debugger);
+void ed1_debugger_stop(Ed1Debugger* debugger);
+
+int ed1_debugger_break(Ed1Debugger* debugger, const char* file, int line);
+int ed1_debugger_clear(Ed1Debugger* debugger);
+
+/* Each of these moves the program and keeps what came of it, which is then
+   read with the ed1_stop_ calls below. */
+void ed1_debugger_run(Ed1Debugger* debugger);
+void ed1_debugger_resume(Ed1Debugger* debugger);
+void ed1_debugger_step_over(Ed1Debugger* debugger);
+void ed1_debugger_step_into(Ed1Debugger* debugger);
+void ed1_debugger_step_out(Ed1Debugger* debugger);
+
+int ed1_stop_stopped(Ed1Debugger* debugger);
+int ed1_stop_exited(Ed1Debugger* debugger);
+int ed1_stop_status(Ed1Debugger* debugger);
+const char* ed1_stop_file(Ed1Debugger* debugger);
+int ed1_stop_line(Ed1Debugger* debugger);
+const char* ed1_stop_function(Ed1Debugger* debugger);
+
+/* What is in scope where it stopped, read after a move. */
+int ed1_locals_count(Ed1Debugger* debugger);
+const char* ed1_local_name(Ed1Debugger* debugger, int index);
+const char* ed1_local_type(Ed1Debugger* debugger, int index);
+const char* ed1_local_value(Ed1Debugger* debugger, int index);
+
 #ifdef __cplusplus
 }
 #endif

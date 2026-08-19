@@ -248,6 +248,16 @@ project.cpp and compile.cpp the terminal editor uses, compiled into the same
 binary as native code. Nothing is duplicated: laying a file out, colouring it,
 reading ed1.json and choosing between cc1 and cl are all the same code running.
 
+It edits the way the terminal one does. A newline takes the indentation its
+place asks for, a typed `}` `#` or `:` puts its own line where it belongs, and
+Tab in the leading space lays the line out rather than adding a step. Find,
+find-next, find-previous and replace call the same `find.cpp`. Undo, redo, cut,
+copy, paste and select-all are the text box's own - it keeps the history the
+typing went into, and there is no sense in keeping a second one beside it.
+
+Typed flat into the window, `int twice(int n) {` and four lines after it come
+back laid out, with the closing brace snapping to column 0 as it is typed.
+
 The managed form talks to it through `winforms/bridge.h`, which names no C++
 type at all - opaque handles and char pointers, nothing else. That is not
 fastidiousness; three separate things about mixed native/managed binaries have

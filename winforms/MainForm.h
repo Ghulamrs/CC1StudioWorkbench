@@ -20,6 +20,15 @@ public:
     MainForm(String^ projectDirectory, String^ file) { Start(projectDirectory, file); }
 
 protected:
+    // The text is what a person came to type in, so that is what has the
+    // keyboard - but only once the window exists. Asked for in the constructor
+    // it does nothing at all, because there is nothing yet to give it to.
+    virtual void OnShown(EventArgs^ e) override {
+        Form::OnShown(e);
+        text_->Select(0, 0);
+        text_->Focus();
+    }
+
     ~MainForm() { this->!MainForm(); }
     !MainForm() {
         if (project_ != nullptr) {
@@ -43,6 +52,7 @@ private:
     int indentCase_;
 
     String^ path_;
+    String^ needle_;      // what was last searched for
     bool colouring_;
 
     TreeView^ tree_;
@@ -124,10 +134,24 @@ private:
         bar->Items->Add(file);
 
         ToolStripMenuItem^ edit = gcnew ToolStripMenuItem("&Edit");
-        ToolStripMenuItem^ layout = gcnew ToolStripMenuItem(
-            "Lay out file", nullptr, gcnew EventHandler(this, &MainForm::OnLayOut));
-        layout->ShortcutKeys = static_cast<Keys>(Keys::Control | Keys::L);
-        edit->DropDownItems->Add(layout);
+        edit->DropDownItems->Add(Item("Undo", Keys::Control | Keys::Z, gcnew EventHandler(this, &MainForm::OnUndo)));
+        edit->DropDownItems->Add(Item("Redo", Keys::Control | Keys::Y, gcnew EventHandler(this, &MainForm::OnRedo)));
+        edit->DropDownItems->Add(gcnew ToolStripSeparator());
+        edit->DropDownItems->Add(Item("Cut", Keys::Control | Keys::X, gcnew EventHandler(this, &MainForm::OnCut)));
+        edit->DropDownItems->Add(Item("Copy", Keys::Control | Keys::C, gcnew EventHandler(this, &MainForm::OnCopy)));
+        edit->DropDownItems->Add(Item("Paste", Keys::Control | Keys::V, gcnew EventHandler(this, &MainForm::OnPaste)));
+        edit->DropDownItems->Add(
+            Item("Select all", Keys::Control | Keys::A, gcnew EventHandler(this, &MainForm::OnSelectAll)));
+        edit->DropDownItems->Add(gcnew ToolStripSeparator());
+        edit->DropDownItems->Add(Item("Find...", Keys::Control | Keys::F, gcnew EventHandler(this, &MainForm::OnFind)));
+        edit->DropDownItems->Add(Item("Find next", Keys::F3, gcnew EventHandler(this, &MainForm::OnFindNext)));
+        edit->DropDownItems->Add(
+            Item("Find previous", Keys::Shift | Keys::F3, gcnew EventHandler(this, &MainForm::OnFindPrevious)));
+        edit->DropDownItems->Add(
+            Item("Replace...", Keys::Control | Keys::H, gcnew EventHandler(this, &MainForm::OnReplace)));
+        edit->DropDownItems->Add(gcnew ToolStripSeparator());
+        edit->DropDownItems->Add(
+            Item("Lay out file", Keys::Control | Keys::L, gcnew EventHandler(this, &MainForm::OnLayOut)));
         bar->Items->Add(edit);
 
         ToolStripMenuItem^ build = gcnew ToolStripMenuItem("&Build");
@@ -180,6 +204,7 @@ private:
         text_->AcceptsTab = true;
         text_->HideSelection = false;
         text_->KeyDown += gcnew KeyEventHandler(this, &MainForm::OnKeyDown);
+        text_->KeyUp += gcnew KeyEventHandler(this, &MainForm::OnKeyUp);
         text_->SelectionChanged += gcnew EventHandler(this, &MainForm::OnCaretMoved);
         upper->Panel2->Controls->Add(text_);
         outer->Panel1->Controls->Add(upper);
@@ -219,6 +244,88 @@ private:
         console_->Text = "cc1 or cl output appears here.  F7 builds.";
         SayDebugTab();
     }
+
+    // A menu item with its key, since there are a dozen of them now. The
+    // handler arrives already made: a managed member function has no address
+    // to take, so the delegate is built at the call.
+    ToolStripMenuItem^ Item(String^ label, Keys key, EventHandler^ handler) {
+        ToolStripMenuItem^ item = gcnew ToolStripMenuItem(label, nullptr, handler);
+        item->ShortcutKeys = key;
+        return item;
+    }
+
+    // There is no input box in Windows Forms, so here is one.
+    String^ Ask(String^ title, String^ initial) {
+        Form^ box = gcnew Form();
+        box->Text = title;
+        box->FormBorderStyle = System::Windows::Forms::FormBorderStyle::FixedDialog;
+        box->StartPosition = System::Windows::Forms::FormStartPosition::CenterParent;
+        box->MinimizeBox = false;
+        box->MaximizeBox = false;
+        box->ClientSize = System::Drawing::Size(440, 96);
+
+        TextBox^ entry = gcnew TextBox();
+        entry->Text = initial == nullptr ? "" : initial;
+        entry->SetBounds(12, 16, 416, 26);
+        entry->Font = gcnew System::Drawing::Font("Consolas", 10.0f);
+        entry->SelectAll();
+
+        Button^ yes = gcnew Button();
+        yes->Text = "OK";
+        yes->DialogResult = System::Windows::Forms::DialogResult::OK;
+        yes->SetBounds(266, 56, 78, 28);
+
+        Button^ no = gcnew Button();
+        no->Text = "Cancel";
+        no->DialogResult = System::Windows::Forms::DialogResult::Cancel;
+        no->SetBounds(350, 56, 78, 28);
+
+        box->Controls->Add(entry);
+        box->Controls->Add(yes);
+        box->Controls->Add(no);
+        box->AcceptButton = yes;
+        box->CancelButton = no;
+
+        if (box->ShowDialog(this) != System::Windows::Forms::DialogResult::OK) return nullptr;
+        return entry->Text;
+    }
+
+    int LeadingOf(int row) {
+        if (row < 0 || row >= text_->Lines->Length) return 0;
+        String^ line = text_->Lines[row];
+        int lead = 0;
+        while (lead < line->Length && (line[lead] == ' ' || line[lead] == '\t')) ++lead;
+        return lead;
+    }
+
+    int CaretRow() { return text_->GetLineFromCharIndex(text_->SelectionStart); }
+    int CaretColumn() {
+        return text_->SelectionStart - text_->GetFirstCharIndexFromLine(CaretRow());
+    }
+
+    // The core counts columns in UTF-8 bytes and the box counts them in
+    // characters. For ASCII they agree and for anything else they do not, so
+    // the two are converted rather than assumed equal.
+    int CharacterColumn(int row, int byteColumn) {
+        if (row < 0 || row >= text_->Lines->Length) return 0;
+        array<Byte>^ bytes = Utf8Of(text_->Lines[row]);
+        int usable = bytes->Length - 1;   // without the terminator
+        if (byteColumn > usable) byteColumn = usable;
+        if (byteColumn <= 0) return 0;
+        return System::Text::Encoding::UTF8->GetString(bytes, 0, byteColumn)->Length;
+    }
+
+    int ByteColumn(int row, int characterColumn) {
+        if (row < 0 || row >= text_->Lines->Length) return 0;
+        String^ line = text_->Lines[row];
+        if (characterColumn > line->Length) characterColumn = line->Length;
+        if (characterColumn <= 0) return 0;
+        return System::Text::Encoding::UTF8->GetByteCount(line->Substring(0, characterColumn));
+    }
+
+    // The whole document as the core wants it: one string, lines separated by
+    // a single newline.
+    array<Byte>^ WholeText() { return Utf8Of(text_->Text->Replace("\r\n", "\n")); }
 
     TextBox^ ReadOnlyBox() {
         TextBox^ box = gcnew TextBox();
@@ -265,6 +372,29 @@ private:
     }
 
     void OnKeyDown(Object^, KeyEventArgs^ e) {
+        if (e->KeyCode == Keys::Tab && !e->Control && !e->Shift) {
+            e->SuppressKeyPress = true;
+
+            int row = CaretRow();
+            int column = CaretColumn();
+            String^ line = text_->Lines->Length > row ? text_->Lines[row] : "";
+            int lead = 0;
+            while (lead < line->Length && (line[lead] == ' ' || line[lead] == '\t')) ++lead;
+
+            // In the leading space, tab means 'put this line where it belongs'
+            // rather than 'add a step'. Anywhere else it is an ordinary indent.
+            if (column <= lead) {
+                Realign(row);
+                text_->SelectionStart = text_->GetFirstCharIndexFromLine(row) +
+                                        LeadingOf(row);
+            } else if (indentTabs_ != 0) {
+                text_->SelectedText = "\t";
+            } else {
+                text_->SelectedText = gcnew String(' ', indentWidth_);
+            }
+            return;
+        }
+
         if (e->KeyCode != Keys::Enter || e->Control || e->Shift) return;
 
         int caret = text_->SelectionStart;
@@ -342,6 +472,144 @@ private:
             case ED1_KIND_LABEL:   return System::Drawing::Color::FromArgb(150, 120, 0);
             default:               return System::Drawing::Color::Black;
         }
+    }
+
+    void OnUndo(Object^, EventArgs^) {
+        // The box keeps its own history, and it is the one the typing went
+        // into - there is no sense in keeping a second one beside it.
+        if (text_->CanUndo) text_->Undo();
+    }
+    void OnRedo(Object^, EventArgs^) { text_->Redo(); }
+    void OnCut(Object^, EventArgs^) { text_->Cut(); }
+    void OnCopy(Object^, EventArgs^) { text_->Copy(); }
+    void OnPaste(Object^, EventArgs^) {
+        text_->Paste();
+        Recolour();
+    }
+    void OnSelectAll(Object^, EventArgs^) { text_->SelectAll(); }
+
+    // ---- finding ----------------------------------------------------------
+
+    void OnFind(Object^, EventArgs^) {
+        String^ want = Ask("Find", needle_);
+        if (want == nullptr || want->Length == 0) return;
+        needle_ = want;
+        Seek(CaretRow(), ByteColumn(CaretRow(), CaretColumn()), true);
+    }
+
+    void OnFindNext(Object^, EventArgs^) {
+        if (needle_ == nullptr) { OnFind(nullptr, nullptr); return; }
+        Seek(CaretRow(), ByteColumn(CaretRow(), CaretColumn()) + 1, true);
+    }
+
+    void OnFindPrevious(Object^, EventArgs^) {
+        if (needle_ == nullptr) { OnFind(nullptr, nullptr); return; }
+        Seek(CaretRow(), ByteColumn(CaretRow(), CaretColumn()), false);
+    }
+
+    void Seek(int row, int column, bool forwards) {
+        array<Byte>^ text = WholeText();
+        pin_ptr<Byte> textPin = &text[0];
+        array<Byte>^ needle = Utf8Of(needle_);
+        pin_ptr<Byte> needlePin = &needle[0];
+
+        int foundRow = 0, foundColumn = 0;
+        int found = forwards ? ed1_find_next(reinterpret_cast<const char*>(textPin),
+                                             reinterpret_cast<const char*>(needlePin), row,
+                                             column, &foundRow, &foundColumn)
+                             : ed1_find_previous(reinterpret_cast<const char*>(textPin),
+                                                 reinterpret_cast<const char*>(needlePin), row,
+                                                 column, &foundRow, &foundColumn);
+        if (found == 0) {
+            what_->Text = needle_ + " is not in this file";
+            return;
+        }
+
+        int at = text_->GetFirstCharIndexFromLine(foundRow) +
+                 CharacterColumn(foundRow, foundColumn);
+        text_->Select(at, needle_->Length);
+        text_->ScrollToCaret();
+        text_->Focus();
+        what_->Text = String::Format("{0} - line {1}", needle_, foundRow + 1);
+    }
+
+    void OnReplace(Object^, EventArgs^) {
+        String^ want = Ask("Replace what", needle_);
+        if (want == nullptr || want->Length == 0) return;
+        String^ with = Ask("Replace \"" + want + "\" with", "");
+        if (with == nullptr) return;
+
+        array<Byte>^ text = WholeText();
+        pin_ptr<Byte> textPin = &text[0];
+        array<Byte>^ needle = Utf8Of(want);
+        pin_ptr<Byte> needlePin = &needle[0];
+        array<Byte>^ replacement = Utf8Of(with);
+        pin_ptr<Byte> replacementPin = &replacement[0];
+
+        int howMany = 0;
+        String^ changed = TakeUtf8(ed1_replace_all(
+            reinterpret_cast<const char*>(textPin), reinterpret_cast<const char*>(needlePin),
+            reinterpret_cast<const char*>(replacementPin), &howMany));
+
+        if (howMany == 0) {
+            what_->Text = want + " is not in this file";
+            return;
+        }
+
+        int caret = text_->SelectionStart;
+        text_->Text = changed->Replace("\n", "\r\n");
+        text_->SelectionStart = Math::Min(caret, text_->TextLength);
+        needle_ = with;
+        Recolour();
+        what_->Text = String::Format("{0} change{1} - Ctrl-Z puts them back", howMany,
+                                     howMany == 1 ? "" : "s");
+    }
+
+    // ---- laying one line out ----------------------------------------------
+
+    // The leading space a line should have, put there without disturbing the
+    // rest of it.
+    void Realign(int row) {
+        if (row < 0 || row >= text_->Lines->Length) return;
+
+        String^ line = text_->Lines[row];
+        int lead = 0;
+        while (lead < line->Length && (line[lead] == ' ' || line[lead] == '\t')) ++lead;
+
+        array<Byte>^ text = WholeText();
+        pin_ptr<Byte> textPin = &text[0];
+        String^ want = TakeUtf8(ed1_indent_for(reinterpret_cast<const char*>(textPin), row,
+                                               indentWidth_, indentTabs_, indentCase_));
+        if (want == line->Substring(0, lead)) return;
+
+        int start = text_->GetFirstCharIndexFromLine(row);
+        int caret = text_->SelectionStart;
+
+        text_->Select(start, lead);
+        text_->SelectedText = want;
+        text_->SelectionStart = Math::Max(0, Math::Min(caret + want->Length - lead,
+                                                       text_->TextLength));
+    }
+
+    void OnKeyUp(Object^, KeyEventArgs^) {
+        // Three characters decide where their own line sits, and only these
+        // three, so nothing moves under the caret unless it had to.
+        int caret = text_->SelectionStart;
+        if (caret <= 0 || caret > text_->TextLength) return;
+
+        wchar_t just = text_->Text[caret - 1];
+        if (just != '}' && just != '#' && just != ':') return;
+
+        int row = text_->GetLineFromCharIndex(caret - 1);
+        String^ line = text_->Lines[row];
+        int column = (caret - 1) - text_->GetFirstCharIndexFromLine(row);
+
+        if (just != ':') {
+            // A brace or a hash only moves its line when nothing precedes it.
+            for (int i = 0; i < column && i < line->Length; ++i)
+                if (line[i] != ' ' && line[i] != '\t') return;
+        }
+        Realign(row);
     }
 
     void OnCaretMoved(Object^, EventArgs^) {
@@ -427,6 +695,8 @@ private:
         path_ = path;
         Text = "ed1 - " + System::IO::Path::GetFileName(path);
         Recolour();
+        text_->Select(0, 0);
+        text_->Focus();
         what_->Text = System::IO::Path::GetFileName(path) + "  " + text_->Lines->Length + " lines";
     }
 
@@ -510,7 +780,7 @@ private:
         if (row < 0) row = 0;
         if (row >= text_->Lines->Length) row = text_->Lines->Length - 1;
 
-        int at = text_->GetFirstCharIndexFromLine(row) + column - 1;
+        int at = text_->GetFirstCharIndexFromLine(row) + CharacterColumn(row, column - 1);
         if (at < 0) at = 0;
         text_->Select(at, 0);
         text_->ScrollToCaret();

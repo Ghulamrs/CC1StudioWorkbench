@@ -20,6 +20,7 @@
 #endif
 
 #include "compile.h"
+#include "find.h"
 #include "indent.h"
 #include "project.h"
 #include "syntax.h"
@@ -202,7 +203,48 @@ char* ed1_indent_after_newline(const char* text, int row, int col,
                                            styleOf(width, tabs, caseIndent)));
 }
 
+char* ed1_indent_for(const char* text, int row, int width, int tabs, int caseIndent) {
+    if (row < 0) row = 0;
+    std::vector<std::string> lines = split(text);
+    return give(editor::indentFor(lines, static_cast<size_t>(row),
+                                  styleOf(width, tabs, caseIndent)));
+}
+
 void ed1_free(char* what) { std::free(what); }
+
+int ed1_find_next(const char* text, const char* needle, int row, int col,
+                  int* foundRow, int* foundCol) {
+    if (row < 0) row = 0;
+    if (col < 0) col = 0;
+    editor::Match match = editor::findNext(split(text), needle ? needle : "",
+                                           static_cast<size_t>(row),
+                                           static_cast<size_t>(col));
+    if (!match.found) return 0;
+    if (foundRow) *foundRow = static_cast<int>(match.row);
+    if (foundCol) *foundCol = static_cast<int>(match.col);
+    return 1;
+}
+
+int ed1_find_previous(const char* text, const char* needle, int row, int col,
+                      int* foundRow, int* foundCol) {
+    if (row < 0) row = 0;
+    if (col < 0) col = 0;
+    editor::Match match = editor::findPrevious(split(text), needle ? needle : "",
+                                               static_cast<size_t>(row),
+                                               static_cast<size_t>(col));
+    if (!match.found) return 0;
+    if (foundRow) *foundRow = static_cast<int>(match.row);
+    if (foundCol) *foundCol = static_cast<int>(match.col);
+    return 1;
+}
+
+char* ed1_replace_all(const char* text, const char* needle, const char* with,
+                      int* howMany) {
+    std::vector<std::string> lines = split(text);
+    size_t count = editor::replaceAll(lines, needle ? needle : "", with ? with : "");
+    if (howMany) *howMany = static_cast<int>(count);
+    return give(join(lines));
+}
 
 int ed1_language_for(const char* path) {
     return static_cast<int>(editor::languageFor(path ? path : ""));

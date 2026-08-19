@@ -50,7 +50,24 @@ char* ed1_reindent(const char* text, int width, int tabs, int caseIndent);
 char* ed1_indent_after_newline(const char* text, int row, int col,
                                int width, int tabs, int caseIndent);
 
+/* The leading space one line should have, for the tab key and for a line whose
+   own layout changed the moment a brace was typed on it. */
+char* ed1_indent_for(const char* text, int row, int width, int tabs, int caseIndent);
+
 void ed1_free(char* what);
+
+/* ---- finding and replacing ---------------------------------------------- */
+
+/* 1 when found, and where it was written into row and col. Both wrap once and
+   stop where they started. */
+int ed1_find_next(const char* text, const char* needle, int row, int col,
+                  int* foundRow, int* foundCol);
+int ed1_find_previous(const char* text, const char* needle, int row, int col,
+                      int* foundRow, int* foundCol);
+
+/* The whole text with every occurrence replaced, and how many there were. */
+char* ed1_replace_all(const char* text, const char* needle, const char* with,
+                      int* howMany);
 
 /* ---- colouring ---------------------------------------------------------- */
 

@@ -291,6 +291,30 @@ std::string marks(const std::string& line, editor::Language lang) {
 }
 
 void colours() {
+    // The C++ lists, extended - and the two rules they follow: a word cl at
+    // /std:c++14 would refuse is not coloured, and none of this leaks into C.
+    {
+        editor::SyntaxState state;
+        std::string line = "thread_local int n = not_eq_count;";
+        std::vector<unsigned char> cpp = editor::highlight(line, editor::LangCpp, state);
+        check(cpp[0] == editor::KindKeyword, "thread_local is a C++ keyword");
+
+        editor::SyntaxState plain;
+        std::vector<unsigned char> asC = editor::highlight(line, editor::LangC, plain);
+        check(asC[0] != editor::KindKeyword, "and is not one in C");
+
+        editor::SyntaxState s2;
+        std::vector<unsigned char> alt =
+            editor::highlight("if (a and b) return not c;", editor::LangCpp, s2);
+        check(alt[7] == editor::KindKeyword, "the alternative tokens are keywords too");
+
+        editor::SyntaxState s3;
+        std::vector<unsigned char> lib =
+            editor::highlight("std::shared_ptr<thread> p;", editor::LangCpp, s3);
+        check(lib[0] == editor::KindType, "a library name is coloured as the type it is");
+        check(lib[5] == editor::KindType, "shared_ptr among them");
+    }
+
     std::printf("colouring\n");
 
     check(editor::languageFor("main.c") == editor::LangC, ".c is C");

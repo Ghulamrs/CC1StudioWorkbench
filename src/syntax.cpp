@@ -26,14 +26,36 @@ const char* const kCTypes[] = {
     "unsigned", "void", "size_t", "ptrdiff_t", "wchar_t", "FILE", 0};
 
 // Added on top of the C lists, not instead of them.
+//
+// C++14 and no further, which is what this arena compiles: cl is told
+// /std:c++14, so colouring a word cl would refuse to accept would be the
+// editor promising something the compiler will not do. `final` and `override`
+// are in because they are read as keywords even though the standard calls them
+// contextual, and the alternative tokens - and, or, not_eq and the rest - are
+// in because they are keywords, however rarely anybody writes them.
 const char* const kCppKeywords[] = {
-    "alignas", "alignof", "catch", "class", "constexpr", "const_cast", "decltype",
-    "delete", "dynamic_cast", "explicit", "export", "false", "friend", "mutable",
-    "namespace", "new", "noexcept", "nullptr", "operator", "private", "protected",
-    "public", "reinterpret_cast", "static_assert", "static_cast", "template",
-    "this", "throw", "true", "try", "typeid", "typename", "using", "virtual", 0};
+    "alignas", "alignof", "and", "and_eq", "asm", "bitand", "bitor", "catch",
+    "class", "compl", "constexpr", "const_cast", "decltype", "delete",
+    "dynamic_cast", "explicit", "export", "false", "final", "friend", "mutable",
+    "namespace", "new", "noexcept", "not", "not_eq", "nullptr", "operator", "or",
+    "or_eq", "override", "private", "protected", "public", "reinterpret_cast",
+    "static_assert", "static_cast", "template", "this", "thread_local", "throw",
+    "true", "try", "typeid", "typename", "using", "virtual", "xor", "xor_eq", 0};
 
-const char* const kCppTypes[] = {"auto", "bool", "std", "string", "vector", 0};
+// The built-in types, and the names from the standard library that turn up in
+// ordinary code often enough to be worth telling apart from a variable. A
+// library name is not a keyword and this does not pretend otherwise - they are
+// coloured as types, which is what they are.
+const char* const kCppTypes[] = {
+    "auto", "bool", "char16_t", "char32_t", "nullptr_t",
+    "std", "string", "wstring", "vector", "array", "deque", "list", "forward_list",
+    "map", "multimap", "set", "multiset", "unordered_map", "unordered_set",
+    "pair", "tuple", "bitset", "initializer_list",
+    "unique_ptr", "shared_ptr", "weak_ptr",
+    "istream", "ostream", "iostream", "ifstream", "ofstream", "fstream",
+    "stringstream", "istringstream", "ostringstream",
+    "exception", "runtime_error", "logic_error", "bad_alloc",
+    "function", "thread", "mutex", "atomic", "chrono", 0};
 
 bool inList(const char* const* list, const std::string& word) {
     for (size_t i = 0; list[i]; ++i)

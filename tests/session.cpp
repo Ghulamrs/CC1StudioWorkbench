@@ -19,6 +19,7 @@
 
 namespace fs = std::filesystem;
 
+
 namespace {
 
 int checks = 0;
@@ -40,6 +41,7 @@ void checkEqual(const std::string& got, const std::string& want, const std::stri
 }
 
 // Keys, spelled the way the terminal sends them.
+const std::string kF5 = "\x1b[15~";
 const std::string kF10 = "\x1b[21~";
 const std::string kDown = "\x1b[B";
 const std::string kRight = "\x1b[C";
@@ -147,6 +149,16 @@ std::string message(const Screen& screen) {
         if (!row.empty()) return row;
     }
     return std::string();
+}
+
+// How many rows say it. What a program printed is hard to tell apart from the
+// source that printed it - both are on the screen at once - so the test that
+// the output arrived is that the line is there twice.
+size_t rowsSaying(const Screen& screen, const std::string& text) {
+    size_t found = 0;
+    for (size_t i = 0; i < screen.rows.size(); ++i)
+        if (screen.rows[i].find(text) != std::string::npos) ++found;
+    return found;
 }
 
 bool onScreen(const Screen& screen, const std::string& text) {
@@ -676,9 +688,13 @@ void debugPanelPerTarget(const std::string& ed1) {
     writeFile(file, "int main(void) { return 0; }\n");
     std::string common = "\"" + file.string() + "\" --project \"" + dir.string() + "\"";
 
-    // Build is the fourth column and its Debug panel the fifth item; Target is
-    // the column after it.
-    const std::string showDebugTab = kF10 + times(kRight, 3) + times(kDown, 4) + kEnter;
+    // Menus are reached by counting, so an item added to one moves everything
+    // under it: Build is the fourth column, and its Debug panel is the sixth
+    // item now that Run is the second. Target is the column after Build.
+    const int kBuildColumn = 3;
+    const int kDebugPanelItem = 5;
+    const std::string showDebugTab =
+        kF10 + times(kRight, kBuildColumn) + times(kDown, kDebugPanelItem) + kEnter;
     const std::string toTarget = kF10 + kRight;
 
     Screen linux = drive(ed1, common,
@@ -726,6 +742,77 @@ void debugPanelPerTarget(const std::string& ed1) {
     fs::remove_all(dir);
 }
 
+const char* const kPrintsAndReturns =
+    "#include <stdio.h>\n"
+    "int main(void)\n"
+    "{\n"
+    "    printf(\"counted to three\\n\");\n"
+    "    return 3;\n"
+    "}\n";
+
+// F5 compiles, links and runs, which is three things that can each go their own
+// way. What the console has to keep apart is a compiler that refused and a
+// program that ran and returned something other than zero: only the program
+// knows what its number meant, and a build that failed never got one.
+void runningTheProgram(const std::string& ed1, const std::string& cc1) {
+    std::printf("building it, and running what came out\n");
+
+    // A target this machine cannot run is turned away before anything is built,
+    // so this case needs no compiler at all. x86_64-windows is the one nothing
+    // here is, except on Windows, where x86_64-linux is.
+    //
+    // It gets a project of its own because a chosen target is remembered in the
+    // project file, and a second editor started on the same one would open on
+    // the target this left behind rather than on the host.
+#ifdef _WIN32
+    const std::string toElsewhere = kF10 + times(kRight, 4) + kDown + kEnter;
+#else
+    const std::string toElsewhere = kF10 + times(kRight, 4) + kEnter;
+#endif
+    fs::path away = freshProject("run-elsewhere");
+    fs::path awayFile = away / "src" / "three.c";
+    writeFile(awayFile, kPrintsAndReturns);
+    Screen refused = drive(ed1,
+                           "\"" + awayFile.string() + "\" --project \"" + away.string() + "\"",
+                           toElsewhere + kF5 + ctrl('q'), away);
+    check(wasShown(refused, "only reaches -S here"),
+          "a target this machine cannot run is turned away");
+    check(!wasShown(refused, "program returned"), "and nothing is run");
+    fs::remove_all(away);
+
+    fs::path dir = freshProject("run");
+    fs::path file = dir / "src" / "three.c";
+    writeFile(file, kPrintsAndReturns);
+    std::string common = "\"" + file.string() + "\" --project \"" + dir.string() + "\"";
+
+    if (cc1.empty()) {
+        std::printf("  (no cc1 named, so nothing is actually built and run)\n");
+        fs::remove_all(dir);
+        return;
+    }
+
+    std::string withCc1 = common + " --cc1 \"" + cc1 + "\"";
+
+    // Twice: once in the source being edited, once in the console under it. Once
+    // would be the source alone, which is on the screen whether anything ran or
+    // not.
+    Screen ran = drive(ed1, withCc1, kF5 + ctrl('q'), dir);
+    check(rowsSaying(ran, "counted to three") == 2,
+          "what the program printed reaches the console");
+    check(wasShown(ran, "[program returned 3]"), "and what it returned is said as a number");
+    check(message(ran).find("it returned 3") != std::string::npos,
+          "and the status bar says so too");
+
+    // The same file with the semicolon taken out: the compiler stops, and the
+    // console must not go on to claim a program ran.
+    writeFile(file, "int main(void) { return 0 }\n");
+    Screen broken = drive(ed1, withCc1, kF5 + ctrl('q'), dir);
+    check(!wasShown(broken, "program returned"), "a file that will not compile runs nothing");
+    check(message(broken).find("error") != std::string::npos, "and the error is what is said");
+
+    fs::remove_all(dir);
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -757,6 +844,7 @@ int main(int argc, char** argv) {
     buildingWithCl(ed1);
     configurations(ed1, cc1);
     debugPanelPerTarget(ed1);
+    runningTheProgram(ed1, cc1);
 
     std::printf("\n%d checks, %d failed\n", checks, failures);
     return failures == 0 ? 0 : 1;

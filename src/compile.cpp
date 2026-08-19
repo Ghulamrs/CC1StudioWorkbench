@@ -7,6 +7,7 @@
 #define POPEN  _popen
 #define PCLOSE _pclose
 #else
+#include <sys/wait.h>
 #define POPEN  popen
 #define PCLOSE pclose
 #endif
@@ -100,6 +101,67 @@ Diagnostic parseDiagnostic(const std::string& text) {
     return d;
 }
 
+namespace {
+
+// Runs a command with its errors joined to its output, handing the sink each
+// line as it arrives, and gives back what the command exited with - or -1 when
+// it could not be started at all. Everything this editor runs, compiler and
+// built program alike, is run through here.
+int runCaptured(const std::string& command, std::string& output,
+                LineSink sink, void* context) {
+    std::string cmd = command + " 2>&1";
+
+#ifdef _WIN32
+    // _popen hands the string to cmd /c, and cmd removes the first and last
+    // quote when a command has both a quoted program and quoted arguments -
+    // which every command here does, since paths hold spaces. An extra pair
+    // around the whole thing is what cmd then eats, leaving the real ones
+    // alone. Without this the compiler is never reached and cmd complains
+    // instead: "The filename, directory name, or volume label syntax is
+    // incorrect."
+    cmd = "\"" + cmd + "\"";
+#endif
+
+    FILE* pipe = POPEN(cmd.c_str(), "r");
+    if (!pipe) return -1;
+
+    char chunk[512];
+    std::string pending;
+    while (std::fgets(chunk, sizeof chunk, pipe)) {
+        output += chunk;
+        if (!sink) continue;
+        for (const char* p = chunk; *p; ++p) {
+            if (*p == '\n') {
+                sink(context, pending);
+                pending.clear();
+            } else if (*p != '\r') {
+                pending += *p;
+            }
+        }
+    }
+    if (sink && !pending.empty()) sink(context, pending);
+
+    int status = PCLOSE(pipe);
+#ifndef _WIN32
+    // pclose hands back what wait handed it, which is not the number the
+    // program returned: the exit code is in the upper bits, and a program
+    // killed by a signal never had one.
+    if (WIFEXITED(status)) return WEXITSTATUS(status);
+    if (WIFSIGNALED(status)) return 128 + WTERMSIG(status);
+#endif
+    return status;
+}
+
+// The shell reads its own words when a program is not there, and they differ
+// per platform and explain nothing about how to fix it here.
+bool looksLikeMissingProgram(const std::string& output) {
+    return output.find("not found") != std::string::npos ||
+           output.find("not recognized") != std::string::npos ||
+           output.find("No such file") != std::string::npos;
+}
+
+}  // namespace
+
 Build build(const Toolchain& tool, ToolchainKind kind, const std::string& sourcePath,
             Language lang, const std::string& arch, Configuration config,
             LineSink sink, void* context) {
@@ -115,51 +177,16 @@ Build build(const Toolchain& tool, ToolchainKind kind, const std::string& source
     }
 
     Recipe recipe = assemblyRecipe(tool, kind, sourcePath, lang, arch, config);
-    std::string cmd = recipe.command + " 2>&1";
-
-#ifdef _WIN32
-    // _popen hands the string to cmd /c, and cmd removes the first and last
-    // quote when a command has both a quoted program and quoted arguments -
-    // which every command here does, since paths hold spaces. An extra pair
-    // around the whole thing is what cmd then eats, leaving the real ones
-    // alone. Without this the compiler is never reached and cmd complains
-    // instead: "The filename, directory name, or volume label syntax is
-    // incorrect."
-    cmd = "\"" + cmd + "\"";
-#endif
-
-    FILE* pipe = POPEN(cmd.c_str(), "r");
-    if (!pipe) {
+    int status = runCaptured(recipe.command, result.output, sink, context);
+    if (status < 0) {
         result.output = std::string("could not run ") + programOf(tool, kind);
         return result;
     }
 
-    char chunk[512];
-    std::string pending;
-    while (std::fgets(chunk, sizeof chunk, pipe)) {
-        result.output += chunk;
-        if (!sink) continue;
-        for (const char* p = chunk; *p; ++p) {
-            if (*p == '\n') {
-                sink(context, pending);
-                pending.clear();
-            } else if (*p != '\r') {
-                pending += *p;
-            }
-        }
-    }
-    if (sink && !pending.empty()) sink(context, pending);
-
-    int status = PCLOSE(pipe);
     result.ok = (status == 0);
     result.diag = parseDiagnostic(result.output);
 
-    // A shell that could not find the program says so in its own words, which
-    // differ per platform and explain nothing about how to fix it here.
-    if (!result.ok && !result.diag.present &&
-        (result.output.find("not found") != std::string::npos ||
-         result.output.find("not recognized") != std::string::npos ||
-         result.output.find("No such file") != std::string::npos)) {
+    if (!result.ok && !result.diag.present && looksLikeMissingProgram(result.output)) {
         std::string hint = std::string(programOf(tool, kind)) +
                            " could not be run - name it with --cc1 or --cl, or put it on PATH";
         result.output += hint + "\n";
@@ -190,6 +217,55 @@ Build build(const Toolchain& tool, ToolchainKind kind, const std::string& source
             }
             std::fclose(assembly);
         }
+    }
+
+    std::remove(recipe.assemblyPath.c_str());
+    for (size_t i = 0; i < recipe.leftovers.size(); ++i)
+        std::remove(recipe.leftovers[i].c_str());
+
+    return result;
+}
+
+Ran runProgram(const Toolchain& tool, ToolchainKind kind, const std::string& sourcePath,
+               Language lang, const std::string& arch, Configuration config,
+               LineSink sink, void* context) {
+    Ran result;
+
+    if (!prepareFor(kind)) {
+        result.output = "no Visual Studio 2022 found - cl cannot be run\n";
+        if (sink) sink(context, "no Visual Studio 2022 found - cl cannot be run");
+        return result;
+    }
+
+    Recipe recipe = programRecipe(tool, kind, sourcePath, lang, arch, config);
+    int made = runCaptured(recipe.command, result.output, sink, context);
+    if (made < 0) {
+        result.output = std::string("could not run ") + programOf(tool, kind);
+        return result;
+    }
+
+    result.diag = parseDiagnostic(result.output);
+    result.built = (made == 0);
+
+    if (!result.built) {
+        if (!result.diag.present && looksLikeMissingProgram(result.output)) {
+            std::string hint = std::string(programOf(tool, kind)) +
+                               " could not be run - name it with --cc1 or --cl, or put it on PATH";
+            result.output += hint + "\n";
+            if (sink) sink(context, hint);
+        }
+    } else {
+        // Its input is emptied rather than left as the editor's own, which in a
+        // terminal is the keyboard and under a test is the rest of the keys.
+        // A program that reads would otherwise eat what it was never sent.
+#ifdef _WIN32
+        const char* noInput = " < NUL";
+#else
+        const char* noInput = " < /dev/null";
+#endif
+        result.ran = true;
+        result.status = runCaptured("\"" + recipe.assemblyPath + "\"" + noInput,
+                                    result.output, sink, context);
     }
 
     std::remove(recipe.assemblyPath.c_str());

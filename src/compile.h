@@ -41,6 +41,29 @@ Build build(const Toolchain& tool, ToolchainKind kind, const std::string& source
             Language lang, const std::string& arch, Configuration config,
             LineSink sink = 0, void* context = 0);
 
+// What came of building a program and running it. Three things can happen and
+// they are not the same thing: the compiler can refuse, the program can fail to
+// be produced, or the program can run and return something. A program that
+// returns 1 is not a build that failed, and the editor must not say it was.
+struct Ran {
+    bool built = false;    // a program came out of the compiler
+    bool ran = false;      // and it was started
+    int status = 0;        // what it returned, once it had
+    Diagnostic diag;       // why it did not build, when it did not
+    std::string output;    // everything the compiler said, then everything it said
+};
+
+// Compile, assemble, link and run, with every line handed to the sink as it
+// arrives - the compiler's first and then the program's own. Only for a target
+// runsHere accepts; anything else stops at the assembly and there is nothing to
+// start. The program is built where the assembly is built and removed after.
+//
+// It is run with its output joined to its errors and its input empty. A program
+// that waits for input from a keyboard will not get one.
+Ran runProgram(const Toolchain& tool, ToolchainKind kind, const std::string& sourcePath,
+               Language lang, const std::string& arch, Configuration config,
+               LineSink sink = 0, void* context = 0);
+
 // Reads whichever of the two spellings a compiler used:
 //
 //   file:line:col: error: message      cc1, gcc and clang

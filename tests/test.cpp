@@ -419,6 +419,53 @@ void routing() {
     check(joined(carriesNot).find("no debug information") != std::string::npos,
           "and the one that does not is said not to");
 
+    // Compiling is one question and running is another. Every target compiles
+    // to assembly anywhere; only the host's own goes on to a program, because
+    // the assembler and linker cc1 hands off to are this machine's.
+    std::string host = editor::hostArch();
+    check(host == kWindows || host == kLinux || host == kDarwin,
+          "the host is one of the three targets");
+    check(editor::runsHere(editor::ToolCc1, host), "and what it builds for itself runs here");
+
+    std::string elsewhere = (host == kLinux) ? kDarwin : kLinux;
+    check(!editor::runsHere(editor::ToolCc1, elsewhere), "what it builds for elsewhere does not");
+    check(editor::whyNotRun(editor::ToolCc1, host).empty(), "so there is nothing to explain");
+
+    std::string why = editor::whyNotRun(editor::ToolCc1, elsewhere);
+    check(why.find(elsewhere) != std::string::npos && why.find(host) != std::string::npos,
+          "and when there is, it names both the target and the one to switch to");
+
+    const std::string every[3] = {kWindows, kLinux, kDarwin};
+    for (size_t i = 0; i < 3; ++i)
+        check(editor::whyNotRun(editor::ToolCc1, every[i]).size() < 80,
+              "in a line the status bar can show whole - " + every[i]);
+
+    // cl builds for the machine it was installed on and is handed no target at
+    // all, so the target menu cannot make it unrunnable.
+    check(editor::runsHere(editor::ToolMsvc, elsewhere), "cl builds for its own host either way");
+
+    // The recipe that makes a program rather than assembly: cc1 with neither -S
+    // nor -c links one, and cl does when it is not given /c.
+    editor::Recipe program = editor::programRecipe(tool, editor::ToolCc1, "a.c",
+                                                   editor::LangC, host, editor::ConfigDebug);
+    check(program.command.find(" -S") == std::string::npos, "the program recipe passes no -S");
+    check(program.command.find(" -c") == std::string::npos, "and no -c");
+    check(program.command.find("-o") != std::string::npos, "and names what to make");
+    check(program.command.find("a.c") != std::string::npos, "out of the file being edited");
+    check(!program.assemblyPath.empty(), "and says where it put it");
+    check(editor::emitsDebugInfo(editor::ToolCc1, host) ==
+              (program.command.find("-g") != std::string::npos),
+          "and asks for -g exactly when the target can carry it");
+
+    editor::Recipe clProgram = editor::programRecipe(tool, editor::ToolMsvc, "a.cpp",
+                                                     editor::LangCpp, kWindows,
+                                                     editor::ConfigDebug);
+    check(clProgram.command.find(" /c ") == std::string::npos,
+          "cl is not told to stop at an object");
+    check(clProgram.command.find("/Fe") != std::string::npos, "and is told what to call the program");
+    check(clProgram.command.find("/TP") != std::string::npos, "and that this one is C++");
+    check(clProgram.leftovers.size() == 1, "and the object it goes through is cleared up");
+
     check(editor::optimises(editor::ToolMsvc), "cl optimises");
     check(!editor::optimises(editor::ToolCc1), "cc1 does not, and does not pretend to");
 

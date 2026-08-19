@@ -179,6 +179,10 @@ struct Ed1Build {
     std::string assembly;
 };
 
+struct Ed1Ran {
+    editor::Ran ran;
+};
+
 extern "C" {
 
 void ed1_watch_for_faults(const char* logPath) {
@@ -469,6 +473,58 @@ const char* ed1_shown_command(const char* cc1, const char* cl, int kind,
                                      static_cast<editor::Configuration>(config));
     return scratch().c_str();
 }
+
+int ed1_runs_here(int kind, const char* arch) {
+    return editor::runsHere(static_cast<editor::ToolchainKind>(kind), arch ? arch : "") ? 1 : 0;
+}
+
+const char* ed1_why_not_run(int kind, const char* arch) {
+    scratch() = editor::whyNotRun(static_cast<editor::ToolchainKind>(kind), arch ? arch : "");
+    return scratch().c_str();
+}
+
+const char* ed1_host_arch(void) { return editor::hostArch(); }
+
+const char* ed1_shown_run_command(const char* cc1, const char* cl, int kind,
+                                  const char* source, int language, const char* arch,
+                                  int config) {
+    editor::Toolchain tool;
+    if (cc1 && *cc1) tool.cc1 = cc1;
+    if (cl && *cl) tool.cl = cl;
+
+    scratch() = editor::shownProgramCommand(tool, static_cast<editor::ToolchainKind>(kind),
+                                            source ? source : "",
+                                            static_cast<editor::Language>(language),
+                                            arch ? arch : "",
+                                            static_cast<editor::Configuration>(config));
+    return scratch().c_str();
+}
+
+Ed1Ran* ed1_run(const char* cc1, const char* cl, int kind, const char* source,
+                int language, const char* arch, int config) {
+    editor::Toolchain tool;
+    if (cc1 && *cc1) tool.cc1 = cc1;
+    if (cl && *cl) tool.cl = cl;
+
+    Ed1Ran* out = new Ed1Ran();
+    out->ran = editor::runProgram(tool, static_cast<editor::ToolchainKind>(kind),
+                                  source ? source : "",
+                                  static_cast<editor::Language>(language),
+                                  arch ? arch : "",
+                                  static_cast<editor::Configuration>(config));
+    return out;
+}
+
+void ed1_run_free(Ed1Ran* ran) { delete ran; }
+
+int ed1_ran_built(Ed1Ran* ran) { return ran->ran.built ? 1 : 0; }
+int ed1_ran_ran(Ed1Ran* ran) { return ran->ran.ran ? 1 : 0; }
+int ed1_ran_status(Ed1Ran* ran) { return ran->ran.status; }
+const char* ed1_ran_output(Ed1Ran* ran) { return ran->ran.output.c_str(); }
+int ed1_ran_has_error(Ed1Ran* ran) { return ran->ran.diag.present ? 1 : 0; }
+int ed1_ran_error_line(Ed1Ran* ran) { return static_cast<int>(ran->ran.diag.line); }
+int ed1_ran_error_column(Ed1Ran* ran) { return static_cast<int>(ran->ran.diag.col); }
+const char* ed1_ran_error_message(Ed1Ran* ran) { return ran->ran.diag.message.c_str(); }
 
 Ed1Build* ed1_build(const char* cc1, const char* cl, int kind, const char* source,
                     int language, const char* arch, int config) {

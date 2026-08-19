@@ -43,6 +43,7 @@ enum Action {
     ActionFileDelete,
     ActionFileRegroup,
     ActionBuild,
+    ActionRun,
     ActionConfigDebug,
     ActionConfigRelease,
     ActionShowConsole,

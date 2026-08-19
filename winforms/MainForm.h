@@ -204,6 +204,10 @@ private:
             "Compile", nullptr, gcnew EventHandler(this, &MainForm::OnCompile));
         compile->ShortcutKeys = Keys::F7;
         build->DropDownItems->Add(compile);
+        ToolStripMenuItem^ runIt = gcnew ToolStripMenuItem(
+            "Run", nullptr, gcnew EventHandler(this, &MainForm::OnRun));
+        runIt->ShortcutKeys = Keys::F5;
+        build->DropDownItems->Add(runIt);
         build->DropDownItems->Add("Debug build", nullptr,
                                   gcnew EventHandler(this, &MainForm::OnDebugConfig));
         build->DropDownItems->Add("Release build", nullptr,
@@ -297,7 +301,7 @@ private:
         Sheet^ first = MakeSheet(nullptr, "");
         text_ = first->box;
 
-        console_->Text = "cc1 or cl output appears here.  F7 builds.";
+        console_->Text = "cc1 or cl output appears here.  F7 builds, F5 runs.";
         SayDebugTab(nullptr);
     }
 
@@ -1199,6 +1203,80 @@ private:
 
         panel_->SelectedIndex = 2;
         what_->Text = String::Format("{0} lines of assembly", lines);
+    }
+
+    // Compiling, linking and running. The console has to keep the three apart:
+    // a compiler that refused is not a program that returned something other
+    // than zero, and only the program knows what its number meant. Same words
+    // as the terminal front end, from the same core.
+    void OnRun(Object^, EventArgs^) {
+        if (path_ == nullptr) {
+            what_->Text = "open a file first";
+            return;
+        }
+        OnSave(nullptr, nullptr);
+
+        int language = LanguageNow();
+        int kind = ed1_resolve(toolKind_, language);
+        if (ed1_can_compile(kind, language) == 0) {
+            what_->Text = FromUtf8(ed1_refusal(kind, language));
+            return;
+        }
+
+        array<Byte>^ sourceBytes = Utf8Of(path_);
+        pin_ptr<Byte> source = &sourceBytes[0];
+        array<Byte>^ cc1Bytes = Utf8Of(cc1_);
+        pin_ptr<Byte> cc1 = &cc1Bytes[0];
+        array<Byte>^ clBytes = Utf8Of(cl_);
+        pin_ptr<Byte> cl = &clBytes[0];
+        array<Byte>^ archBytes = Utf8Of(arch_);
+        pin_ptr<Byte> arch = &archBytes[0];
+
+        if (ed1_runs_here(kind, reinterpret_cast<const char*>(arch)) == 0) {
+            what_->Text = FromUtf8(ed1_why_not_run(kind, reinterpret_cast<const char*>(arch)));
+            return;
+        }
+
+        console_->Text =
+            "$ " +
+            FromUtf8(ed1_shown_run_command(reinterpret_cast<const char*>(cc1),
+                                           reinterpret_cast<const char*>(cl), kind,
+                                           reinterpret_cast<const char*>(source), language,
+                                           reinterpret_cast<const char*>(arch), config_)) +
+            "\r\n";
+        panel_->SelectedIndex = 0;
+        Application::DoEvents();
+
+        Ed1Ran* ran = ed1_run(reinterpret_cast<const char*>(cc1),
+                              reinterpret_cast<const char*>(cl), kind,
+                              reinterpret_cast<const char*>(source), language,
+                              reinterpret_cast<const char*>(arch), config_);
+
+        console_->Text += FromUtf8(ed1_ran_output(ran))->Replace("\n", "\r\n");
+
+        if (ed1_ran_has_error(ran) != 0) {
+            int line = ed1_ran_error_line(ran);
+            int column = ed1_ran_error_column(ran);
+            String^ message = FromUtf8(ed1_ran_error_message(ran));
+            ed1_run_free(ran);
+
+            GoTo(line, column);
+            what_->Text = String::Format("{0}:{1}: error: {2}", line, column, message);
+            return;
+        }
+
+        if (ed1_ran_built(ran) == 0) {
+            what_->Text = FromUtf8(ed1_toolchain_name(kind)) + " built no program - see the console";
+            ed1_run_free(ran);
+            return;
+        }
+
+        int status = ed1_ran_status(ran);
+        ed1_run_free(ran);
+
+        console_->Text += String::Format("\r\n[program returned {0}]\r\n", status);
+        what_->Text = String::Format("{0} ran - it returned {1}",
+                                     System::IO::Path::GetFileName(path_), status);
     }
 
     void GoTo(int line, int column) {

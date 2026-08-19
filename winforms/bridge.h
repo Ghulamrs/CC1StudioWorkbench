@@ -155,6 +155,14 @@ int ed1_can_compile(int kind, int language);
 const char* ed1_refusal(int kind, int language);
 int ed1_uses_arch(int kind);
 
+/* Whether a build for this target can be run on this machine, which is not the
+   same question as whether it can be compiled - every target compiles to
+   assembly anywhere, and only the host's own goes on to a program. The second
+   gives the reason when the answer is no, and an empty string when it is yes. */
+int ed1_runs_here(int kind, const char* arch);
+const char* ed1_why_not_run(int kind, const char* arch);
+const char* ed1_host_arch(void);
+
 const char* ed1_shown_command(const char* cc1, const char* cl, int kind,
                               const char* source, int language, const char* arch,
                               int config);
@@ -173,6 +181,29 @@ int ed1_build_has_error(Ed1Build* built);
 int ed1_build_error_line(Ed1Build* built);
 int ed1_build_error_column(Ed1Build* built);
 const char* ed1_build_error_message(Ed1Build* built);
+
+/* Compiling, linking and running, which is three things that can each go their
+   own way: ed1_ran_built says a program came out, ed1_ran_ran says it was
+   started, and ed1_ran_status is what it returned once it had. A program that
+   returns 1 is not a build that failed. */
+typedef struct Ed1Ran Ed1Ran;
+
+Ed1Ran* ed1_run(const char* cc1, const char* cl, int kind, const char* source,
+                int language, const char* arch, int config);
+void ed1_run_free(Ed1Ran* ran);
+
+int ed1_ran_built(Ed1Ran* ran);
+int ed1_ran_ran(Ed1Ran* ran);
+int ed1_ran_status(Ed1Ran* ran);
+const char* ed1_ran_output(Ed1Ran* ran);
+int ed1_ran_has_error(Ed1Ran* ran);
+int ed1_ran_error_line(Ed1Ran* ran);
+int ed1_ran_error_column(Ed1Ran* ran);
+const char* ed1_ran_error_message(Ed1Ran* ran);
+
+const char* ed1_shown_run_command(const char* cc1, const char* cl, int kind,
+                                  const char* source, int language, const char* arch,
+                                  int config);
 
 #ifdef __cplusplus
 }

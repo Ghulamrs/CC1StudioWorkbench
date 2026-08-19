@@ -197,6 +197,82 @@ std::string refusal(ToolchainKind kind, Language lang) {
     return "cannot compile this file";
 }
 
+const char* hostArch() {
+#if defined(_WIN32)
+    return "x86_64-windows";
+#elif defined(__APPLE__)
+    return "arm64-darwin";
+#else
+    return "x86_64-linux";
+#endif
+}
+
+bool runsHere(ToolchainKind kind, const std::string& arch) {
+    // cl generates for the machine it was installed on and takes no target
+    // from this editor at all, so whatever the target menu says, what cl
+    // builds is what this machine runs.
+    if (kind == ToolMsvc) return true;
+    return arch == hostArch();
+}
+
+std::string whyNotRun(ToolchainKind kind, const std::string& arch) {
+    if (runsHere(kind, arch)) return std::string();
+    return arch + " only reaches -S here - switch to " + hostArch() + " to run it";
+}
+
+// Where a built program is put, and what it is called. Beside the assembly
+// rather than beside the source: a directory that is checked into something
+// should not fill up with what the editor made while looking at it.
+namespace {
+std::string programPath() {
+    std::string path = tempDir() + kSep + "ed1-run";
+#ifdef _WIN32
+    path += ".exe";
+#endif
+    return path;
+}
+}  // namespace
+
+Recipe programRecipe(const Toolchain& tool, ToolchainKind kind,
+                     const std::string& source, Language lang,
+                     const std::string& arch, Configuration config) {
+    Recipe recipe;
+    std::string program = programOf(tool, kind);
+    recipe.assemblyPath = programPath();   // the program, which is what this makes
+
+    if (kind == ToolMsvc) {
+        // Without /c, cl compiles and links. /Fe names the program and /Fo the
+        // object it goes through; the object is the editor's mess to clear up.
+        std::string obj = tempDir() + kSep + "ed1-run.obj";
+        std::string forLanguage = (lang == LangCpp) ? " /TP /EHsc /std:c++17" : " /TC";
+        recipe.command = quote(program) + " /nologo /diagnostics:column" + forLanguage +
+                         configFlags(kind, config, arch) +
+                         " /Fe" + quote(recipe.assemblyPath) +
+                         " /Fo" + quote(obj) + " " + quote(source);
+        recipe.leftovers.push_back(obj);
+        return recipe;
+    }
+
+    // With neither -S nor -c, cc1 compiles, assembles and links. -arch is left
+    // off rather than passed as the host's own: the host is what it does by
+    // default, and naming it would only invite a cross target to be named here
+    // too, which would stop at the assembly and produce nothing to run.
+    recipe.command = quote(program) + " " + quote(source) + " -o " +
+                     quote(recipe.assemblyPath) + configFlags(kind, config, arch);
+    return recipe;
+}
+
+std::string shownProgramCommand(const Toolchain& tool, ToolchainKind kind,
+                                const std::string& source, Language lang,
+                                const std::string& arch, Configuration config) {
+    std::string program = programOf(tool, kind);
+    if (kind == ToolMsvc)
+        return program + " /diagnostics:column" +
+               ((lang == LangCpp) ? " /TP /EHsc /std:c++17" : " /TC") +
+               configFlags(kind, config, arch) + " /Feed1-run " + source;
+    return program + " " + source + " -o ed1-run" + configFlags(kind, config, arch);
+}
+
 Recipe assemblyRecipe(const Toolchain& tool, ToolchainKind kind,
                       const std::string& source, Language lang,
                       const std::string& arch, Configuration config) {

@@ -38,7 +38,7 @@ const char* toolchainWord(ToolchainKind kind) {
 
 Project::Project()
     : loaded_(false), toolchain_(ToolAuto), config_(ConfigDebug),
-      arch_("x86_64-windows") {}
+      arch_(hostArch()) {}
 
 const char* Project::fileName() { return "ed1.json"; }
 
@@ -108,7 +108,12 @@ bool Project::load(const std::string& dir, std::string& error) {
     // Debug unless the file says otherwise: the one you want while the code is
     // still being written is the one you want by default.
     config_ = root.get("config").text("debug") == "release" ? ConfigRelease : ConfigDebug;
-    arch_ = root.get("arch").text("x86_64-windows");
+    // The machine this is being opened on, unless the file names a target. It
+    // used to default to x86_64-windows wherever it was opened, which quietly
+    // made every project a cross build on the other two machines - the assembly
+    // came out for a target this one cannot assemble, and Run had nothing to
+    // start. A file that names a target still gets it.
+    arch_ = root.get("arch").text(hostArch());
 
     indent_.width = static_cast<size_t>(root.get("indent").integer(4));
     if (indent_.width < 1 || indent_.width > 16) indent_.width = 4;

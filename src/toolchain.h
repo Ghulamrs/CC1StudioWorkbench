@@ -89,6 +89,19 @@ bool usesArch(ToolchainKind kind);
 bool canCompile(ToolchainKind kind, Language lang);
 std::string refusal(ToolchainKind kind, Language lang);
 
+// The architecture this machine is, named the way the target menu names it.
+// cc1 carries only this one past -S, since the assembler and linker it hands
+// off to are this machine's own.
+const char* hostArch();
+
+// Whether a build for this target can be run here, which is a different
+// question from whether it can be compiled. Every target compiles to assembly
+// anywhere; only the host's own reaches a program.
+bool runsHere(ToolchainKind kind, const std::string& arch);
+
+// Why it cannot, in words that say what to do about it.
+std::string whyNotRun(ToolchainKind kind, const std::string& arch);
+
 struct Recipe {
     std::string command;
     std::string assemblyPath;
@@ -102,6 +115,22 @@ Recipe assemblyRecipe(const Toolchain& tool, ToolchainKind kind,
 std::string shownCommand(const Toolchain& tool, ToolchainKind kind,
                          const std::string& source, Language lang,
                          const std::string& arch, Configuration config);
+
+// The command that produces a program rather than assembly, and where the
+// program lands. cc1 with neither -S nor -c compiles, assembles and links;
+// cl does the same when it is not given /c. Only worth asking for when
+// runsHere says so - a cross target would stop at the assembly and there
+// would be nothing to run.
+//
+// Recipe::assemblyPath holds the program here, since it is the thing the
+// recipe produced and the thing the caller has to remove afterwards.
+Recipe programRecipe(const Toolchain& tool, ToolchainKind kind,
+                     const std::string& source, Language lang,
+                     const std::string& arch, Configuration config);
+
+std::string shownProgramCommand(const Toolchain& tool, ToolchainKind kind,
+                                const std::string& source, Language lang,
+                                const std::string& arch, Configuration config);
 
 // Puts this process into the environment a Developer Command Prompt would have,
 // once, so that cl can be found when the editor was started from an ordinary

@@ -28,7 +28,7 @@ struct Group {
 //     "tabs": false,
 //     "toolchain": "auto",
 //     "config": "debug",
-//     "arch": "x86_64-windows",
+//     "arch": "x86_64-windows",     // the machine's own when it is left out
 //     "groups": {
 //       "Examples": ["examples/hello.c", "examples/smart.cpp"]
 //     }

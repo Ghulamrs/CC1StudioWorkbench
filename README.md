@@ -44,9 +44,26 @@ build-again rhythm rather than a list of twelve problems, and the editor is
 built for that rhythm. The caret goes to the line and column cc1 named, and
 cc1's own words, caret line and all, are in the console.
 
+**It runs what it built.** F5, or Run in the Build menu, saves the file and
+hands it to the compiler with neither `-S` nor `-c` - so cc1 compiles, assembles
+and links it, and cl does the same without `/c` - and then starts the program
+and puts everything it prints in the console, under everything the compiler
+said. What it returned is shown as a number rather than as success or failure,
+because only the program knows which its number meant: `[program returned 3]`.
+Its input is emptied rather than left as the editor's own, so a program that
+reads does not eat the keyboard.
+
+Only for the target this machine is. Everything else is turned away before
+anything is built, with the target to switch to named - the assembler and linker
+cc1 hands off to are the host's, so a cross build stops at the assembly and
+there is nothing to start. cl is never in that position: it builds for the
+machine it was installed on.
+
 **It shows the assembly for any of the three targets.** Ctrl-T, or the Target
 menu. Two of the three reach `-S` and no further on any given machine, since the
-assembler is the host's - which is exactly what the assembly tab is for.
+assembler is the host's - which is exactly what the assembly tab is for. A
+project that does not name a target gets this machine's, rather than the
+`x86_64-windows` it used to get wherever it was opened.
 
 **It colours what it shows, per language.** Keywords, types, strings, character
 constants, comments, numbers and the preprocessor, chosen from the file's
@@ -401,7 +418,7 @@ house bug, and this is the one place it was easy to prevent.
 
 `buffer`, `indent`, `menu` and `tree` touch no screen and no OS. `indent`, `syntax`, `json`, `project` and
 the diagnostic parser are the pieces with a contract, and `tests/test.cpp`
-checks them - 264 cases, including that a Windows path's drive letter is not
+checks them - 296 cases, including that a Windows path's drive letter is not
 mistaken for a `line:col` separator, that a brace inside a string is not
 counted, and that `class` is a keyword in C++ and nothing in particular in C,
 and that cl's `bad.c(3,13)` is read as well as cc1's `bad.c:3:13`. They run on
@@ -428,6 +445,7 @@ because that is what cc1's own sources use, and they contain no tab at all.
 |---|---|
 | `F10` | the menu |
 | `Ctrl-B` | build |
+| `F5` | build it and run it |
 | `Ctrl-F` / `Ctrl-G` | find / find the next |
 | `Ctrl-R` | replace |
 | shift + arrows | select |

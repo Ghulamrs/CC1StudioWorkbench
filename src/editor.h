@@ -105,6 +105,7 @@ private:
     void openPrompt();
     void newFile();
     void compile();
+    void buildAndRun();
     void openSelected();
     void goToProblem();
 

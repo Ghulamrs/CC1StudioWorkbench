@@ -171,14 +171,9 @@ Editor::Editor()
       bodyRows_(14), panelRows_(kPanelRows),
       treeCols_(kTreeWidth), sourceCols_(80), gutterCols_(4) {
     // The host's own architecture first, since that is the one cc1 will carry
-    // past -S on this machine.
-#if defined(_WIN32)
-    arch_ = 0;
-#elif defined(__APPLE__)
-    arch_ = 2;
-#else
-    arch_ = 1;
-#endif
+    // past -S on this machine - and so the only one Run can do anything with.
+    for (size_t i = 0; i < 3; ++i)
+        if (std::string(kArches[i]) == hostArch()) arch_ = i;
     const char* fromEnv = std::getenv("CC1");
     if (fromEnv && *fromEnv) tool_.cc1 = fromEnv;
 
@@ -1332,11 +1327,75 @@ void Editor::compile() {
     }
 }
 
+// Building is one thing and running is another, and the console has to keep
+// them apart: a compiler that failed and a program that returned 1 look the
+// same to anything that only asks whether the last command worked.
+void Editor::buildAndRun() {
+    ToolchainKind kind = resolve(tool_, lang_);
+    if (!canCompile(kind, lang_)) {
+        say(refusal(kind, lang_));
+        return;
+    }
+    if (!runsHere(kind, kArches[arch_])) {
+        say(whyNotRun(kind, kArches[arch_]));
+        return;
+    }
+
+    if (buf_.dirty() || buf_.path().empty()) {
+        if (!save()) return;
+    }
+
+    panelOpen_ = true;
+    tab_ = TabConsole;
+    console_.clear();
+
+    Toolchain shownAs = tool_;
+    shownAs.cc1 = baseName(tool_.cc1);
+    shownAs.cl = baseName(tool_.cl);
+    std::string shownFile = project_.loaded() ? project_.relative(buf_.path())
+                                              : baseName(buf_.path());
+    console_.push_back("$ " + shownProgramCommand(shownAs, kind, shownFile, lang_,
+                                                  kArches[arch_], config_));
+    panelOff_ = 0;
+    say(std::string("building and running with ") + toolchainName(kind) + " ...");
+    refresh();
+
+    Ran result = runProgram(tool_, kind, buf_.path(), lang_, kArches[arch_], config_,
+                            consoleSink, this);
+
+    lastDiag_ = result.diag;
+
+    if (result.diag.present) {
+        cy_ = result.diag.line - 1;
+        if (cy_ >= buf_.lineCount()) cy_ = buf_.lineCount() - 1;
+        cx_ = result.diag.col - 1;
+        clampCursor();
+        focus_ = FocusText;
+        console_.push_back("");
+        console_.push_back("[enter] here goes to the line above");
+        say(number(result.diag.line) + ":" + number(result.diag.col) + ": error: " +
+            result.diag.message);
+    } else if (!result.built) {
+        console_.push_back(std::string(toolchainName(kind)) + " built no program");
+        say(std::string(toolchainName(kind)) + " built no program - see the console");
+    } else {
+        // What it returned, said as a number rather than as success or failure,
+        // because only the program knows which of those its number meant.
+        console_.push_back("");
+        console_.push_back("[program returned " + number(static_cast<size_t>(result.status)) + "]");
+        say("ran " + shownFile + " - it returned " + number(static_cast<size_t>(result.status)));
+    }
+
+    if (console_.size() > static_cast<size_t>(panelRows_))
+        panelOff_ = console_.size() - static_cast<size_t>(panelRows_);
+}
+
 void Editor::showKeys() {
     panelOpen_ = true;
     tab_ = TabConsole;
     console_.clear();
     console_.push_back("F10          the menu             Ctrl-B   build with cc1");
+    console_.push_back("F5           build it and run it  F1       these keys");
     console_.push_back("F2 / F3      previous / next file Ctrl-L   line numbers");
     console_.push_back("Ctrl-K       automatic, cc1, cl   Ctrl-T   next target");
     console_.push_back("Ctrl-D       debug or release");
@@ -1395,6 +1454,7 @@ void Editor::perform(Action action) {
             if (!panelOpen_ && focus_ == FocusPanel) focus_ = FocusText;
             break;
         case ActionBuild:        compile(); break;
+        case ActionRun:          buildAndRun(); break;
         case ActionConfigDebug:
             config_ = ConfigDebug;
             if (project_.loaded()) project_.setConfig(config_);
@@ -1481,6 +1541,7 @@ void Editor::processKey(int key) {
         case KEY_F1:  showKeys(); return;
         case KEY_F2:  nextDocument(-1); return;
         case KEY_F3:  nextDocument(1); return;
+        case KEY_F5:  perform(ActionRun); return;
 
         case ctrl('q'):
             if (buf_.dirty() && quitConfirm_ == 0) {

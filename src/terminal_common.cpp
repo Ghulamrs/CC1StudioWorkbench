@@ -79,6 +79,7 @@ int fromNumber(int number) {
         case 11: return KEY_F1;
         case 12: return KEY_F2;
         case 13: return KEY_F3;
+        case 15: return KEY_F5;
         case 21: return KEY_F10;
         default: return '\x1b';
     }

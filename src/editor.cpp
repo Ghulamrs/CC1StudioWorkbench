@@ -300,13 +300,29 @@ void Editor::openProject(const std::string& path) {
         applyProject();
         refreshTree();
         say(project_.name() + " - " + number(project_.groups().size()) + " groups");
+    } else if (error.empty()) {
+        // Nothing to read, so one is written from what is in the directory
+        // rather than opening without a project at all. An editor that needs a
+        // file it can perfectly well make is an editor that stops for no
+        // reason.
+        Outcome made = beginFromWhatIsThere(project_, path);
+        if (made.ok) {
+            applyProject();
+            refreshTree();
+            say(made.message);
+        } else {
+            tree_.setRoot(path);
+            project_.setRoot(tree_.root());
+            say(made.message);
+        }
     } else {
-        // No project file is not a fault. It means the pane shows the
-        // directory, which is what it did before projects existed.
+        // A project file that will not parse is a different matter: it is
+        // somebody's, and writing over it to save an error message would be
+        // the editor destroying work. The pane shows the directory instead,
+        // which is what it did before projects existed.
         tree_.setRoot(path);
         project_.setRoot(tree_.root());
-        if (!error.empty()) say(error);
-        else if (!tree_.error().empty()) say(tree_.error());
+        say(error);
     }
     treeSel_ = 0;
     treeOff_ = 0;

@@ -938,6 +938,42 @@ void stoppingAndStepping(const std::string& ed1, const std::string& cc1) {
 #endif
 }
 
+// Opening a directory that has no project file. It gets one rather than the
+// editor opening without a project, which is the difference between a tool
+// that starts and a tool that asks you to go and make something first.
+void aDirectoryWithNoProject(const std::string& ed1) {
+    std::printf("opening somewhere that has no project file\n");
+
+    file::path dir = file::temp_directory_path() / "ed1-session-noproject";
+    file::remove_all(dir);
+    editor::path::makeDirectories((dir / "src").string());
+    writeFile(dir / "src" / "one.c", "int one;\n");
+    writeFile(dir / "notes.txt", "not source\n");
+
+    check(!file::exists(dir / "ed1.json"), "there is no project file to begin with");
+
+    Screen made = drive(ed1, "--project \"" + dir.string() + "\"", ctrl('q'), dir);
+    check(file::exists(dir / "ed1.json"), "opening there writes one");
+    check(wasShown(made, "so one was made"), "and says that is what it did");
+    check(onScreen(made, "one.c"), "the source it found is in the pane");
+    check(!onScreen(made, "notes.txt"), "and what is not source is not");
+
+    // Opened again, the file that was written is the file that is read - no
+    // second one, and nothing said about making anything.
+    Screen again = drive(ed1, "--project \"" + dir.string() + "\"", ctrl('q'), dir);
+    check(!wasShown(again, "so one was made"), "opening it again makes nothing");
+    check(onScreen(again, "one.c"), "and reads back what was written");
+
+    // A project file that will not parse is somebody's work and is left alone.
+    writeFile(dir / "ed1.json", "{ this is not json\n");
+    Screen broken = drive(ed1, "--project \"" + dir.string() + "\"", ctrl('q'), dir);
+    check(readFile(dir / "ed1.json").find("not json") != std::string::npos,
+          "a project file that will not parse is not written over");
+    check(!wasShown(broken, "so one was made"), "and nothing is made in its place");
+
+    file::remove_all(dir);
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -958,6 +994,7 @@ int main(int argc, char** argv) {
     std::printf("driving %s\n\n", ed1.c_str());
 
     editingAndLayout(ed1);
+    aDirectoryWithNoProject(ed1);
     colouring(ed1);
     fileCommands(ed1);
     projectPane(ed1);

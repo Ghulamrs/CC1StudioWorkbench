@@ -1,6 +1,7 @@
 #include "workspace.h"
 
 #include <cstdio>
+#include <vector>
 
 #include "path.h"
 
@@ -75,6 +76,68 @@ Outcome renameFile(Project& project, const std::string& fromAbsolute,
 
     project.renameFile(project.relative(fromAbsolute), toRelative);
     return andSave(project, baseName(fromAbsolute) + " is now " + toRelative, to);
+}
+
+namespace {
+
+// The suffixes worth putting in a project made without being told. Anything
+// else in the directory is left out rather than guessed at.
+bool worthAdding(const std::string& name) {
+    const char* const kinds[6] = {".c", ".h", ".cpp", ".hpp", ".cc", ".s"};
+    for (size_t i = 0; i < 6; ++i) {
+        size_t at = name.size();
+        std::string suffix = kinds[i];
+        if (at < suffix.size()) continue;
+        if (name.compare(at - suffix.size(), suffix.size(), suffix) == 0) return true;
+    }
+    return false;
+}
+
+// The same directories the pane on the left refuses to show: build output and
+// version control, which would bury the files anyone is looking for.
+bool worthDescending(const std::string& name) {
+    if (name.empty() || name[0] == '.') return false;
+    return name != "obj" && name != "build" && name != "x64" && name != "Debug" &&
+           name != "Release" && name != "node_modules";
+}
+
+}  // namespace
+
+Outcome beginFromWhatIsThere(Project& project, const std::string& directory) {
+    std::string root = path::absolute(directory);
+    project.begin(root, path::filename(root));
+
+    // Here, and one level down. Two levels is what a project path is allowed
+    // anyway, so there would be nowhere to put anything deeper.
+    size_t found = 0;
+    std::vector<path::Entry> here = path::entries(root);
+    for (size_t i = 0; i < here.size(); ++i) {
+        if (!here[i].directory) {
+            if (!worthAdding(here[i].name)) continue;
+            project.addFile(here[i].name, "Sources");
+            ++found;
+            continue;
+        }
+        if (!worthDescending(here[i].name)) continue;
+
+        std::vector<path::Entry> under = path::entries(path::join(root, here[i].name));
+        for (size_t j = 0; j < under.size(); ++j) {
+            if (under[j].directory || !worthAdding(under[j].name)) continue;
+            project.addFile(here[i].name + "/" + under[j].name, "Sources");
+            ++found;
+        }
+    }
+
+    Outcome done = saveProject(project);
+    if (!done.ok) return done;
+
+    done.message = project.name() + " - no " + Project::fileName() + " here, so one was made";
+    if (found > 0) {
+        char many[32];
+        std::snprintf(many, sizeof many, "%lu", static_cast<unsigned long>(found));
+        done.message += std::string(" with ") + many + " file" + (found == 1 ? "" : "s");
+    }
+    return done;
 }
 
 Outcome deleteFile(Project& project, const std::string& absolute) {

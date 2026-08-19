@@ -1218,6 +1218,13 @@ void talkingToAChild() {
     missing.stop();
 }
 
+std::string readWholeFile(const std::string& where) {
+    std::ifstream in(where.c_str(), std::ios::binary);
+    std::stringstream all;
+    all << in.rdbuf();
+    return all.str();
+}
+
 void writeSource(const std::string& where, const char* text) {
     std::ofstream out(where.c_str());
     out << text;
@@ -1639,8 +1646,51 @@ void theSeamTheWindowUses() {
     editor::path::removeTree(dir);
 }
 
+// A directory with no project file gets one made, rather than the editor
+// opening without a project at all.
+void aProjectMadeFromWhatIsThere() {
+    std::printf("a project made where there was none\n");
+
+    namespace pth = editor::path;
+    std::string dir = pth::join(pth::tempDir(), "ed1-made-project");
+    pth::removeTree(dir);
+    pth::makeDirectories(pth::join(dir, "src"));
+    pth::makeDirectories(pth::join(dir, "obj"));
+
+    writeSource(pth::join(dir, "one.c"), "int one;\n");
+    writeSource(pth::join(dir, "notes.txt"), "not source\n");
+    writeSource(pth::join(dir, "src/two.cpp"), "int two;\n");
+    writeSource(pth::join(dir, "src/two.h"), "extern int two;\n");
+    writeSource(pth::join(dir, "obj/two.o"), "not source either\n");
+
+    editor::Project project;
+    editor::Outcome made = editor::beginFromWhatIsThere(project, dir);
+    check(made.ok, "a project is made where there was none");
+    check(project.loaded(), "and the project says it is loaded");
+    check(pth::exists(pth::join(dir, "ed1.json")), "and the file is written");
+    check(project.name() == "ed1-made-project", "named after the directory it is in");
+
+    // What it picked up, and what it left alone.
+    std::string written = readWholeFile(pth::join(dir, "ed1.json"));
+    check(written.find("one.c") != std::string::npos, "source in the directory is in it");
+    check(written.find("src/two.cpp") != std::string::npos, "and source one level down");
+    check(written.find("src/two.h") != std::string::npos, "headers as well as sources");
+    check(written.find("notes.txt") == std::string::npos, "what is not source is left out");
+    check(written.find("two.o") == std::string::npos, "and so is anything under obj");
+
+    // Read back by the thing that will read it tomorrow.
+    editor::Project again;
+    std::string why;
+    check(again.load(dir, why), "and what was written can be read again");
+    check(why.empty(), "without complaint");
+    check(again.groups().size() == 1, "into the one group it was given");
+
+    pth::removeTree(dir);
+}
+
 int main() {
     paths();
+    aProjectMadeFromWhatIsThere();
     talkingToAChild();
     whatADebuggerSays();
     debuggingForReal();

@@ -162,18 +162,27 @@ const char* debuggerName(DebuggerKind kind) {
 const char* debuggerProgram(DebuggerKind kind) {
     if (kind != DebuggerCdb) return debuggerName(kind);
 
-    static std::string found;
-    if (!found.empty()) return found.c_str();
+    // Made once and never destroyed, and a pointer rather than the string
+    // itself. A function-local static with a destructor registers an atexit
+    // handler the first time it is reached, and in the mixed-mode binary that
+    // corrupts the heap - the second of the three hazards in the README, which
+    // this walked straight into. ed1gui died the moment F8 asked which
+    // debugger applied, and its own fault log named this function.
+    static std::string* found = 0;
+    if (found) return found->c_str();
 
     const char* under[2] = {"ProgramFiles(x86)", "ProgramFiles"};
     for (size_t i = 0; i < 2; ++i) {
         const char* root = std::getenv(under[i]);
         if (!root) continue;
         std::string where = std::string(root) + "\\Windows Kits\\10\\Debuggers\\x64\\cdb.exe";
-        if (path::exists(where)) { found = where; return found.c_str(); }
+        if (path::exists(where)) {
+            found = new std::string(where);   // never deleted, on purpose
+            return found->c_str();
+        }
     }
-    found = "cdb";   // on PATH, or about to say it is not there
-    return found.c_str();
+    found = new std::string("cdb");   // on PATH, or about to say it is not there
+    return found->c_str();
 }
 
 DebuggerKind debuggerFor(ToolchainKind kind, const std::string& arch) {

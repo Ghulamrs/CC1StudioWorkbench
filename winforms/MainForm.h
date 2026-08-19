@@ -91,6 +91,11 @@ private:
     // are native and are freed in OnFormClosed.
     Ed1Debugger* debugger_;
     Ed1Program* built_;
+    bool busy_;             // something slow is on another thread
+    int pending_;           // which slow thing
+    int workResult_;        // what it came back with
+    int workKind_;          // and the compiler and language it was told to use
+    int workLanguage_;
     System::Collections::Generic::Dictionary<String^,
         System::Collections::Generic::List<int>^>^ breaks_;
     String^ stopFile_;
@@ -155,6 +160,11 @@ private:
         config_ = ED1_CONFIG_DEBUG;
         debugger_ = ed1_debugger_new();
         built_ = nullptr;
+        busy_ = false;
+        pending_ = 0;
+        workResult_ = 0;
+        workKind_ = 0;
+        workLanguage_ = 0;
         breaks_ = gcnew System::Collections::Generic::Dictionary<String^,
             System::Collections::Generic::List<int>^>();
         stopFile_ = nullptr;
@@ -1226,6 +1236,7 @@ private:
     // ---- building ----------------------------------------------------------
 
     void OnCompile(Object^, EventArgs^) {
+        if (busy_) { what_->Text = "still working - give it a moment"; return; }
         if (path_ == nullptr) {
             what_->Text = "open a file first";
             return;
@@ -1297,6 +1308,7 @@ private:
     // than zero, and only the program knows what its number meant. Same words
     // as the terminal front end, from the same core.
     void OnRun(Object^, EventArgs^) {
+        if (busy_) { what_->Text = "still working - give it a moment"; return; }
         if (path_ == nullptr) {
             what_->Text = "open a file first";
             return;
@@ -1366,6 +1378,89 @@ private:
                                      System::IO::Path::GetFileName(path_), status);
     }
 
+    // ---- keeping the window awake while something slow happens -------------
+    //
+    // Building with cl takes seconds and starting cdb takes seconds more, and
+    // a program under a debugger can sit at a breakpoint for as long as it
+    // likes. Doing any of that on the thread that paints leaves a window that
+    // does not repaint, cannot be moved, and cannot even be photographed -
+    // which is how this was noticed, when a screenshot of it debugging C++
+    // could never be taken while the same screenshot of C worked.
+    //
+    // So the slow part goes to another thread and this one keeps pumping
+    // messages until it is done. The caller keeps its straight-line shape,
+    // because when WhileBusy returns we are back on the painting thread with
+    // the answer in hand. What the caller loses is the right to start a second
+    // one while the first is running, which is what busy_ refuses - and that
+    // matters more than it sounds: two threads in one Ed1Debugger would be
+    // two conversations down one pipe.
+
+    literal int WorkBuild = 1;
+    literal int WorkStart = 2;
+    literal int WorkGo = 3;
+    literal int WorkStepOver = 4;
+    literal int WorkStepInto = 5;
+    literal int WorkStepOut = 6;
+    literal int WorkResume = 7;
+
+    // Run on the worker thread. It touches native handles and reads String^
+    // members, which are immutable, and no control at all - a control touched
+    // from here would throw, and rightly.
+    void DoPendingWork() {
+        array<Byte>^ archBytes = Utf8Of(arch_ == nullptr ? "" : arch_);
+        pin_ptr<Byte> arch = &archBytes[0];
+
+        switch (pending_) {
+            case WorkBuild: {
+                array<Byte>^ sourceBytes = Utf8Of(path_);
+                pin_ptr<Byte> source = &sourceBytes[0];
+                array<Byte>^ cc1Bytes = Utf8Of(cc1_);
+                pin_ptr<Byte> cc1 = &cc1Bytes[0];
+                array<Byte>^ clBytes = Utf8Of(cl_);
+                pin_ptr<Byte> cl = &clBytes[0];
+
+                built_ = ed1_build_program(reinterpret_cast<const char*>(cc1),
+                                           reinterpret_cast<const char*>(cl), workKind_,
+                                           reinterpret_cast<const char*>(source),
+                                           workLanguage_,
+                                           reinterpret_cast<const char*>(arch), config_);
+                workResult_ = ed1_program_ok(built_);
+                break;
+            }
+            case WorkStart:
+                workResult_ = ed1_debugger_start(
+                    debugger_, ed1_debugger_for(workKind_, reinterpret_cast<const char*>(arch)),
+                    ed1_program_path(built_));
+                break;
+            case WorkGo:       ed1_debugger_run(debugger_); break;
+            case WorkResume:   ed1_debugger_resume(debugger_); break;
+            case WorkStepOver: ed1_debugger_step_over(debugger_); break;
+            case WorkStepInto: ed1_debugger_step_into(debugger_); break;
+            case WorkStepOut:  ed1_debugger_step_out(debugger_); break;
+            default: break;
+        }
+    }
+
+    // False when something slow is already running, which is the caller's cue
+    // to do nothing at all.
+    bool WhileBusy(int what) {
+        if (busy_) { what_->Text = "still working - give it a moment"; return false; }
+
+        busy_ = true;
+        pending_ = what;
+        workResult_ = 0;
+
+        System::Threading::Thread^ worker = gcnew System::Threading::Thread(
+            gcnew System::Threading::ThreadStart(this, &MainForm::DoPendingWork));
+        worker->IsBackground = true;   // never keeps the program alive by itself
+        worker->Start();
+
+        while (!worker->Join(50)) Application::DoEvents();
+
+        busy_ = false;
+        return true;
+    }
+
     // ---- stopping on a line ------------------------------------------------
 
     System::Collections::Generic::List<int>^ BreaksFor(String^ file) {
@@ -1423,7 +1518,9 @@ private:
 
     void OnDebug(Object^, EventArgs^) {
         if (ed1_debugger_running(debugger_) != 0) {
-            ed1_debugger_resume(debugger_);
+            // Carrying on can take as long as the program takes to reach the
+            // next breakpoint, which is why this is not done here either.
+            if (!WhileBusy(WorkResume)) return;
             ShowStop();
             return;
         }
@@ -1468,14 +1565,15 @@ private:
         Application::DoEvents();
 
         if (built_ != nullptr) { ed1_program_free(built_); built_ = nullptr; }
-        built_ = ed1_build_program(reinterpret_cast<const char*>(cc1),
-                                   reinterpret_cast<const char*>(cl), kind,
-                                   reinterpret_cast<const char*>(source), language,
-                                   reinterpret_cast<const char*>(arch), config_);
+
+        // cl runs on the other thread; this one goes on painting.
+        workKind_ = kind;
+        workLanguage_ = language;
+        if (!WhileBusy(WorkBuild)) return;
 
         console_->Text += FromUtf8(ed1_program_output(built_))->Replace("\n", "\r\n");
 
-        if (ed1_program_ok(built_) == 0) {
+        if (workResult_ == 0) {
             if (ed1_program_has_error(built_) != 0) {
                 int line = ed1_program_error_line(built_);
                 int column = ed1_program_error_column(built_);
@@ -1490,9 +1588,9 @@ private:
             return;
         }
 
-        if (ed1_debugger_start(debugger_,
-                               ed1_debugger_for(kind, reinterpret_cast<const char*>(arch)),
-                               ed1_program_path(built_)) == 0) {
+        what_->Text = "starting the debugger ...";
+        if (!WhileBusy(WorkStart)) return;
+        if (workResult_ == 0) {
             what_->Text = FromUtf8(ed1_debugger_name(
                               ed1_debugger_for(kind, reinterpret_cast<const char*>(arch)))) +
                           " could not be started - is it installed?";
@@ -1502,7 +1600,7 @@ private:
         }
 
         SetEveryBreakpoint();
-        ed1_debugger_run(debugger_);
+        if (!WhileBusy(WorkGo)) return;
         ShowStop();
     }
 
@@ -1515,9 +1613,8 @@ private:
             what_->Text = "nothing is running - F8 starts it";
             return;
         }
-        if (how == 1) ed1_debugger_step_into(debugger_);
-        else if (how == 2) ed1_debugger_step_out(debugger_);
-        else ed1_debugger_step_over(debugger_);
+        int what = (how == 1) ? WorkStepInto : (how == 2) ? WorkStepOut : WorkStepOver;
+        if (!WhileBusy(what)) return;
         ShowStop();
     }
 

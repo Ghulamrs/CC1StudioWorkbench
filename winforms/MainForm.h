@@ -1283,6 +1283,7 @@ private:
             ed1_build_free(built);
 
             GoTo(line, column);
+            panel_->SelectedIndex = 0;   // the compiler's words are on the Console
             what_->Text = String::Format("{0}:{1}: error: {2}", line, column, message);
             return;
         }
@@ -1360,6 +1361,7 @@ private:
             ed1_run_free(ran);
 
             GoTo(line, column);
+            panel_->SelectedIndex = 0;   // the compiler's words are on the Console
             what_->Text = String::Format("{0}:{1}: error: {2}", line, column, message);
             return;
         }
@@ -1579,6 +1581,7 @@ private:
                 int column = ed1_program_error_column(built_);
                 String^ message = FromUtf8(ed1_program_error_message(built_));
                 GoTo(line, column);
+                panel_->SelectedIndex = 0;   // the compiler's words are on the Console
                 what_->Text = String::Format("{0}:{1}: error: {2}", line, column, message);
             } else {
                 what_->Text = FromUtf8(ed1_toolchain_name(kind)) + " built no program - see the console";
@@ -1689,6 +1692,11 @@ private:
                                      String::IsNullOrEmpty(function) ? "" : " in " + function);
     }
 
+    // Moves the caret and nothing else. It used to bring the Console forward as
+    // well, which suited the three callers that go to a compiler's error - and
+    // silently undid the fourth, which goes to the line a program stopped on
+    // and had just brought the Debug tab forward. Choosing the panel is the
+    // caller's business; each of the three says so for itself now.
     void GoTo(int line, int column) {
         int row = line - 1;
         if (row < 0) row = 0;
@@ -1699,7 +1707,6 @@ private:
         text_->Select(at, 0);
         text_->ScrollToCaret();
         text_->Focus();
-        panel_->SelectedIndex = 0;
     }
 
     // A read-only box selects all of itself when it is given the keyboard,

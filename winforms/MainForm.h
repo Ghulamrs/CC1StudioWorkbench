@@ -361,6 +361,17 @@ private:
         status_->Items->Add(where_);
         Controls->Add(status_);
 
+        // The project pane gets about the width the terminal one gets - 22
+        // columns, enough for a name and two levels of nesting - rather than
+        // the third of the window a SplitContainer hands out by default. The
+        // files in it are short and the code beside it is not. It is on a
+        // splitter, so this is where it starts and not where it has to stay.
+        //
+        // Set here rather than where `upper` is made: SplitterDistance is
+        // refused while the control has no real width, and it has none until
+        // it is in a form that has one.
+        upper->SplitterDistance = 210;
+
         // There is always a sheet, even before a file is opened, so nothing
         // below has to ask whether there is somewhere to type.
         Sheet^ first = MakeSheet(nullptr, "");

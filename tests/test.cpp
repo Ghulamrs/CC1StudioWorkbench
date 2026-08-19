@@ -1258,66 +1258,66 @@ const char* const kGdbStop =
 void whatADebuggerSays() {
     std::printf("where a debugger says it stopped\n");
 
-    editor::Stop lldb = editor::readStop(editor::DebuggerLldb, kLldbStop);
+    editor::Stop lldb = editor::dbg_readStop(editor::DebuggerLldb, kLldbStop);
     check(lldb.stopped, "lldb's stop is read as a stop");
     check(lldb.file == "dbg.c", "with the file it names");
     check(lldb.line == 13, "and the line");
     check(lldb.function == "main", "and the function, without the program in front of it");
     check(!lldb.exited, "and it has not exited");
 
-    editor::Stop gdb = editor::readStop(editor::DebuggerGdb, kGdbStop);
+    editor::Stop gdb = editor::dbg_readStop(editor::DebuggerGdb, kGdbStop);
     check(gdb.stopped && gdb.file == "dbg.c" && gdb.line == 13,
           "gdb says the same thing in its own words");
     check(gdb.function == "main", "including the function, without its empty brackets");
 
     // lldb writes file:line:column and gdb writes file:line. The column must
     // not be read as the line, which is the one way this goes quietly wrong.
-    editor::Stop inside = editor::readStop(
+    editor::Stop inside = editor::dbg_readStop(
         editor::DebuggerLldb, "    frame #0: 0x100 dbg`twice(n=1) at dbg.c:5:9\n");
     check(inside.line == 5, "a column after the line is not mistaken for it");
     check(inside.function == "twice", "and arguments are not part of the name");
 
     // Gone, and what it went with.
-    editor::Stop doneLldb = editor::readStop(
+    editor::Stop doneLldb = editor::dbg_readStop(
         editor::DebuggerLldb, "Process 10819 exited with status = 3 (0x00000003)\n");
     check(doneLldb.exited && !doneLldb.stopped, "a program that ended is not stopped");
     check(doneLldb.status == 3, "and what it returned is read");
 
-    editor::Stop doneGdb = editor::readStop(
+    editor::Stop doneGdb = editor::dbg_readStop(
         editor::DebuggerGdb, "[Inferior 1 (process 41) exited with code 03]\n");
     check(doneGdb.exited && doneGdb.status == 3, "gdb's way of saying it is read too");
 
     // gdb prints that code in octal, so the two agree on three and disagree on
     // anything above seven. Twelve is where it would have gone wrong quietly.
-    check(editor::readStop(editor::DebuggerGdb,
+    check(editor::dbg_readStop(editor::DebuggerGdb,
                            "[Inferior 1 (process 41) exited with code 014]\n").status == 12,
           "and it is read as the octal gdb wrote");
-    check(editor::readStop(editor::DebuggerLldb,
+    check(editor::dbg_readStop(editor::DebuggerLldb,
                            "Process 41 exited with status = 12 (0x0000000c)\n").status == 12,
           "while lldb's is the decimal lldb wrote");
-    check(editor::readStop(editor::DebuggerGdb,
+    check(editor::dbg_readStop(editor::DebuggerGdb,
                            "[Inferior 1 (process 41) exited normally]\n").status == 0,
           "and normally means nothing went wrong");
 
     // The variables, which each spells with the type in a different place.
-    std::vector<editor::Variable> mine = editor::readVariables(
+    std::vector<editor::Variable> mine = editor::dbg_readVariables(
         editor::DebuggerLldb, "(int) total = 0\n(int) i = 1\n");
     check(mine.size() == 2, "lldb's variables are read");
     check(mine[0].name == "total" && mine[0].type == "int" && mine[0].value == "0",
           "with name, type and value apart");
 
-    std::vector<editor::Variable> theirs = editor::readVariables(
+    std::vector<editor::Variable> theirs = editor::dbg_readVariables(
         editor::DebuggerGdb, "total = 0\ni = 1\n");
     check(theirs.size() == 2 && theirs[1].name == "i" && theirs[1].value == "1",
           "and gdb's, which say no type");
     check(theirs[0].type.empty(), "so none is invented for them");
 
-    check(editor::readVariables(editor::DebuggerGdb, "No symbol table info available.\n").empty(),
+    check(editor::dbg_readVariables(editor::DebuggerGdb, "No symbol table info available.\n").empty(),
           "and a line that is not a variable is not read as one");
 
     // cdb, which answers a move with an address and has to be asked separately
     // where that is. This is what it actually printed for `ln`.
-    editor::Stop cdb = editor::readStop(
+    editor::Stop cdb = editor::dbg_readStop(
         editor::DebuggerCdb,
         "0:000> C:\\Users\\me\\seam.cpp(10)+0x9\n"
         "(00007ff6`44e87160)   seam!main+0x27   |  (00007ff6`44e871c0)   seam!pre_c_init\n");
@@ -1328,7 +1328,7 @@ void whatADebuggerSays() {
 
     // Its program ending is a break in ntdll rather than a message, and what
     // the program returned is in edx - printed in hex, whatever the radix.
-    editor::Stop cdbEnd = editor::readStop(
+    editor::Stop cdbEnd = editor::dbg_readStop(
         editor::DebuggerCdb,
         "ntdll!NtTerminateProcess+0x14:\n00007ffb`d6460904 c3   ret\n"
         "0:000> Last event: 8ec.1ff0: Exit process 0:8ec, code c\n");
@@ -1337,14 +1337,14 @@ void whatADebuggerSays() {
 
     // Which thread it happens to break on when the program ends is not fixed,
     // so the ending must be recognised without depending on that at all.
-    editor::Stop onAnother = editor::readStop(
+    editor::Stop onAnother = editor::dbg_readStop(
         editor::DebuggerCdb,
         "ntdll!ZwWaitForWorkViaWorkerFactory+0x14:\n00007ffb`d6464034 c3   ret\n"
         "0:001> Last event: 8ec.1ff0: Exit process 0:8ec, code c\n");
     check(onAnother.exited && onAnother.status == 12,
           "including when it ends on a worker thread rather than the main one");
 
-    std::vector<editor::Variable> cdbLocals = editor::readVariables(
+    std::vector<editor::Variable> cdbLocals = editor::dbg_readVariables(
         editor::DebuggerCdb, "0:000>               i = 0n1\n          total = 0n0\n");
     check(cdbLocals.size() == 2, "cdb's variables are read");
     check(cdbLocals[0].name == "i" && cdbLocals[0].value == "1",
@@ -1354,13 +1354,13 @@ void whatADebuggerSays() {
     // answer. Left on, it is read as part of the name - which showed up as the
     // first variable of every gdb listing being missing and nothing else.
     std::vector<editor::Variable> prompted =
-        editor::readVariables(editor::DebuggerGdb, "(gdb) i = 1\ntotal = 0\n");
+        editor::dbg_readVariables(editor::DebuggerGdb, "(gdb) i = 1\ntotal = 0\n");
     check(prompted.size() == 2 && prompted[0].name == "i",
           "a prompt in front of the first variable is not part of its name");
 
     // Stepping out, where gdb says what it is leaving before it says where it
     // arrived, and names the address because it did not land on a line start.
-    editor::Stop out = editor::readStop(
+    editor::Stop out = editor::dbg_readStop(
         editor::DebuggerGdb,
         "(gdb) Run till exit from #0  twice (n=1) at s.c:3\n"
         "0x00000000004011b3 in main () at s.c:11\n"
@@ -1369,7 +1369,7 @@ void whatADebuggerSays() {
     check(out.function == "main" && out.line == 11,
           "stepping out reports where it came back to, not what it left");
 
-    editor::Stop afterPrompt = editor::readStop(
+    editor::Stop afterPrompt = editor::dbg_readStop(
         editor::DebuggerGdb, "(gdb) twice (n=1) at s.c:3\n3\t    int doubled = n * 2;\n");
     check(afterPrompt.stopped && afterPrompt.function == "twice" && afterPrompt.line == 3,
           "nor of the function it stopped in");
@@ -1385,7 +1385,7 @@ void debuggingForReal() {
         std::printf("  (no $CC1, so nothing is built to debug)\n");
         return;
     }
-    if (editor::debuggerHere() == editor::DebuggerNone) {
+    if (editor::dbg_here() == editor::DebuggerNone) {
         std::printf("  (no debugger on this machine)\n");
         return;
     }
@@ -1421,7 +1421,7 @@ void debuggingForReal() {
     }
 
     editor::Debugger debugger;
-    check(debugger.start(editor::debuggerFor(editor::ToolCc1, editor::hostArch()), program),
+    check(debugger.start(editor::dbg_for(editor::ToolCc1, editor::hostArch()), program),
           "the debugger starts on what cc1 built");
     if (!debugger.running()) { editor::path::removeTree(dir); return; }
 
@@ -1469,9 +1469,9 @@ void debuggingForReal() {
 void debuggingCppForReal() {
     std::printf("stopping inside what cl built\n");
 
-    if (editor::debuggerFor(editor::ToolMsvc, editor::hostArch()) == editor::DebuggerNone) {
+    if (editor::dbg_for(editor::ToolMsvc, editor::hostArch()) == editor::DebuggerNone) {
         std::printf("  (%s)\n",
-                    editor::noDebuggerBecause(editor::ToolMsvc, editor::hostArch()).c_str());
+                    editor::dbg_whyNot(editor::ToolMsvc, editor::hostArch()).c_str());
         return;
     }
 
@@ -1501,7 +1501,7 @@ void debuggingCppForReal() {
     if (!made.ok) { editor::removeProgram(made); editor::path::removeTree(dir); return; }
 
     editor::Debugger debugger;
-    check(debugger.start(editor::debuggerFor(editor::ToolMsvc, editor::hostArch()), made.program),
+    check(debugger.start(editor::dbg_for(editor::ToolMsvc, editor::hostArch()), made.program),
           "cdb starts on it");
     if (!debugger.running()) { editor::removeProgram(made); editor::path::removeTree(dir); return; }
 
@@ -1545,10 +1545,10 @@ void theSeamTheWindowUses() {
 
     std::string host = editor::hostArch();
     check(ed1_debugger_for(editor::ToolCc1, host.c_str()) ==
-              static_cast<int>(editor::debuggerFor(editor::ToolCc1, host)),
+              static_cast<int>(editor::dbg_for(editor::ToolCc1, host)),
           "the window is told the same debugger the editor found");
     check(std::string(ed1_debugger_name(ed1_debugger_for(editor::ToolCc1, host.c_str()))) ==
-              editor::debuggerName(editor::debuggerFor(editor::ToolCc1, host)),
+              editor::dbg_name(editor::dbg_for(editor::ToolCc1, host)),
           "and the same name for it");
 
     // The two compilers are not in the same position on the same machine, and
@@ -1570,7 +1570,7 @@ void theSeamTheWindowUses() {
               "and where it is not, the reason names the debugger that is missing");
     }
 
-    if (editor::debuggerFor(editor::ToolCc1, host) == editor::DebuggerNone) {
+    if (editor::dbg_for(editor::ToolCc1, host) == editor::DebuggerNone) {
         std::printf("  (no debugger on this machine, so the rest is not tried)\n");
         return;
     }

@@ -22,6 +22,10 @@ namespace editor {
 // in one place, in a table of spellings and two readers for what they say back
 // - the same shape as the two assembly spellings in symbols.cpp and the two
 // filesystems in path.cpp.
+// The free functions here carry a dbg_ prefix so that a debugger-support
+// function is recognisable wherever it is read, away from this header. The
+// Debugger class's own methods do not: the type already says it, and
+// Debugger::dbg_start() would say it twice.
 enum DebuggerKind {
     DebuggerNone = 0,
     DebuggerLldb,      // what a Mac has
@@ -31,9 +35,9 @@ enum DebuggerKind {
 
 // The DWARF debugger this machine has: lldb on a Mac, gdb on Linux, and none
 // on Windows, where neither is installed.
-DebuggerKind debuggerHere();
-const char* debuggerName(DebuggerKind kind);
-const char* debuggerProgram(DebuggerKind kind);
+DebuggerKind dbg_here();
+const char* dbg_name(DebuggerKind kind);
+const char* dbg_program(DebuggerKind kind);
 
 // Which debugger can read what this compiler writes for this target - which is
 // not a question about the machine alone. On Windows the two compilers are in
@@ -41,11 +45,11 @@ const char* debuggerProgram(DebuggerKind kind);
 // table, while a C++ file goes to cl and comes out with CodeView in a .pdb.
 // The first can never be debugged there; the second could be, by something
 // that reads a .pdb.
-DebuggerKind debuggerFor(ToolchainKind kind, const std::string& arch);
+DebuggerKind dbg_for(ToolchainKind kind, const std::string& arch);
 
 // Why there is none, when there is none - in the terms that apply to this
 // compiler and this target rather than in general.
-std::string noDebuggerBecause(ToolchainKind kind, const std::string& arch);
+std::string dbg_whyNot(ToolchainKind kind, const std::string& arch);
 
 // Where the program is, now that it has stopped. `stopped` and `exited` are
 // both false when the answer could not be read at all, which is a debugger
@@ -75,7 +79,7 @@ public:
 
     // Starts a debugger on a program already built with debug information.
     // Which debugger is the caller's to decide, because it follows from the
-    // compiler rather than from the machine - see debuggerFor. `program` names
+    // compiler rather than from the machine - see dbg_for. `program` names
     // the debugger to run, and is empty for the usual one.
     bool start(DebuggerKind kind, const std::string& executable,
                const std::string& program = std::string());
@@ -117,8 +121,8 @@ private:
 // Reading what each of them says. Free functions, and tested as such: a stop
 // line is a fiddly thing to parse and it should not need a live debugger and a
 // built program to check that it is parsed right.
-Stop readStop(DebuggerKind kind, const std::string& said);
-std::vector<Variable> readVariables(DebuggerKind kind, const std::string& said);
+Stop dbg_readStop(DebuggerKind kind, const std::string& said);
+std::vector<Variable> dbg_readVariables(DebuggerKind kind, const std::string& said);
 
 }  // namespace editor
 

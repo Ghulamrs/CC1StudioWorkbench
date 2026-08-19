@@ -1554,8 +1554,8 @@ void Editor::debug() {
     if (!canCompile(kind, lang_)) { say(refusal(kind, lang_)); return; }
     if (!runsHere(kind, kArches[arch_])) { say(whyNotRun(kind, kArches[arch_])); return; }
 
-    if (debuggerFor(kind, kArches[arch_]) == DebuggerNone) {
-        say(noDebuggerBecause(kind, kArches[arch_]));
+    if (dbg_for(kind, kArches[arch_]) == DebuggerNone) {
+        say(dbg_whyNot(kind, kArches[arch_]));
         return;
     }
     if (config_ != ConfigDebug) {
@@ -1594,8 +1594,8 @@ void Editor::debug() {
         return;
     }
 
-    if (!debugger_.start(debuggerFor(kind, kArches[arch_]), debugBuilt_.program)) {
-        const char* named = debuggerName(debuggerFor(kind, kArches[arch_]));
+    if (!debugger_.start(dbg_for(kind, kArches[arch_]), debugBuilt_.program)) {
+        const char* named = dbg_name(dbg_for(kind, kArches[arch_]));
         console_.push_back(std::string(named) + " could not be started");
         say(std::string(named) + " could not be started - is it installed?");
         removeProgram(debugBuilt_);
@@ -1610,7 +1610,7 @@ void Editor::debug() {
              line != file->second.end(); ++line)
             if (debugger_.breakAt(file->first, *line)) ++set;
 
-    console_.push_back(std::string("started ") + debuggerName(debugger_.kind()) + " with " +
+    console_.push_back(std::string("started ") + dbg_name(debugger_.kind()) + " with " +
                        number(set) + " breakpoint" + (set == 1 ? "" : "s"));
     showStop(debugger_.run());
 }

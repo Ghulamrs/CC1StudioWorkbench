@@ -137,7 +137,7 @@ size_t number(const std::string& text) {
 
 }  // namespace
 
-DebuggerKind debuggerHere() {
+DebuggerKind dbg_here() {
 #if defined(_WIN32)
     return DebuggerNone;
 #elif defined(__APPLE__)
@@ -147,7 +147,7 @@ DebuggerKind debuggerHere() {
 #endif
 }
 
-const char* debuggerName(DebuggerKind kind) {
+const char* dbg_name(DebuggerKind kind) {
     switch (kind) {
         case DebuggerLldb: return "lldb";
         case DebuggerGdb:  return "gdb";
@@ -159,8 +159,8 @@ const char* debuggerName(DebuggerKind kind) {
 // Two of them are on PATH and one is not. cdb comes with the Windows SDK's
 // debugging tools, which put it under Windows Kits and add it to nothing, so
 // it is named in full or not found at all.
-const char* debuggerProgram(DebuggerKind kind) {
-    if (kind != DebuggerCdb) return debuggerName(kind);
+const char* dbg_program(DebuggerKind kind) {
+    if (kind != DebuggerCdb) return dbg_name(kind);
 
     // Made once and never destroyed, and a pointer rather than the string
     // itself. A function-local static with a destructor registers an atexit
@@ -185,7 +185,7 @@ const char* debuggerProgram(DebuggerKind kind) {
     return found->c_str();
 }
 
-DebuggerKind debuggerFor(ToolchainKind kind, const std::string& arch) {
+DebuggerKind dbg_for(ToolchainKind kind, const std::string& arch) {
     // Nothing to read is the first way to have no debugger.
     if (!emitsDebugInfo(kind, arch)) return DebuggerNone;
 
@@ -194,20 +194,20 @@ DebuggerKind debuggerFor(ToolchainKind kind, const std::string& arch) {
     // and is not installed by default. It is driven the same way as the other
     // two and is looked for rather than assumed.
     if (kind == ToolMsvc)
-        return path::exists(debuggerProgram(DebuggerCdb)) ? DebuggerCdb : DebuggerNone;
+        return path::exists(dbg_program(DebuggerCdb)) ? DebuggerCdb : DebuggerNone;
 
-    return debuggerHere();
+    return dbg_here();
 }
 
-std::string noDebuggerBecause(ToolchainKind kind, const std::string& arch) {
-    if (debuggerFor(kind, arch) != DebuggerNone) return std::string();
+std::string dbg_whyNot(ToolchainKind kind, const std::string& arch) {
+    if (dbg_for(kind, arch) != DebuggerNone) return std::string();
 
     if (kind == ToolMsvc)
         return "cl writes a .pdb and cdb reads one, but cdb is not installed - "
                "add Debugging Tools for Windows";
     if (!emitsDebugInfo(kind, arch))
         return "cc1 generates MASM for " + arch + ", which carries no line table";
-    return std::string("no ") + debuggerName(debuggerHere()) + " on this machine";
+    return std::string("no ") + dbg_name(dbg_here()) + " on this machine";
 }
 
 // ---- reading what they say -------------------------------------------------
@@ -231,7 +231,7 @@ std::string noDebuggerBecause(ToolchainKind kind, const std::string& arch) {
 //
 //   Last event: 8ec.1ff0: Hit breakpoint 0
 //   Last event: 8ec.1ff0: Exit process 0:8ec, code c
-Stop readCdbStop(const std::string& said) {
+Stop dbg_readCdbStop(const std::string& said) {
     Stop stop;
     stop.said = said;
 
@@ -282,8 +282,8 @@ Stop readCdbStop(const std::string& said) {
     return stop;
 }
 
-Stop readStop(DebuggerKind kind, const std::string& said) {
-    if (kind == DebuggerCdb) return readCdbStop(said);
+Stop dbg_readStop(DebuggerKind kind, const std::string& said) {
+    if (kind == DebuggerCdb) return dbg_readCdbStop(said);
 
     Stop stop;
     stop.said = said;
@@ -396,7 +396,7 @@ Stop readStop(DebuggerKind kind, const std::string& said) {
 
 // lldb:  (int) total = 0
 // gdb:   total = 0
-std::vector<Variable> readVariables(DebuggerKind kind, const std::string& said) {
+std::vector<Variable> dbg_readVariables(DebuggerKind kind, const std::string& said) {
     std::vector<Variable> found;
     std::vector<std::string> all = lines(said);
 
@@ -445,7 +445,7 @@ bool Debugger::start(DebuggerKind kind, const std::string& executable,
     if (kind_ == DebuggerNone) return false;
 
     executable_ = executable;
-    std::string run = program.empty() ? debuggerProgram(kind_) : program;
+    std::string run = program.empty() ? dbg_program(kind_) : program;
 
     std::string command = quoted(run) + " " + quoted(executable);
     if (kind_ == DebuggerCdb) {
@@ -541,7 +541,7 @@ Stop Debugger::afterMoving(const std::string& command) {
         if (event.find("Exit process") == std::string::npos) said += "\n" + ask("ln");
     }
 
-    Stop stop = readStop(kind_, said);
+    Stop stop = dbg_readStop(kind_, said);
     if (!running()) stop.stopped = false;
 
     // What it did not say has not changed. gdb names the file and the function
@@ -579,11 +579,11 @@ std::vector<Variable> Debugger::locals() {
     // keeps the two apart and `info locals` leaves the arguments out, so both
     // are asked for - an argument is exactly the thing you want to see when
     // you have just stepped into a function.
-    if (kind_ == DebuggerCdb) return readVariables(kind_, ask("dv"));
-    if (kind_ != DebuggerGdb) return readVariables(kind_, ask("frame variable"));
+    if (kind_ == DebuggerCdb) return dbg_readVariables(kind_, ask("dv"));
+    if (kind_ != DebuggerGdb) return dbg_readVariables(kind_, ask("frame variable"));
 
-    std::vector<Variable> found = readVariables(kind_, ask("info args"));
-    std::vector<Variable> locals = readVariables(kind_, ask("info locals"));
+    std::vector<Variable> found = dbg_readVariables(kind_, ask("info args"));
+    std::vector<Variable> locals = dbg_readVariables(kind_, ask("info locals"));
     for (size_t i = 0; i < locals.size(); ++i) found.push_back(locals[i]);
     return found;
 }

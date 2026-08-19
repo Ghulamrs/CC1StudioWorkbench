@@ -585,16 +585,16 @@ const char* ed1_program_error_message(Ed1Program* built) {
 }
 
 int ed1_debugger_for(int kind, const char* arch) {
-    return static_cast<int>(editor::debuggerFor(static_cast<editor::ToolchainKind>(kind),
+    return static_cast<int>(editor::dbg_for(static_cast<editor::ToolchainKind>(kind),
                                                 arch ? arch : ""));
 }
 
 const char* ed1_debugger_name(int kind) {
-    return editor::debuggerName(static_cast<editor::DebuggerKind>(kind));
+    return editor::dbg_name(static_cast<editor::DebuggerKind>(kind));
 }
 
 const char* ed1_no_debugger_because(int kind, const char* arch) {
-    scratch() = editor::noDebuggerBecause(static_cast<editor::ToolchainKind>(kind),
+    scratch() = editor::dbg_whyNot(static_cast<editor::ToolchainKind>(kind),
                                           arch ? arch : "");
     return scratch().c_str();
 }

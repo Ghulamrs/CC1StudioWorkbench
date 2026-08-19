@@ -155,31 +155,49 @@ Outcome beginFromWhatIsThere(Project& project, const std::string& directory) {
     return done;
 }
 
-// Small on purpose: every line of it is doing something you can watch. The
-// loop is what makes a breakpoint worth setting, and the call is what makes
-// stepping into something worth doing.
+// Small on purpose, and every line of it is doing something you can watch: the
+// numbers appear one at a time as you step, which is the whole of what a
+// debugger is for.
+//
+// The same program is in examples/projectile.c, where it can be read and built
+// like any other file. It is a string here as well because a first run has to
+// be able to write it without knowing where this editor was installed.
+//
+// The guard around M_PI is not decoration. It is in <math.h> on a Mac and on
+// Linux, and MSVC keeps it behind _USE_MATH_DEFINES - so without this the
+// first program a first run opens would not compile on one of the three
+// machines it is written for.
+//
+// Which also means the value here is only ever used on Windows, and 3.14 is
+// enough for it: the program prints two decimal places, and it prints the same
+// two - 2.88, 10.19, 40.77 - whichever value of pi it was given.
 const char* const kDemoProgram =
     "#include <stdio.h>\n"
+    "#include <math.h>\n"
     "\n"
-    "/* A first program, and something to try the debugger on.\n"
+    "/* Projectile motion - and something to try the debugger on.\n"
     "\n"
-    "   F5 builds and runs it. F9 on the line below puts a breakpoint there,\n"
-    "   F8 starts it and stops on that line, and F6 steps into twice(). The\n"
-    "   Debug tab shows what total and i are while you are standing there. */\n"
+    "   F5 builds and runs it. F9 on a line puts a breakpoint there, F8 starts\n"
+    "   it and stops on that line, and F7 steps a line at a time - watch the\n"
+    "   Debug tab as rad, t_flight, h_max and range are worked out. */\n"
     "\n"
-    "static int twice(int n)\n"
-    "{\n"
-    "    int doubled = n * 2;\n"
-    "    return doubled;\n"
-    "}\n"
+    "#ifndef M_PI\n"
+    "#define M_PI 3.14   /* MSVC hides the real one behind _USE_MATH_DEFINES */\n"
+    "#endif\n"
     "\n"
-    "int main(void)\n"
-    "{\n"
-    "    int total = 0;\n"
-    "    for (int i = 1; i <= 3; ++i) {\n"
-    "        total = total + twice(i);\n"
-    "    }\n"
-    "    printf(\"total %d\\n\", total);\n"
+    "int main(void) {\n"
+    "    double v0 = 20.0;     // initial velocity (m/s)\n"
+    "    double angle = 45.0;  // launch angle (degrees)\n"
+    "    double g = 9.81;      // gravity (m/s^2)\n"
+    "\n"
+    "    double rad = angle * M_PI / 180.0;\n"
+    "    double t_flight = 2 * v0 * sin(rad) / g;\n"
+    "    double h_max = (v0 * v0 * pow(sin(rad), 2)) / (2 * g);\n"
+    "    double range = (v0 * v0 * sin(2 * rad)) / g;\n"
+    "\n"
+    "    printf(\"Time of flight: %.2f s\\n\", t_flight);\n"
+    "    printf(\"Max height: %.2f m\\n\", h_max);\n"
+    "    printf(\"Range: %.2f m\\n\", range);\n"
     "    return 0;\n"
     "}\n";
 

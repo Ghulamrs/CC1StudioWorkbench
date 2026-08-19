@@ -1747,7 +1747,12 @@ void whatItRemembers() {
             check(made.groups()[i].files.empty(), "Headers empty until there is a header");
 
     std::string was = readWholeFile(pth::join(demo, "src/first.c"));
-    check(was.find("twice") != std::string::npos, "which has a call worth stepping into");
+    check(was.find("t_flight") != std::string::npos,
+          "which works something out a line at a time, to step through");
+    check(was.find("#ifndef M_PI") != std::string::npos,
+          "and guards M_PI, which MSVC keeps behind a define");
+    check(was.find("3.14") != std::string::npos,
+          "with a value only Windows ever uses, and two decimals do not notice");
 
     // Made once: asking again must not write over what you have done to it.
     writeSource(pth::join(demo, "src/first.c"), "int mine(void) { return 1; }\n");

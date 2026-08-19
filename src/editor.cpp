@@ -6,7 +6,6 @@
 
 #include <cstdio>
 #include <cstdlib>
-#include <filesystem>
 #include <system_error>
 
 namespace editor {

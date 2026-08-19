@@ -45,7 +45,7 @@
   <ItemDefinitionGroup>
     <ClCompile>
       <ExceptionHandling>Async</ExceptionHandling>
-      <LanguageStandard>stdcpp17</LanguageStandard>
+      <LanguageStandard>stdcpp14</LanguageStandard>
       <AdditionalIncludeDirectories>$(ProjectDir)..\src</AdditionalIncludeDirectories>
       <PreprocessorDefinitions>_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <!-- Function-local statics normally get a thread-safe initialisation
@@ -87,6 +87,7 @@
     <ClCompile Include="..\src\json.cpp"><CompileAsManaged>false</CompileAsManaged><ExceptionHandling>Sync</ExceptionHandling></ClCompile>
     <ClCompile Include="..\src\project.cpp"><CompileAsManaged>false</CompileAsManaged><ExceptionHandling>Sync</ExceptionHandling></ClCompile>
     <ClCompile Include="..\src\workspace.cpp"><CompileAsManaged>false</CompileAsManaged><ExceptionHandling>Sync</ExceptionHandling></ClCompile>
+    <ClCompile Include="..\src\path.cpp"><CompileAsManaged>false</CompileAsManaged><ExceptionHandling>Sync</ExceptionHandling></ClCompile>
     <ClCompile Include="..\src\compile.cpp"><CompileAsManaged>false</CompileAsManaged><ExceptionHandling>Sync</ExceptionHandling></ClCompile>
     <ClCompile Include="..\src\toolchain.cpp"><CompileAsManaged>false</CompileAsManaged><ExceptionHandling>Sync</ExceptionHandling></ClCompile>
   </ItemGroup>

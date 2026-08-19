@@ -57,7 +57,7 @@ PROJECT_CONFIGS = ident("configlist", "project")
 TARGET_CONFIGS = ident("configlist", "target")
 
 COMMON = """				ALWAYS_SEARCH_USER_PATHS = NO;
-				CLANG_CXX_LANGUAGE_STANDARD = "c++17";
+				CLANG_CXX_LANGUAGE_STANDARD = "c++14";
 				CLANG_ENABLE_OBJC_ARC = YES;
 				CODE_SIGN_STYLE = Automatic;
 				GCC_TREAT_WARNINGS_AS_ERRORS = YES;

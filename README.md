@@ -153,7 +153,9 @@ and a file the chosen compiler cannot take is turned away with a reason instead
 of a wall of somebody else's parse errors.
 
 Each compiler is also *told* which language it is being handed - `/TC` or
-`/TP /EHsc /std:c++17` - rather than left to infer it from the suffix.
+`/TP /EHsc /std:c++14` - rather than left to infer it from the suffix. C++14
+because that is what this arena holds itself to: cc1 is written in it, so the
+editor is built in it, and C++ compiled here is compiled as it.
 
 **cl is found without a Developer Command Prompt.** ed1 asks Visual Studio 2022
 where it lives, runs `vcvars64` once, and keeps the environment for the rest of
@@ -416,9 +418,20 @@ on both machines. The key decoding in particular lives in `terminal_common.cpp`
 rather than in each platform file: two copies of that drifting apart is the
 house bug, and this is the one place it was easy to prevent.
 
-`buffer`, `indent`, `menu` and `tree` touch no screen and no OS. `indent`, `syntax`, `json`, `project` and
+**This is C++14, and `src/path.cpp` is what that costs.** cc1 is written in
+C++14, so the editor that drives it is too - one standard across the arena,
+enforced by all three toolchains rather than agreed and forgotten. The only
+thing in here that wanted C++17 was `<filesystem>`, and what was actually used
+of it was small: joining and splitting paths, making one absolute or relative
+to another, listing a directory, and four operations on files. So it is written
+out, `opendir` on one machine and `FindFirstFile` on the other, in one file
+behind one set of functions - a single place the two spellings can drift apart,
+small enough to read, and with 35 cases of its own. Everything works in forward
+slashes and hands them back, which is what the project file already wanted.
+
+`buffer`, `indent`, `menu` and `tree` touch no screen and no OS. `indent`, `syntax`, `json`, `project`, `path` and
 the diagnostic parser are the pieces with a contract, and `tests/test.cpp`
-checks them - 296 cases, including that a Windows path's drive letter is not
+checks them - 332 cases, including that a Windows path's drive letter is not
 mistaken for a `line:col` separator, that a brace inside a string is not
 counted, and that `class` is a keyword in C++ and nothing in particular in C,
 and that cl's `bad.c(3,13)` is read as well as cc1's `bad.c:3:13`. They run on

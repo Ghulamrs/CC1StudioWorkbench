@@ -2,12 +2,9 @@
 
 #include <algorithm>
 #include <cstdio>
-#include <filesystem>
-#include <system_error>
 
 #include "json.h"
-
-namespace fs = std::filesystem;
+#include "path.h"
 
 namespace editor {
 
@@ -15,12 +12,8 @@ namespace {
 
 // Written with forward slashes whatever the machine, so a project file made on
 // one opens on the other. Windows takes them everywhere it takes backslashes.
-std::string withSlashes(const std::string& path) {
-    std::string out = path;
-    for (size_t i = 0; i < out.size(); ++i)
-        if (out[i] == '\\') out[i] = '/';
-    return out;
-}
+// The turning round is in path.h now, since everything there works that way.
+std::string withSlashes(const std::string& text) { return path::withSlashes(text); }
 
 ToolchainKind toolchainFrom(const std::string& word) {
     if (word == "cc1") return ToolCc1;
@@ -47,18 +40,14 @@ std::string Project::absolute(const std::string& rel) const {
     return root_ + "/" + rel;
 }
 
-std::string Project::relative(const std::string& path) const {
-    std::error_code ec;
-    fs::path here = fs::absolute(fs::path(path), ec).lexically_normal();
-    fs::path base = fs::absolute(fs::path(root_), ec).lexically_normal();
-    fs::path out = here.lexically_relative(base);
-    if (out.empty()) return withSlashes(path);
-    return withSlashes(out.string());
+std::string Project::relative(const std::string& file) const {
+    std::string out = path::relativeTo(file, root_);
+    if (out.empty()) return withSlashes(file);
+    return out;
 }
 
 void Project::begin(const std::string& dir, const std::string& name) {
-    std::error_code ec;
-    root_ = withSlashes(fs::absolute(fs::path(dir), ec).lexically_normal().string());
+    root_ = path::absolute(dir);
     file_ = root_ + "/" + fileName();
     name_ = name;
     groups_.clear();
@@ -76,8 +65,7 @@ bool Project::load(const std::string& dir, std::string& error) {
     error.clear();
     loaded_ = false;
 
-    std::error_code ec;
-    std::string base = withSlashes(fs::absolute(fs::path(dir), ec).lexically_normal().string());
+    std::string base = path::absolute(dir);
     std::string path = base + "/" + fileName();
 
     // stdio, not <fstream> - see the note in buffer.cpp.
@@ -103,7 +91,7 @@ bool Project::load(const std::string& dir, std::string& error) {
 
     root_ = base;
     file_ = path;
-    name_ = root.get("name").text(fs::path(base).filename().string());
+    name_ = root.get("name").text(path::filename(base));
     toolchain_ = toolchainFrom(root.get("toolchain").text("auto"));
     // Debug unless the file says otherwise: the one you want while the code is
     // still being written is the one you want by default.

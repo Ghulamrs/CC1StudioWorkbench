@@ -1,10 +1,8 @@
 #include "workspace.h"
 
 #include <cstdio>
-#include <filesystem>
-#include <system_error>
 
-namespace fs = std::filesystem;
+#include "path.h"
 
 namespace editor {
 
@@ -47,19 +45,18 @@ Outcome createFile(Project& project, const std::string& relative,
     std::string why;
     if (!Project::allows(relative, why)) return no(relative + ": " + why);
 
-    std::string path = project.absolute(relative);
-    std::error_code ec;
-    if (fs::exists(path, ec)) return no(relative + " is already there");
+    std::string where = project.absolute(relative);
+    if (path::exists(where)) return no(relative + " is already there");
 
-    fs::path parent = fs::path(path).parent_path();
-    if (!parent.empty()) fs::create_directories(parent, ec);
+    std::string parent = path::parent(where);
+    if (!parent.empty()) path::makeDirectories(parent);
 
-    FILE* made = std::fopen(path.c_str(), "wb");
+    FILE* made = std::fopen(where.c_str(), "wb");
     if (!made) return no("could not make " + relative);
     std::fclose(made);
 
     project.addFile(relative, group);
-    return andSave(project, relative + " made", path);
+    return andSave(project, relative + " made", where);
 }
 
 Outcome renameFile(Project& project, const std::string& fromAbsolute,
@@ -68,14 +65,13 @@ Outcome renameFile(Project& project, const std::string& fromAbsolute,
     if (!Project::allows(toRelative, why)) return no(toRelative + ": " + why);
 
     std::string to = project.absolute(toRelative);
-    std::error_code ec;
-    if (fs::exists(to, ec)) return no(toRelative + " is already there");
+    if (path::exists(to)) return no(toRelative + " is already there");
 
-    fs::path parent = fs::path(to).parent_path();
-    if (!parent.empty()) fs::create_directories(parent, ec);
+    std::string parent = path::parent(to);
+    if (!parent.empty()) path::makeDirectories(parent);
 
-    fs::rename(fromAbsolute, to, ec);
-    if (ec) return no("could not rename: " + ec.message());
+    if (!path::rename(fromAbsolute, to))
+        return no("could not rename " + baseName(fromAbsolute) + " to " + toRelative);
 
     project.renameFile(project.relative(fromAbsolute), toRelative);
     return andSave(project, baseName(fromAbsolute) + " is now " + toRelative, to);
@@ -84,9 +80,8 @@ Outcome renameFile(Project& project, const std::string& fromAbsolute,
 Outcome deleteFile(Project& project, const std::string& absolute) {
     std::string relative = project.relative(absolute);
 
-    std::error_code ec;
-    if (!fs::remove(absolute, ec) || ec)
-        return no("could not delete: " + (ec ? ec.message() : std::string("it is still there")));
+    if (!path::remove(absolute))
+        return no("could not delete " + relative + " - it is still there");
 
     project.removeFile(relative);
     return andSave(project, relative + " deleted", std::string());

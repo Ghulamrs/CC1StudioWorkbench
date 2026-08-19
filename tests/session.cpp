@@ -11,14 +11,41 @@
 
 #include <cstdio>
 #include <cstdlib>
-#include <filesystem>
+#include "path.h"
 #include <fstream>
 #include <sstream>
 #include <string>
 #include <vector>
 
-namespace fs = std::filesystem;
 
+// What this harness used of <filesystem>, which is C++17 and so not available
+// here: a path that can be joined with /, and five operations. It is spelled
+// out rather than imported, over src/path.cpp - the same code the editor uses,
+// so a test that passes has exercised the thing being shipped.
+namespace file {
+
+struct path {
+    std::string text;
+
+    path() {}
+    path(const char* from) : text(editor::path::withSlashes(from)) {}
+    path(const std::string& from) : text(editor::path::withSlashes(from)) {}
+
+    std::string string() const { return text; }
+    path operator/(const std::string& leaf) const {
+        return path(editor::path::join(text, leaf));
+    }
+};
+
+inline bool exists(const path& where) { return editor::path::exists(where.text); }
+inline bool remove(const path& where) { return editor::path::remove(where.text); }
+inline bool remove_all(const path& where) { return editor::path::removeTree(where.text); }
+inline bool create_directories(const path& where) {
+    return editor::path::makeDirectories(where.text);
+}
+inline path temp_directory_path() { return path(editor::path::tempDir()); }
+
+}  // namespace file
 
 namespace {
 
@@ -57,14 +84,14 @@ std::string times(const std::string& key, int n) {
     return out;
 }
 
-std::string readFile(const fs::path& path) {
+std::string readFile(const file::path& path) {
     std::ifstream in(path.string().c_str(), std::ios::binary);
     std::stringstream buffer;
     buffer << in.rdbuf();
     return buffer.str();
 }
 
-void writeFile(const fs::path& path, const std::string& text) {
+void writeFile(const file::path& path, const std::string& text) {
     std::ofstream out(path.string().c_str(), std::ios::binary);
     out << text;
 }
@@ -119,9 +146,9 @@ std::vector<std::string> lastScreen(const std::string& raw) {
 }
 
 Screen drive(const std::string& ed1, const std::string& arguments,
-             const std::string& keys, const fs::path& where) {
-    fs::path keyFile = where / "keys.in";
-    fs::path outFile = where / "screen.out";
+             const std::string& keys, const file::path& where) {
+    file::path keyFile = where / "keys.in";
+    file::path outFile = where / "screen.out";
     writeFile(keyFile, keys);
 
     std::string command = "\"" + ed1 + "\" " + arguments + " < \"" + keyFile.string() +
@@ -136,8 +163,8 @@ Screen drive(const std::string& ed1, const std::string& arguments,
     Screen screen;
     screen.raw = readFile(outFile);
     screen.rows = lastScreen(screen.raw);
-    fs::remove(keyFile);
-    fs::remove(outFile);
+    file::remove(keyFile);
+    file::remove(outFile);
     return screen;
 }
 
@@ -174,10 +201,10 @@ bool wasShown(const Screen& screen, const std::string& text) {
     return screen.raw.find(text) != std::string::npos;
 }
 
-fs::path freshProject(const std::string& name) {
-    fs::path dir = fs::temp_directory_path() / ("ed1-session-" + name);
-    fs::remove_all(dir);
-    fs::create_directories(dir / "src");
+file::path freshProject(const std::string& name) {
+    file::path dir = file::temp_directory_path() / ("ed1-session-" + name);
+    file::remove_all(dir);
+    file::create_directories(dir / "src");
     writeFile(dir / "ed1.json",
               "{\n  \"name\": \"Trial\",\n  \"indent\": 4,\n"
               "  \"groups\": { \"Sources\": [] }\n}\n");
@@ -189,8 +216,8 @@ fs::path freshProject(const std::string& name) {
 void editingAndLayout(const std::string& ed1) {
     std::printf("typing, and what the editor does to it\n");
 
-    fs::path dir = freshProject("typing");
-    fs::path file = dir / "src" / "typed.c";
+    file::path dir = freshProject("typing");
+    file::path file = dir / "src" / "typed.c";
 
     // Typed with no leading space anywhere. What comes back should be laid out.
     std::string keys = "void f(void) {\ng();\nif (x)\ny();\nswitch (n) {\ncase 1:\n"
@@ -203,7 +230,7 @@ void editingAndLayout(const std::string& ed1) {
                "a function typed flat is saved laid out");
 
     // Ctrl-F lays out a file that arrived with no layout of its own.
-    fs::path flat = dir / "src" / "flat.c";
+    file::path flat = dir / "src" / "flat.c";
     writeFile(flat, "int main(void)\n{\nif (x)\nreturn 1;\nreturn 0;\n}\n");
     drive(ed1, "\"" + flat.string() + "\" --project \"" + dir.string() + "\"",
           ctrl('a') + ctrl('s') + ctrl('q'), dir);
@@ -212,21 +239,21 @@ void editingAndLayout(const std::string& ed1) {
                "Ctrl-A lays out a whole file");
 
     // Tabs instead of spaces, asked for on the command line.
-    fs::path tabbed = dir / "src" / "tabbed.c";
+    file::path tabbed = dir / "src" / "tabbed.c";
     writeFile(tabbed, "int f(void)\n{\nreturn 1;\n}\n");
     drive(ed1, "\"" + tabbed.string() + "\" --project \"" + dir.string() + "\" --tabs",
           ctrl('a') + ctrl('s') + ctrl('q'), dir);
     check(readFile(tabbed).find("\treturn 1;") != std::string::npos,
           "--tabs indents with a tab");
 
-    fs::remove_all(dir);
+    file::remove_all(dir);
 }
 
 void colouring(const std::string& ed1) {
     std::printf("what the screen is coloured with\n");
 
-    fs::path dir = freshProject("colour");
-    fs::path file = dir / "src" / "colour.c";
+    file::path dir = freshProject("colour");
+    file::path file = dir / "src" / "colour.c";
     writeFile(file, "int main(void)\n{\n    return 0;   /* done */\n}\n");
 
     Screen screen = drive(ed1, "\"" + file.string() + "\" --project \"" + dir.string() + "\"",
@@ -239,13 +266,13 @@ void colouring(const std::string& ed1) {
     check(onScreen(screen, "  1 int main(void)"), "and the line numbers are there");
     check(onScreen(screen, "C  "), "the status bar names the language");
 
-    fs::remove_all(dir);
+    file::remove_all(dir);
 }
 
 void fileCommands(const std::string& ed1) {
     std::printf("making, renaming, regrouping and deleting\n");
 
-    fs::path dir = freshProject("files");
+    file::path dir = freshProject("files");
     std::string project = " --project \"" + dir.string() + "\"";
 
     // Project menu: right twice from File, then down to the item wanted.
@@ -254,7 +281,7 @@ void fileCommands(const std::string& ed1) {
     // New file...
     drive(ed1, project, toProject + times(kDown, 3) + kEnter + "src/made.c" + kEnter + ctrl('q'),
           dir);
-    check(fs::exists(dir / "src" / "made.c"), "New file makes the file");
+    check(file::exists(dir / "src" / "made.c"), "New file makes the file");
     check(readFile(dir / "ed1.json").find("src/made.c") != std::string::npos,
           "and puts it in the project");
 
@@ -262,14 +289,14 @@ void fileCommands(const std::string& ed1) {
     Screen deep = drive(ed1, project,
                         toProject + times(kDown, 3) + kEnter + "a/b/deep.c" + kEnter + ctrl('q'),
                         dir);
-    check(!fs::exists(dir / "a"), "a file two directories deep is not made");
+    check(!file::exists(dir / "a"), "a file two directories deep is not made");
     check(onScreen(deep, "two levels at most"), "and the rule says so on screen");
 
     // Rename... acts on the file being edited.
     drive(ed1, "\"" + (dir / "src" / "made.c").string() + "\"" + project,
           toProject + times(kDown, 4) + kEnter + "src/moved.c" + kEnter + ctrl('q'), dir);
-    check(!fs::exists(dir / "src" / "made.c"), "Rename takes the old name away");
-    check(fs::exists(dir / "src" / "moved.c"), "and puts the new one there");
+    check(!file::exists(dir / "src" / "made.c"), "Rename takes the old name away");
+    check(file::exists(dir / "src" / "moved.c"), "and puts the new one there");
     check(readFile(dir / "ed1.json").find("src/moved.c") != std::string::npos,
           "and the project follows it");
 
@@ -278,27 +305,27 @@ void fileCommands(const std::string& ed1) {
           toProject + times(kDown, 5) + kEnter + "Extras" + kEnter + ctrl('q'), dir);
     std::string written = readFile(dir / "ed1.json");
     check(written.find("Extras") != std::string::npos, "regrouping makes the group");
-    check(fs::exists(dir / "src" / "moved.c"), "and leaves the file where it was");
+    check(file::exists(dir / "src" / "moved.c"), "and leaves the file where it was");
 
     // Delete... only when the answer is yes.
     drive(ed1, "\"" + (dir / "src" / "moved.c").string() + "\"" + project,
           toProject + times(kDown, 6) + kEnter + "no" + kEnter + ctrl('q'), dir);
-    check(fs::exists(dir / "src" / "moved.c"), "Delete answered with no keeps the file");
+    check(file::exists(dir / "src" / "moved.c"), "Delete answered with no keeps the file");
 
     drive(ed1, "\"" + (dir / "src" / "moved.c").string() + "\"" + project,
           toProject + times(kDown, 6) + kEnter + "yes" + kEnter + ctrl('q'), dir);
-    check(!fs::exists(dir / "src" / "moved.c"), "and answered with yes deletes it");
+    check(!file::exists(dir / "src" / "moved.c"), "and answered with yes deletes it");
     check(readFile(dir / "ed1.json").find("src/moved.c") == std::string::npos,
           "and takes it out of the project too");
 
-    fs::remove_all(dir);
+    file::remove_all(dir);
 }
 
 void selectingAndPasting(const std::string& ed1) {
     std::printf("selecting, copying and pasting\n");
 
-    fs::path dir = freshProject("clip");
-    fs::path file = dir / "src" / "clip.c";
+    file::path dir = freshProject("clip");
+    file::path file = dir / "src" / "clip.c";
     std::string args = "\"" + file.string() + "\" --project \"" + dir.string() + "\"";
 
     // Select three characters, copy, go to the end of the line, paste.
@@ -349,14 +376,14 @@ void selectingAndPasting(const std::string& ed1) {
     Screen shown = drive(ed1, args, times(kShiftRight, 3) + ctrl('q'), dir);
     check(shown.raw.find("\x1b[7m") != std::string::npos, "a selection is shown in reverse");
 
-    fs::remove_all(dir);
+    file::remove_all(dir);
 }
 
 void multiByteText(const std::string& ed1) {
     std::printf("text that is not ASCII\n");
 
-    fs::path dir = freshProject("utf8");
-    fs::path file = dir / "src" / "urdu.c";
+    file::path dir = freshProject("utf8");
+    file::path file = dir / "src" / "urdu.c";
     // A comment in Urdu and a string with an accented letter in it.
     const std::string text =
         "/* \xd8\xb3\xd9\x84\xd8\xa7\xd9\x85 */\nchar *s = \"caf\xc3\xa9\";\n";
@@ -381,14 +408,14 @@ void multiByteText(const std::string& ed1) {
           "backspace removes a whole letter");
     check(after.size() == text.size() - 2, "which is two bytes, not one");
 
-    fs::remove_all(dir);
+    file::remove_all(dir);
 }
 
 void undoing(const std::string& ed1) {
     std::printf("undo and redo, in the editor\n");
 
-    fs::path dir = freshProject("undo");
-    fs::path file = dir / "src" / "undo.c";
+    file::path dir = freshProject("undo");
+    file::path file = dir / "src" / "undo.c";
     const char* text = "int one(void) { return 1; }\n";
     std::string args = "\"" + file.string() + "\" --project \"" + dir.string() + "\"";
 
@@ -404,7 +431,7 @@ void undoing(const std::string& ed1) {
     check(readFile(file).compare(0, 3, "xyz") == 0, "redo puts it back");
 
     // Laying the file out is one step of its own.
-    fs::path flat = dir / "src" / "flat.c";
+    file::path flat = dir / "src" / "flat.c";
     const char* crooked = "int main(void)\n{\nreturn 0;\n}\n";
     writeFile(flat, crooked);
     std::string flatArgs = "\"" + flat.string() + "\" --project \"" + dir.string() + "\"";
@@ -439,14 +466,14 @@ void undoing(const std::string& ed1) {
     Screen nothing = drive(ed1, args, ctrl('z') + ctrl('q'), dir);
     check(onScreen(nothing, "nothing to undo"), "and with nothing done, it says so");
 
-    fs::remove_all(dir);
+    file::remove_all(dir);
 }
 
 void findingAndReplacing(const std::string& ed1) {
     std::printf("finding and replacing, in the editor\n");
 
-    fs::path dir = freshProject("find");
-    fs::path file = dir / "src" / "find.c";
+    file::path dir = freshProject("find");
+    file::path file = dir / "src" / "find.c";
     const char* text =
         "int one(void) { return 1; }\n"
         "int two(void) { return 2; }\n"
@@ -481,13 +508,13 @@ void findingAndReplacing(const std::string& ed1) {
           dir);
     checkEqual(readFile(file), text, "and quitting without saving leaves the file alone");
 
-    fs::remove_all(dir);
+    file::remove_all(dir);
 }
 
 void projectPane(const std::string& ed1) {
     std::printf("the project pane\n");
 
-    fs::path dir = freshProject("pane");
+    file::path dir = freshProject("pane");
     writeFile(dir / "src" / "one.c", "int one(void) { return 1; }\n");
     writeFile(dir / "src" / "two.c", "int two(void) { return 2; }\n");
     writeFile(dir / "ed1.json",
@@ -507,14 +534,14 @@ void projectPane(const std::string& ed1) {
     check(onScreen(opened, " one.c"), "and it gets a tab");
 
     // The project's indent setting is what the editor uses.
-    fs::path flat = dir / "src" / "three.c";
+    file::path flat = dir / "src" / "three.c";
     writeFile(flat, "int f(void)\n{\nreturn 3;\n}\n");
     drive(ed1, "\"" + flat.string() + "\" --project \"" + dir.string() + "\"",
           ctrl('a') + ctrl('s') + ctrl('q'), dir);
     check(readFile(flat).find("\n  return 3;") != std::string::npos,
           "the project's indent of 2 is what gets used");
 
-    fs::remove_all(dir);
+    file::remove_all(dir);
 }
 
 // The MSVC half. No path is needed: the editor finds Visual Studio itself, so
@@ -525,9 +552,9 @@ void buildingWithCl(const std::string& ed1) {
 #else
     std::printf("building with cl\n");
 
-    fs::path dir = freshProject("cl");
+    file::path dir = freshProject("cl");
 
-    fs::path good = dir / "src" / "good.c";
+    file::path good = dir / "src" / "good.c";
     writeFile(good, "int twice(int n)\n{\n    return n + n;\n}\n");
     Screen ok = drive(ed1, "\"" + good.string() + "\" --project \"" + dir.string() +
                            "\" --toolchain msvc",
@@ -535,7 +562,7 @@ void buildingWithCl(const std::string& ed1) {
     check(onScreen(ok, "lines of"), "cl builds C, found without a Developer prompt");
 
     // The one cc1 cannot take at all.
-    fs::path cpp = dir / "src" / "thing.cpp";
+    file::path cpp = dir / "src" / "thing.cpp";
     writeFile(cpp, "class Thing {\npublic:\n    int twice(int n) { return n + n; }\n};\n"
                    "int main(void) { Thing t; return t.twice(2) - 4; }\n");
     Screen built = drive(ed1, "\"" + cpp.string() + "\" --project \"" + dir.string() + "\"",
@@ -544,7 +571,7 @@ void buildingWithCl(const std::string& ed1) {
     check(onScreen(built, "C++"), "with the status bar saying what it is");
     check(onScreen(built, "cl*"), "and a star, because the file chose it");
 
-    fs::path bad = dir / "src" / "bad.c";
+    file::path bad = dir / "src" / "bad.c";
     writeFile(bad, "int main(void)\n{\n    int x = ;\n    return 0;\n}\n");
     Screen broken = drive(ed1, "\"" + bad.string() + "\" --project \"" + dir.string() +
                                "\" --toolchain msvc",
@@ -553,7 +580,7 @@ void buildingWithCl(const std::string& ed1) {
     check(onScreen(broken, "3/5"), "and cl's line is read as well as cc1's");
     check(onScreen(broken, "col 13"), "and its column too");
 
-    fs::remove_all(dir);
+    file::remove_all(dir);
 #endif
 }
 
@@ -565,8 +592,8 @@ void compiling(const std::string& ed1, const std::string& cc1) {
         return;
     }
 
-    fs::path dir = freshProject("build");
-    fs::path good = dir / "src" / "good.c";
+    file::path dir = freshProject("build");
+    file::path good = dir / "src" / "good.c";
     writeFile(good, "int twice(int n)\n{\n    return n + n;\n}\n");
 
     std::string arguments = "\"" + good.string() + "\" --project \"" + dir.string() +
@@ -575,7 +602,7 @@ void compiling(const std::string& ed1, const std::string& cc1) {
     check(onScreen(ok, "lines of"), "a build that works reports what it produced");
     check(onScreen(ok, "Assembly"), "and the assembly tab is there");
 
-    fs::path bad = dir / "src" / "bad.c";
+    file::path bad = dir / "src" / "bad.c";
     writeFile(bad, "int main(void)\n{\n    int x = ;\n    return 0;\n}\n");
     arguments = "\"" + bad.string() + "\" --project \"" + dir.string() +
                 "\" --cc1 \"" + cc1 + "\"";
@@ -585,14 +612,14 @@ void compiling(const std::string& ed1, const std::string& cc1) {
     check(onScreen(broken, "col 13"), "in the column it named too");
 
     // C++ handed to cc1 is turned away before anything is run.
-    fs::path cpp = dir / "src" / "thing.cpp";
+    file::path cpp = dir / "src" / "thing.cpp";
     writeFile(cpp, "class Thing { public: int n; };\n");
     Screen refused = drive(ed1, "\"" + cpp.string() + "\" --project \"" + dir.string() +
                                 "\" --toolchain cc1 --cc1 \"" + cc1 + "\"",
                            ctrl('b') + ctrl('q'), dir);
     check(onScreen(refused, "cc1 compiles C, not C++"), "cc1 is not handed C++");
 
-    fs::remove_all(dir);
+    file::remove_all(dir);
 }
 
 // A file that compiles to different code depending on NDEBUG, so that the two
@@ -611,8 +638,8 @@ const char* kTwoWays =
 void configurations(const std::string& ed1, const std::string& cc1) {
     std::printf("debug and release\n");
 
-    fs::path dir = freshProject("config");
-    fs::path file = dir / "src" / "twoways.c";
+    file::path dir = freshProject("config");
+    file::path file = dir / "src" / "twoways.c";
     writeFile(file, kTwoWays);
 
     std::string common = "\"" + file.string() + "\" --project \"" + dir.string() + "\"";
@@ -650,7 +677,7 @@ void configurations(const std::string& ed1, const std::string& cc1) {
 
     if (cc1.empty()) {
         std::printf("  (no cc1 named, so its two configurations are not compared)\n");
-        fs::remove_all(dir);
+        file::remove_all(dir);
         return;
     }
 
@@ -669,7 +696,7 @@ void configurations(const std::string& ed1, const std::string& cc1) {
     check(message(debug).find("lines of") != std::string::npos,
           "and both of them built");
 
-    fs::remove_all(dir);
+    file::remove_all(dir);
 }
 
 // What the Debug panel says depends on the target: cc1 writes DWARF for two of
@@ -683,8 +710,8 @@ void configurations(const std::string& ed1, const std::string& cc1) {
 void debugPanelPerTarget(const std::string& ed1) {
     std::printf("what the Debug panel says about each target\n");
 
-    fs::path dir = freshProject("debugpanel");
-    fs::path file = dir / "src" / "one.c";
+    file::path dir = freshProject("debugpanel");
+    file::path file = dir / "src" / "one.c";
     writeFile(file, "int main(void) { return 0; }\n");
     std::string common = "\"" + file.string() + "\" --project \"" + dir.string() + "\"";
 
@@ -739,7 +766,7 @@ void debugPanelPerTarget(const std::string& ed1) {
     check(!wasShown(debugOnWindows, "-g -D_DEBUG=1"),
           "and asks for no -g, which it would be refused");
 
-    fs::remove_all(dir);
+    file::remove_all(dir);
 }
 
 const char* const kPrintsAndReturns =
@@ -769,8 +796,8 @@ void runningTheProgram(const std::string& ed1, const std::string& cc1) {
 #else
     const std::string toElsewhere = kF10 + times(kRight, 4) + kEnter;
 #endif
-    fs::path away = freshProject("run-elsewhere");
-    fs::path awayFile = away / "src" / "three.c";
+    file::path away = freshProject("run-elsewhere");
+    file::path awayFile = away / "src" / "three.c";
     writeFile(awayFile, kPrintsAndReturns);
     Screen refused = drive(ed1,
                            "\"" + awayFile.string() + "\" --project \"" + away.string() + "\"",
@@ -778,16 +805,16 @@ void runningTheProgram(const std::string& ed1, const std::string& cc1) {
     check(wasShown(refused, "only reaches -S here"),
           "a target this machine cannot run is turned away");
     check(!wasShown(refused, "program returned"), "and nothing is run");
-    fs::remove_all(away);
+    file::remove_all(away);
 
-    fs::path dir = freshProject("run");
-    fs::path file = dir / "src" / "three.c";
+    file::path dir = freshProject("run");
+    file::path file = dir / "src" / "three.c";
     writeFile(file, kPrintsAndReturns);
     std::string common = "\"" + file.string() + "\" --project \"" + dir.string() + "\"";
 
     if (cc1.empty()) {
         std::printf("  (no cc1 named, so nothing is actually built and run)\n");
-        fs::remove_all(dir);
+        file::remove_all(dir);
         return;
     }
 
@@ -810,7 +837,7 @@ void runningTheProgram(const std::string& ed1, const std::string& cc1) {
     check(!wasShown(broken, "program returned"), "a file that will not compile runs nothing");
     check(message(broken).find("error") != std::string::npos, "and the error is what is said");
 
-    fs::remove_all(dir);
+    file::remove_all(dir);
 }
 
 }  // namespace

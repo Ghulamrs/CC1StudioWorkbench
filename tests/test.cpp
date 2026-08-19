@@ -3,13 +3,13 @@
 // neither is checked by typing into one and looking.
 
 #include <cstdio>
-#include <filesystem>
 #include <fstream>
 #include <sstream>
 #include <string>
 #include <vector>
 
 #include "buffer.h"
+#include "path.h"
 #include "compile.h"
 #include "indent.h"
 #include "symbols.h"
@@ -20,6 +20,33 @@
 #include "toolchain.h"
 #include "workspace.h"
 #include "utf8.h"
+
+// What these tests used of <filesystem>, which is C++17 and so not here: a path
+// that can be joined with /, and three operations. Over src/path.cpp, the same
+// code the editor itself uses.
+namespace file {
+
+struct path {
+    std::string text;
+
+    path() {}
+    path(const char* from) : text(editor::path::withSlashes(from)) {}
+    path(const std::string& from) : text(editor::path::withSlashes(from)) {}
+
+    std::string string() const { return text; }
+    path operator/(const std::string& leaf) const {
+        return path(editor::path::join(text, leaf));
+    }
+};
+
+inline bool exists(const path& where) { return editor::path::exists(where.text); }
+inline bool remove_all(const path& where) { return editor::path::removeTree(where.text); }
+inline bool create_directories(const path& where) {
+    return editor::path::makeDirectories(where.text);
+}
+inline path temp_directory_path() { return path(editor::path::tempDir()); }
+
+}  // namespace file
 
 namespace {
 
@@ -466,6 +493,11 @@ void routing() {
     check(clProgram.command.find("/TP") != std::string::npos, "and that this one is C++");
     check(clProgram.leftovers.size() == 1, "and the object it goes through is cleared up");
 
+    // C++14, which is what this arena holds itself to - the editor tells cl so
+    // rather than leaving it on whatever that compiler defaults to.
+    check(clProgram.command.find("/std:c++14") != std::string::npos,
+          "and that C++ here means C++14");
+
     check(editor::optimises(editor::ToolMsvc), "cl optimises");
     check(!editor::optimises(editor::ToolCc1), "cc1 does not, and does not pretend to");
 
@@ -630,9 +662,9 @@ void undoing() {
 void savedState() {
     std::printf("knowing when the file matches the disk\n");
 
-    std::filesystem::path dir = std::filesystem::temp_directory_path() / "ed1-saved-test";
-    std::filesystem::remove_all(dir);
-    std::filesystem::create_directories(dir);
+    file::path dir = file::temp_directory_path() / "ed1-saved-test";
+    file::remove_all(dir);
+    file::create_directories(dir);
 
     editor::Buffer buf;
     buf.setPath((dir / "saved.c").string());
@@ -682,7 +714,7 @@ void savedState() {
     check(long_.dirty(),
           "undoing to the bottom of a capped history still says modified");
 
-    std::filesystem::remove_all(dir);
+    file::remove_all(dir);
 }
 
 void searching() {
@@ -776,10 +808,10 @@ void jsonReading() {
 void projects() {
     std::printf("the project\n");
 
-    std::filesystem::path dir =
-        std::filesystem::temp_directory_path() / "ed1-project-test";
-    std::filesystem::remove_all(dir);
-    std::filesystem::create_directories(dir);
+    file::path dir =
+        file::temp_directory_path() / "ed1-project-test";
+    file::remove_all(dir);
+    file::create_directories(dir);
 
     editor::Project made;
     made.begin(dir.string(), "Trial");
@@ -860,16 +892,16 @@ void projects() {
 
     // A directory with no project file is not a failure - it means there is no
     // project, and the pane shows the directory instead.
-    std::filesystem::path bare = dir / "empty";
-    std::filesystem::create_directories(bare);
+    file::path bare = dir / "empty";
+    file::create_directories(bare);
     editor::Project none;
     check(!none.load(bare.string(), error), "a directory with no project file");
     check(error.empty(), "is not an error");
 
     // The smallest file that works. Everything has a default, so an empty
     // object is a valid project.
-    std::filesystem::path tiny = dir / "tiny";
-    std::filesystem::create_directories(tiny);
+    file::path tiny = dir / "tiny";
+    file::create_directories(tiny);
     { std::ofstream f((tiny / "ed1.json").string().c_str()); f << "{}\n"; }
     editor::Project small;
     check(small.load(tiny.string(), error), "an empty object is a project");
@@ -878,15 +910,15 @@ void projects() {
     check(small.config() == editor::ConfigDebug,
           "debug being the one you want while the code is still being written");
 
-    std::filesystem::remove_all(dir);
+    file::remove_all(dir);
 }
 
 void operations() {
     std::printf("changing what the project holds\n");
 
-    std::filesystem::path dir = std::filesystem::temp_directory_path() / "ed1-workspace-test";
-    std::filesystem::remove_all(dir);
-    std::filesystem::create_directories(dir);
+    file::path dir = file::temp_directory_path() / "ed1-workspace-test";
+    file::remove_all(dir);
+    file::create_directories(dir);
 
     editor::Project project;
     project.begin(dir.string(), "Work");
@@ -894,23 +926,23 @@ void operations() {
     // Making a file: on disk, in the project, and the project written back.
     editor::Outcome made = editor::createFile(project, "src/one.c", "Sources");
     check(made.ok, "a file is made");
-    check(std::filesystem::exists(dir / "src" / "one.c"), "and it is there on disk");
+    check(file::exists(dir / "src" / "one.c"), "and it is there on disk");
     check(project.groupOf("src/one.c") < project.groups().size(), "and in the project");
-    check(std::filesystem::exists(dir / "ed1.json"), "and the project was written");
+    check(file::exists(dir / "ed1.json"), "and the project was written");
     check(!made.path.empty(), "and it says where the file went");
 
     check(!editor::createFile(project, "src/one.c", "Sources").ok, "twice is refused");
     editor::Outcome deep = editor::createFile(project, "a/b/c.c", "Sources");
     check(!deep.ok, "and so is anything two directories down");
     check(deep.message.find("two levels") != std::string::npos, "with the rule as the reason");
-    check(!std::filesystem::exists(dir / "a"), "and nothing was written for it");
+    check(!file::exists(dir / "a"), "and nothing was written for it");
 
     // Renaming follows on disk and in the list.
     editor::Outcome moved =
         editor::renameFile(project, (dir / "src" / "one.c").string(), "src/two.c");
     check(moved.ok, "renaming works");
-    check(!std::filesystem::exists(dir / "src" / "one.c"), "the old name is gone");
-    check(std::filesystem::exists(dir / "src" / "two.c"), "the new one is there");
+    check(!file::exists(dir / "src" / "one.c"), "the old name is gone");
+    check(file::exists(dir / "src" / "two.c"), "the new one is there");
     check(project.groupOf("src/two.c") < project.groups().size(), "and the project followed");
 
     // Regrouping changes the lists and nothing else.
@@ -919,7 +951,7 @@ void operations() {
     check(grouped.ok, "regrouping works");
     checkEqual(project.groups()[project.groupOf("src/two.c")].name, "Extras",
                "into the group asked for");
-    check(std::filesystem::exists(dir / "src" / "two.c"), "and the file has not moved");
+    check(file::exists(dir / "src" / "two.c"), "and the file has not moved");
 
     // Adding something that already exists.
     { std::ofstream f((dir / "src" / "three.c").string().c_str()); f << "int three;\n"; }
@@ -931,7 +963,7 @@ void operations() {
     // Deleting.
     editor::Outcome gone = editor::deleteFile(project, (dir / "src" / "two.c").string());
     check(gone.ok, "deleting works");
-    check(!std::filesystem::exists(dir / "src" / "two.c"), "the file is gone");
+    check(!file::exists(dir / "src" / "two.c"), "the file is gone");
     check(project.groupOf("src/two.c") == project.groups().size(), "and so is the entry");
 
     // And what was written survives being read again.
@@ -943,16 +975,16 @@ void operations() {
 
     // With no project file there is nothing to write, and the disk work still
     // stands - which is what lets these run before anyone has made a project.
-    std::filesystem::path bare = dir / "bare";
-    std::filesystem::create_directories(bare);
+    file::path bare = dir / "bare";
+    file::create_directories(bare);
     editor::Project none;
     none.setRoot(bare.string());
     editor::Outcome loose = editor::createFile(none, "loose.c", "Sources");
     check(loose.ok, "a file can be made without a project");
-    check(std::filesystem::exists(bare / "loose.c"), "and it is really there");
-    check(!std::filesystem::exists(bare / "ed1.json"), "and no project file was invented");
+    check(file::exists(bare / "loose.c"), "and it is really there");
+    check(!file::exists(bare / "ed1.json"), "and no project file was invented");
 
-    std::filesystem::remove_all(dir);
+    file::remove_all(dir);
 }
 
 void whatTheBuildMade() {
@@ -1033,7 +1065,83 @@ void whatTheBuildMade() {
 
 }  // namespace
 
+// The paths, which used to be std::filesystem's business and are now this
+// project's. Everything above this leans on them, so they are worth pinning
+// down on their own rather than only through what uses them.
+void paths() {
+    std::printf("paths, without <filesystem>\n");
+
+    namespace p = editor::path;
+
+    check(p::withSlashes("a\\b\\c") == "a/b/c", "backslashes are turned round on the way in");
+    check(p::join("a", "b") == "a/b", "joining puts one slash between");
+    check(p::join("a/", "b") == "a/b", "and not two when there is one already");
+    check(p::join("", "b") == "b", "and none in front of nothing");
+    check(p::filename("a/b/c.c") == "c.c", "the name is what is after the last slash");
+    check(p::filename("c.c") == "c.c", "or the whole of it when there is none");
+    check(p::parent("a/b/c.c") == "a/b", "the parent is what is before it");
+    check(p::parent("c.c").empty(), "and nothing when there is nothing before it");
+    check(p::parent("/c.c") == "/", "the root being its own parent's whole name");
+
+    // . and .. are taken out the way a filesystem takes them out, and a path
+    // already absolute is left where it is.
+    check(p::absolute("/a/b/../c") == "/a/c", "'..' cancels the name before it");
+    check(p::absolute("/a/./b") == "/a/b", "and '.' cancels itself");
+    check(p::absolute("/a//b") == "/a/b", "a doubled slash is one slash");
+    check(p::absolute("/a/b/") == "/a/b", "and a trailing one is none");
+
+    // What a project file holds: the way from the project's directory to a
+    // file in it, which is the one thing here with real work in it.
+    check(p::relativeTo("/w/src/one.c", "/w") == "src/one.c", "down into the project");
+    check(p::relativeTo("/w/one.c", "/w") == "one.c", "or straight into it");
+    check(p::relativeTo("/w", "/w") == ".", "a directory against itself is here");
+    check(p::relativeTo("/w/one.c", "/w/src") == "../one.c", "and up when it has to be");
+    check(p::relativeTo("/a/one.c", "/b/deep/er") == "../../../a/one.c",
+          "up as many times as it takes, then down");
+
+    // On disk. A directory made several deep at once, a file moved, a file
+    // taken away, and the whole lot removed at the end.
+    std::string dir = p::join(p::tempDir(), "ed1-path-test");
+    p::removeTree(dir);
+    check(!p::exists(dir), "the temporary directory starts absent");
+
+    check(p::makeDirectories(p::join(dir, "one/two/three")),
+          "every directory on the way is made");
+    check(p::isDirectory(p::join(dir, "one/two/three")), "and the last of them is there");
+    check(p::makeDirectories(p::join(dir, "one/two")), "making one twice is not a failure");
+
+    std::string file = p::join(dir, "one/two/three/a.c");
+    FILE* made = std::fopen(file.c_str(), "wb");
+    if (made) std::fclose(made);
+    check(p::exists(file), "a file written into it is there");
+    check(!p::isDirectory(file), "and is not a directory");
+
+    std::string moved = p::join(dir, "one/two/three/b.c");
+    check(p::rename(file, moved), "it can be renamed");
+    check(!p::exists(file) && p::exists(moved), "which takes the old name away");
+
+    // What is in a directory, without . and .., and saying which are which.
+    bool readable = false;
+    std::vector<p::Entry> inside = p::entries(p::join(dir, "one"), &readable);
+    check(readable, "a directory that is there can be read");
+    check(inside.size() == 1 && inside[0].name == "two" && inside[0].directory,
+          "and holds the one directory that was made in it");
+
+    p::entries(p::join(dir, "nowhere"), &readable);
+    check(!readable, "and one that is not there says so rather than looking empty");
+
+    check(p::remove(moved), "a file can be removed");
+    check(!p::exists(moved), "and is gone afterwards");
+
+    // The recursive one, and the two things it refuses to do.
+    check(!p::removeTree(""), "nothing is removed when nothing is named");
+    check(!p::removeTree("/"), "and a root is refused outright");
+    check(p::removeTree(dir), "a directory goes, and everything under it");
+    check(!p::exists(dir), "leaving nothing behind");
+}
+
 int main() {
+    paths();
     diagnostics();
     layout();
     typing();

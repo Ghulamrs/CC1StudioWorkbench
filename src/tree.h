@@ -10,10 +10,11 @@
 
 namespace editor {
 
-// The project down the left. Directories are read with std::filesystem rather
-// than with opendir on one machine and FindFirstFile on the other - it is
-// C++17, both compilers have it, and one implementation cannot drift from the
-// other the way two would.
+// The project down the left. Directories are read through path.h, which is
+// opendir on one machine and FindFirstFile on the other - this is C++14, where
+// there is no <filesystem> to do it for us. The two spellings sit in one file
+// behind one set of functions, so there is a single place they can drift apart
+// and it is small enough to check.
 struct TreeEntry {
     std::string path;
     std::string name;

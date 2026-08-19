@@ -244,7 +244,7 @@ Recipe programRecipe(const Toolchain& tool, ToolchainKind kind,
         // Without /c, cl compiles and links. /Fe names the program and /Fo the
         // object it goes through; the object is the editor's mess to clear up.
         std::string obj = tempDir() + kSep + "ed1-run.obj";
-        std::string forLanguage = (lang == LangCpp) ? " /TP /EHsc /std:c++17" : " /TC";
+        std::string forLanguage = (lang == LangCpp) ? " /TP /EHsc /std:c++14" : " /TC";
         recipe.command = quote(program) + " /nologo /diagnostics:column" + forLanguage +
                          configFlags(kind, config, arch) +
                          " /Fe" + quote(recipe.assemblyPath) +
@@ -268,7 +268,7 @@ std::string shownProgramCommand(const Toolchain& tool, ToolchainKind kind,
     std::string program = programOf(tool, kind);
     if (kind == ToolMsvc)
         return program + " /diagnostics:column" +
-               ((lang == LangCpp) ? " /TP /EHsc /std:c++17" : " /TC") +
+               ((lang == LangCpp) ? " /TP /EHsc /std:c++14" : " /TC") +
                configFlags(kind, config, arch) + " /Feed1-run " + source;
     return program + " " + source + " -o ed1-run" + configFlags(kind, config, arch);
 }
@@ -287,7 +287,7 @@ Recipe assemblyRecipe(const Toolchain& tool, ToolchainKind kind,
         // The language is stated rather than left to the suffix. /TC and /TP
         // are what stop cl guessing, and they let a header or an oddly named
         // file be compiled as whatever the editor decided it was.
-        std::string forLanguage = (lang == LangCpp) ? " /TP /EHsc /std:c++17" : " /TC";
+        std::string forLanguage = (lang == LangCpp) ? " /TP /EHsc /std:c++14" : " /TC";
 
         // /diagnostics:column is what turns 'bad.c(3)' into 'bad.c(3,13)'; the
         // editor wants the column, and cl gives none without being asked.
@@ -312,7 +312,7 @@ std::string shownCommand(const Toolchain& tool, ToolchainKind kind,
     std::string program = programOf(tool, kind);
     if (kind == ToolMsvc)
         return program + " /c /diagnostics:column /FAs" +
-               ((lang == LangCpp) ? " /TP /EHsc /std:c++17" : " /TC") +
+               ((lang == LangCpp) ? " /TP /EHsc /std:c++14" : " /TC") +
                configFlags(kind, config, arch) + " " + source;
     return program + " -S " + source + " -arch " + arch +
            configFlags(kind, config, arch);

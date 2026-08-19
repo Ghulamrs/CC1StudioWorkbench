@@ -16,6 +16,7 @@
 		723AFA90BC134549F06FF57F /* json.cpp in Sources */ = {isa = PBXBuildFile; fileRef = DB55FEA097EA5D2D3947E286 /* json.cpp */; };
 		02F7836B5A8324F354F4B2F0 /* main.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 273ADF4EEBAD9EB32FF6DD1E /* main.cpp */; };
 		D3374CF3D9C21F4A17EDEE05 /* menu.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 0A089356BEFF50C1AFA54D92 /* menu.cpp */; };
+		69EA4A5E154464F3B23AA641 /* path.cpp in Sources */ = {isa = PBXBuildFile; fileRef = CF0466A71713241AC1839C8E /* path.cpp */; };
 		ABD48D64D34269BCC699237B /* project.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 382D31299E438FE27982C983 /* project.cpp */; };
 		10863181DC8664D991422082 /* symbols.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 8265CA7F23697692D5F534E7 /* symbols.cpp */; };
 		29CF57271457D495CF74F7C2 /* syntax.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 03FCE268EBA4CF71B65D677E /* syntax.cpp */; };
@@ -37,6 +38,7 @@
 		DB55FEA097EA5D2D3947E286 /* json.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = json.cpp; sourceTree = "<group>"; };
 		273ADF4EEBAD9EB32FF6DD1E /* main.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = main.cpp; sourceTree = "<group>"; };
 		0A089356BEFF50C1AFA54D92 /* menu.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = menu.cpp; sourceTree = "<group>"; };
+		CF0466A71713241AC1839C8E /* path.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = path.cpp; sourceTree = "<group>"; };
 		382D31299E438FE27982C983 /* project.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = project.cpp; sourceTree = "<group>"; };
 		8265CA7F23697692D5F534E7 /* symbols.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = symbols.cpp; sourceTree = "<group>"; };
 		03FCE268EBA4CF71B65D677E /* syntax.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = syntax.cpp; sourceTree = "<group>"; };
@@ -53,6 +55,7 @@
 		5B1555A5F0396CAE3461FFC9 /* indent.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = indent.h; sourceTree = "<group>"; };
 		087BBE6F350ACEA01E92A4CD /* json.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = json.h; sourceTree = "<group>"; };
 		FF5BCAAC7E025B46A446A743 /* menu.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = menu.h; sourceTree = "<group>"; };
+		605730D0812A31EBB8C5267C /* path.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = path.h; sourceTree = "<group>"; };
 		831BFBE72520D32EE16FA81E /* project.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = project.h; sourceTree = "<group>"; };
 		3B61B382A0F486397F0A1C42 /* symbols.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = symbols.h; sourceTree = "<group>"; };
 		E0116C468B9F26172A9F3A04 /* syntax.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = syntax.h; sourceTree = "<group>"; };
@@ -95,6 +98,7 @@
 				DB55FEA097EA5D2D3947E286 /* json.cpp */,
 				273ADF4EEBAD9EB32FF6DD1E /* main.cpp */,
 				0A089356BEFF50C1AFA54D92 /* menu.cpp */,
+				CF0466A71713241AC1839C8E /* path.cpp */,
 				382D31299E438FE27982C983 /* project.cpp */,
 				8265CA7F23697692D5F534E7 /* symbols.cpp */,
 				03FCE268EBA4CF71B65D677E /* syntax.cpp */,
@@ -111,6 +115,7 @@
 				5B1555A5F0396CAE3461FFC9 /* indent.h */,
 				087BBE6F350ACEA01E92A4CD /* json.h */,
 				FF5BCAAC7E025B46A446A743 /* menu.h */,
+				605730D0812A31EBB8C5267C /* path.h */,
 				831BFBE72520D32EE16FA81E /* project.h */,
 				3B61B382A0F486397F0A1C42 /* symbols.h */,
 				E0116C468B9F26172A9F3A04 /* syntax.h */,
@@ -190,6 +195,7 @@
 				723AFA90BC134549F06FF57F /* json.cpp in Sources */,
 				02F7836B5A8324F354F4B2F0 /* main.cpp in Sources */,
 				D3374CF3D9C21F4A17EDEE05 /* menu.cpp in Sources */,
+				69EA4A5E154464F3B23AA641 /* path.cpp in Sources */,
 				ABD48D64D34269BCC699237B /* project.cpp in Sources */,
 				10863181DC8664D991422082 /* symbols.cpp in Sources */,
 				29CF57271457D495CF74F7C2 /* syntax.cpp in Sources */,
@@ -209,7 +215,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
-				CLANG_CXX_LANGUAGE_STANDARD = "c++17";
+				CLANG_CXX_LANGUAGE_STANDARD = "c++14";
 				CLANG_ENABLE_OBJC_ARC = YES;
 				CODE_SIGN_STYLE = Automatic;
 				GCC_TREAT_WARNINGS_AS_ERRORS = YES;
@@ -231,7 +237,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
-				CLANG_CXX_LANGUAGE_STANDARD = "c++17";
+				CLANG_CXX_LANGUAGE_STANDARD = "c++14";
 				CLANG_ENABLE_OBJC_ARC = YES;
 				CODE_SIGN_STYLE = Automatic;
 				GCC_TREAT_WARNINGS_AS_ERRORS = YES;
@@ -252,7 +258,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
-				CLANG_CXX_LANGUAGE_STANDARD = "c++17";
+				CLANG_CXX_LANGUAGE_STANDARD = "c++14";
 				CLANG_ENABLE_OBJC_ARC = YES;
 				CODE_SIGN_STYLE = Automatic;
 				GCC_TREAT_WARNINGS_AS_ERRORS = YES;
@@ -274,7 +280,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
-				CLANG_CXX_LANGUAGE_STANDARD = "c++17";
+				CLANG_CXX_LANGUAGE_STANDARD = "c++14";
 				CLANG_ENABLE_OBJC_ARC = YES;
 				CODE_SIGN_STYLE = Automatic;
 				GCC_TREAT_WARNINGS_AS_ERRORS = YES;

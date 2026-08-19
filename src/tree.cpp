@@ -1,10 +1,8 @@
 #include "tree.h"
 
 #include <algorithm>
-#include <filesystem>
-#include <system_error>
 
-namespace fs = std::filesystem;
+#include "path.h"
 
 namespace editor {
 
@@ -23,10 +21,8 @@ bool skip(const std::string& name) {
 
 Tree::Tree() : showingProject_(false) {}
 
-void Tree::setRoot(const std::string& path) {
-    std::error_code ec;
-    fs::path p = fs::absolute(fs::path(path), ec);
-    root_ = ec ? path : p.lexically_normal().string();
+void Tree::setRoot(const std::string& where) {
+    root_ = path::absolute(where);
     showingProject_ = false;
     opened_.clear();
     reread();
@@ -73,13 +69,9 @@ void Tree::reread() {
 }
 
 void Tree::gather(const std::string& dir, int depth) {
-    std::error_code ec;
-    std::vector<fs::directory_entry> found;
-    for (fs::directory_iterator it(dir, fs::directory_options::skip_permission_denied, ec);
-         !ec && it != fs::directory_iterator(); it.increment(ec)) {
-        found.push_back(*it);
-    }
-    if (ec && found.empty()) {
+    bool readable = false;
+    std::vector<path::Entry> found = path::entries(dir, &readable);
+    if (!readable) {
         if (depth == 0) error_ = "cannot read " + dir;
         return;
     }
@@ -87,22 +79,19 @@ void Tree::gather(const std::string& dir, int depth) {
     // Directories first, then files, each in name order - the order a person
     // reads a project in, rather than the order the filesystem hands them over.
     std::sort(found.begin(), found.end(),
-              [](const fs::directory_entry& a, const fs::directory_entry& b) {
-                  std::error_code e1, e2;
-                  bool da = a.is_directory(e1), db = b.is_directory(e2);
-                  if (da != db) return da;
-                  return a.path().filename().string() < b.path().filename().string();
+              [](const path::Entry& a, const path::Entry& b) {
+                  if (a.directory != b.directory) return a.directory;
+                  return a.name < b.name;
               });
 
     for (size_t i = 0; i < found.size(); ++i) {
-        std::string name = found[i].path().filename().string();
+        std::string name = found[i].name;
         if (skip(name)) continue;
 
-        std::error_code e;
-        bool isDir = found[i].is_directory(e);
+        bool isDir = found[i].directory;
 
         TreeEntry entry;
-        entry.path = found[i].path().string();
+        entry.path = path::join(dir, name);
         entry.name = name;
         entry.directory = isDir;
         entry.depth = depth;
@@ -138,9 +127,8 @@ void Tree::toggle(size_t index) {
     reread();
 }
 
-size_t Tree::find(const std::string& path) const {
-    std::error_code ec;
-    std::string want = fs::absolute(fs::path(path), ec).lexically_normal().string();
+size_t Tree::find(const std::string& where) const {
+    std::string want = path::absolute(where);
     for (size_t i = 0; i < entries_.size(); ++i)
         if (entries_[i].path == want) return i;
     return entries_.size();

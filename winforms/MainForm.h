@@ -361,16 +361,26 @@ private:
         status_->Items->Add(where_);
         Controls->Add(status_);
 
-        // The project pane gets about the width the terminal one gets - 22
-        // columns, enough for a name and two levels of nesting - rather than
-        // the third of the window a SplitContainer hands out by default. The
-        // files in it are short and the code beside it is not. It is on a
-        // splitter, so this is where it starts and not where it has to stay.
+        // Both splitters, on the rule the terminal front end already follows:
+        // the project pane takes 22 columns and the bottom panel takes 7 rows -
+        // "the command, and a few lines of what it said" - and the code gets
+        // everything that is left. A SplitContainer left alone gives each side
+        // half, which put a third of the width and half the height into panes
+        // that hold short filenames and a few lines of output.
         //
-        // Set here rather than where `upper` is made: SplitterDistance is
-        // refused while the control has no real width, and it has none until
-        // it is in a form that has one.
+        // FixedPanel is the other half of that rule: growing the window has to
+        // grow the code, since the two panes need what they need and no more.
+        //
+        // Set here rather than where the containers are made: SplitterDistance
+        // is refused while a control has no real size, and it has none until it
+        // is in a form that has one.
+        upper->FixedPanel = FixedPanel::Panel1;
         upper->SplitterDistance = 210;
+
+        outer->FixedPanel = FixedPanel::Panel2;
+        const int forPanel = 200;   // the tab strip and about a dozen lines
+        if (outer->Height > forPanel + 160)
+            outer->SplitterDistance = outer->Height - forPanel;
 
         // There is always a sheet, even before a file is opened, so nothing
         // below has to ask whether there is somewhere to type.

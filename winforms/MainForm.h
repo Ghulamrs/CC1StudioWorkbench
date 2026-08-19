@@ -14,10 +14,23 @@ namespace ed1gui {
 using namespace System;
 using namespace System::Windows::Forms;
 
+// One open file. The box keeps its own text, caret, scroll position and undo
+// history, so switching tabs puts all of that back without the form having to
+// remember any of it.
+ref class Sheet {
+public:
+    String^ path;
+    RichTextBox^ box;
+    Panel^ gutter;
+    TabPage^ page;
+};
+
 public ref class MainForm : public Form {
 public:
     MainForm() { Start(nullptr, nullptr); }
-    MainForm(String^ projectDirectory, String^ file) { Start(projectDirectory, file); }
+    MainForm(String^ projectDirectory, array<String^>^ files) {
+        Start(projectDirectory, files);
+    }
 
 protected:
     // The text is what a person came to type in, so that is what has the
@@ -56,6 +69,10 @@ private:
     bool colouring_;
 
     TreeView^ tree_;
+    TabControl^ files_;
+    System::Collections::Generic::List<Sheet^>^ sheets_;
+    // The box of whichever tab is in front. Kept as a field so that everything
+    // written when there was only ever one file still reads the same.
     RichTextBox^ text_;
     TabControl^ panel_;
     TextBox^ console_;
@@ -96,7 +113,7 @@ private:
 
     // ---- building the window ----------------------------------------------
 
-    void Start(String^ projectDirectory, String^ file) {
+    void Start(String^ projectDirectory, array<String^>^ files) {
         project_ = ed1_project_new();
         arch_ = "x86_64-windows";
         cc1_ = "cc1";
@@ -110,7 +127,9 @@ private:
         Lay();
 
         if (projectDirectory != nullptr) LoadProject(projectDirectory);
-        if (file != nullptr) OpenPath(file);
+        if (files != nullptr)
+            for (int i = 0; i < files->Length; ++i)
+                if (files[i] != nullptr) OpenPath(files[i]);
     }
 
     void Lay() {
@@ -130,6 +149,8 @@ private:
             "Save", nullptr, gcnew EventHandler(this, &MainForm::OnSave));
         save->ShortcutKeys = static_cast<Keys>(Keys::Control | Keys::S);
         file->DropDownItems->Add(save);
+        file->DropDownItems->Add(
+            Item("Close", Keys::Control | Keys::W, gcnew EventHandler(this, &MainForm::OnCloseFile)));
         file->DropDownItems->Add("Exit", nullptr, gcnew EventHandler(this, &MainForm::OnExit));
         bar->Items->Add(file);
 
@@ -197,16 +218,12 @@ private:
             gcnew TreeNodeMouseClickEventHandler(this, &MainForm::OnTreeOpen);
         upper->Panel1->Controls->Add(tree_);
 
-        text_ = gcnew RichTextBox();
-        text_->Dock = DockStyle::Fill;
-        text_->Font = gcnew System::Drawing::Font("Consolas", 11.0f);
-        text_->WordWrap = false;
-        text_->AcceptsTab = true;
-        text_->HideSelection = false;
-        text_->KeyDown += gcnew KeyEventHandler(this, &MainForm::OnKeyDown);
-        text_->KeyUp += gcnew KeyEventHandler(this, &MainForm::OnKeyUp);
-        text_->SelectionChanged += gcnew EventHandler(this, &MainForm::OnCaretMoved);
-        upper->Panel2->Controls->Add(text_);
+        sheets_ = gcnew System::Collections::Generic::List<Sheet^>();
+        files_ = gcnew TabControl();
+        files_->Dock = DockStyle::Fill;
+        files_->SelectedIndexChanged +=
+            gcnew EventHandler(this, &MainForm::OnSheetChanged);
+        upper->Panel2->Controls->Add(files_);
         outer->Panel1->Controls->Add(upper);
 
         panel_ = gcnew TabControl();
@@ -240,6 +257,11 @@ private:
         status_->Items->Add(what_);
         status_->Items->Add(where_);
         Controls->Add(status_);
+
+        // There is always a sheet, even before a file is opened, so nothing
+        // below has to ask whether there is somewhere to type.
+        Sheet^ first = MakeSheet(nullptr, "");
+        text_ = first->box;
 
         console_->Text = "cc1 or cl output appears here.  F7 builds.";
         SayDebugTab();
@@ -326,6 +348,128 @@ private:
     // The whole document as the core wants it: one string, lines separated by
     // a single newline.
     array<Byte>^ WholeText() { return Utf8Of(text_->Text->Replace("\r\n", "\n")); }
+
+    Sheet^ Current() {
+        int at = files_->SelectedIndex;
+        if (at < 0 || at >= sheets_->Count) return nullptr;
+        return sheets_[at];
+    }
+
+    Sheet^ SheetFor(String^ path) {
+        for (int i = 0; i < sheets_->Count; ++i)
+            if (sheets_[i]->path != nullptr &&
+                String::Equals(sheets_[i]->path, path, StringComparison::OrdinalIgnoreCase))
+                return sheets_[i];
+        return nullptr;
+    }
+
+    // A tab, a box, and the numbers down its left.
+    Sheet^ MakeSheet(String^ path, String^ contents) {
+        Sheet^ sheet = gcnew Sheet();
+        sheet->path = path;
+
+        sheet->box = gcnew RichTextBox();
+        sheet->box->Dock = DockStyle::Fill;
+        sheet->box->Font = gcnew System::Drawing::Font("Consolas", 11.0f);
+        sheet->box->WordWrap = false;
+        sheet->box->AcceptsTab = true;
+        sheet->box->HideSelection = false;
+        sheet->box->BorderStyle = System::Windows::Forms::BorderStyle::None;
+        sheet->box->Text = contents == nullptr ? "" : contents;
+        sheet->box->KeyDown += gcnew KeyEventHandler(this, &MainForm::OnKeyDown);
+        sheet->box->KeyUp += gcnew KeyEventHandler(this, &MainForm::OnKeyUp);
+        sheet->box->SelectionChanged += gcnew EventHandler(this, &MainForm::OnCaretMoved);
+        sheet->box->TextChanged += gcnew EventHandler(this, &MainForm::OnTextChanged);
+        sheet->box->VScroll += gcnew EventHandler(this, &MainForm::OnScrolled);
+
+        sheet->gutter = gcnew Panel();
+        sheet->gutter->Dock = DockStyle::Left;
+        sheet->gutter->Width = 52;
+        sheet->gutter->BackColor = System::Drawing::Color::FromArgb(245, 245, 245);
+        sheet->gutter->Tag = sheet->box;
+        sheet->gutter->Paint += gcnew PaintEventHandler(this, &MainForm::OnGutterPaint);
+        sheet->box->Tag = sheet->gutter;
+
+        sheet->page = gcnew TabPage(path == nullptr
+                                        ? "untitled"
+                                        : System::IO::Path::GetFileName(path));
+        sheet->page->Controls->Add(sheet->box);
+        sheet->page->Controls->Add(sheet->gutter);
+        sheet->box->BringToFront();
+
+        sheets_->Add(sheet);
+        files_->TabPages->Add(sheet->page);
+        files_->SelectedTab = sheet->page;
+        return sheet;
+    }
+
+    void OnSheetChanged(Object^, EventArgs^) {
+        Sheet^ sheet = Current();
+        if (sheet == nullptr) return;
+
+        text_ = sheet->box;
+        path_ = sheet->path;
+        Text = path_ == nullptr ? "ed1"
+                                : "ed1 - " + System::IO::Path::GetFileName(path_);
+        what_->Text = path_ == nullptr
+                          ? "untitled"
+                          : System::IO::Path::GetFileName(path_) + "  " +
+                                text_->Lines->Length + " lines";
+        text_->Focus();
+        sheet->gutter->Invalidate();
+    }
+
+    // ---- the numbers down the left ----------------------------------------
+
+    void OnTextChanged(Object^, EventArgs^) {
+        Sheet^ sheet = Current();
+        if (sheet == nullptr) return;
+
+        // Wide enough for the last line, and it does not shrink back as you
+        // scroll - a gutter that changed width would take the text with it.
+        int digits = sheet->box->Lines->Length < 1 ? 1
+                                                   : sheet->box->Lines->Length.ToString()->Length;
+        int wanted = 22 + 9 * digits;
+        if (wanted > sheet->gutter->Width) sheet->gutter->Width = wanted;
+        sheet->gutter->Invalidate();
+    }
+
+    void OnScrolled(Object^, EventArgs^) {
+        Sheet^ sheet = Current();
+        if (sheet != nullptr) sheet->gutter->Invalidate();
+    }
+
+    void OnGutterPaint(Object^ sender, PaintEventArgs^ e) {
+        Panel^ panel = safe_cast<Panel^>(sender);
+        RichTextBox^ box = safe_cast<RichTextBox^>(panel->Tag);
+        if (box == nullptr) return;
+
+        int lines = box->Lines->Length;
+        if (lines < 1) lines = 1;
+
+        int first = box->GetLineFromCharIndex(box->GetCharIndexFromPosition(
+            System::Drawing::Point(1, 1)));
+        int caretLine = box->GetLineFromCharIndex(box->SelectionStart);
+
+        System::Drawing::Brush^ quiet =
+            gcnew System::Drawing::SolidBrush(System::Drawing::Color::FromArgb(150, 150, 150));
+        System::Drawing::Brush^ here =
+            gcnew System::Drawing::SolidBrush(System::Drawing::Color::FromArgb(60, 60, 60));
+
+        for (int row = first; row < lines; ++row) {
+            int at = box->GetFirstCharIndexFromLine(row);
+            if (at < 0) break;
+            System::Drawing::Point where = box->GetPositionFromCharIndex(at);
+            if (where.Y > panel->Height) break;
+
+            String^ number = (row + 1).ToString();
+            System::Drawing::SizeF size = e->Graphics->MeasureString(number, box->Font);
+            e->Graphics->DrawString(number, box->Font,
+                                    row == caretLine ? here : quiet,
+                                    panel->Width - size.Width - 6,
+                                    static_cast<float>(where.Y));
+        }
+    }
 
     TextBox^ ReadOnlyBox() {
         TextBox^ box = gcnew TextBox();
@@ -617,6 +761,9 @@ private:
         int row = text_->GetLineFromCharIndex(caret);
         where_->Text =
             String::Format("{0}:{1}", row + 1, caret - text_->GetFirstCharIndexFromLine(row) + 1);
+
+        Sheet^ sheet = Current();
+        if (sheet != nullptr) sheet->gutter->Invalidate();
     }
 
     // ---- files and the project --------------------------------------------
@@ -686,18 +833,58 @@ private:
     }
 
     void OpenPath(String^ path) {
+        // Already open is already open: the tab comes forward with its caret
+        // and its history where they were left.
+        Sheet^ already = SheetFor(path);
+        if (already != nullptr) {
+            files_->SelectedTab = already->page;
+            return;
+        }
+
+        String^ contents;
         try {
-            text_->Text = System::IO::File::ReadAllText(path);
+            contents = System::IO::File::ReadAllText(path);
         } catch (Exception^ problem) {
             what_->Text = problem->Message;
             return;
         }
+
+        // An untouched, unnamed sheet is a spare tab rather than a file anyone
+        // is working on, so opening into it replaces it instead of leaving one
+        // behind. The same rule the terminal front end keeps.
+        Sheet^ spare = Current();
+        Sheet^ sheet;
+        if (spare != nullptr && spare->path == nullptr && spare->box->TextLength == 0 &&
+            !spare->box->Modified) {
+            spare->path = path;
+            spare->box->Text = contents;
+            spare->box->Modified = false;
+            spare->page->Text = System::IO::Path::GetFileName(path);
+            sheet = spare;
+        } else {
+            sheet = MakeSheet(path, contents);
+        }
+        text_ = sheet->box;
         path_ = path;
         Text = "ed1 - " + System::IO::Path::GetFileName(path);
         Recolour();
+        OnTextChanged(nullptr, nullptr);
         text_->Select(0, 0);
         text_->Focus();
         what_->Text = System::IO::Path::GetFileName(path) + "  " + text_->Lines->Length + " lines";
+    }
+
+    void OnCloseFile(Object^, EventArgs^) {
+        Sheet^ sheet = Current();
+        if (sheet == nullptr) return;
+
+        sheets_->Remove(sheet);
+        files_->TabPages->Remove(sheet->page);
+        if (sheets_->Count == 0) {
+            MakeSheet(nullptr, "");
+            OnSheetChanged(nullptr, nullptr);
+        }
+        what_->Text = "closed";
     }
 
     void OnSave(Object^, EventArgs^) {

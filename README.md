@@ -248,6 +248,13 @@ project.cpp and compile.cpp the terminal editor uses, compiled into the same
 binary as native code. Nothing is duplicated: laying a file out, colouring it,
 reading ed1.json and choosing between cc1 and cl are all the same code running.
 
+**Tabs for the files you have open**, one text box each, so every tab keeps its
+own caret, scroll position and undo history. Opening a file already open brings
+its tab forward rather than opening it twice, and an untouched unnamed tab is
+reused rather than left behind. **Line numbers** are painted down the left, with
+the caret's own line picked out; the gutter widens for the last line and does
+not shrink back as you scroll.
+
 It edits the way the terminal one does. A newline takes the indentation its
 place asks for, a typed `}` `#` or `:` puts its own line where it belongs, and
 Tab in the leading space lays the line out rather than adding a step. Find,

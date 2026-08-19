@@ -41,12 +41,14 @@ int main(array<String^>^ arguments) {
         Application::EnableVisualStyles();
         Application::SetCompatibleTextRenderingDefault(false);
 
-        // ed1gui [project-directory] [file]
+        // ed1gui [project-directory] [file ...] - every file named gets a tab.
         String^ directory = arguments->Length > 0 ? arguments[0] : nullptr;
-        String^ file = arguments->Length > 1 ? arguments[1] : nullptr;
+        array<String^>^ files =
+            gcnew array<String^>(arguments->Length > 1 ? arguments->Length - 1 : 0);
+        for (int i = 1; i < arguments->Length; ++i) files[i - 1] = arguments[i];
 
         Note("building the window");
-        ed1gui::MainForm^ window = gcnew ed1gui::MainForm(directory, file);
+        ed1gui::MainForm^ window = gcnew ed1gui::MainForm(directory, files);
         Note("window built, running");
         Application::Run(window);
         Note("closed cleanly");

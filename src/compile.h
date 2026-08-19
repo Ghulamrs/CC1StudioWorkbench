@@ -53,6 +53,27 @@ struct Ran {
     std::string output;    // everything the compiler said, then everything it said
 };
 
+// A program built and left where it is, for something else to run. Running it
+// is one use and a debugger attaching to it is the other, and the second needs
+// the file to still be there afterwards - which is the whole difference between
+// this and runProgram.
+struct Built {
+    bool ok;
+    Diagnostic diag;
+    std::string output;
+    std::string program;     // where it is, when it was built
+    std::vector<std::string> leftovers;   // to remove with it
+
+    Built() : ok(false) {}
+};
+
+Built buildProgram(const Toolchain& tool, ToolchainKind kind, const std::string& sourcePath,
+                   Language lang, const std::string& arch, Configuration config,
+                   LineSink sink = 0, void* context = 0);
+
+// Removes what buildProgram left.
+void removeProgram(const Built& built);
+
 // Compile, assemble, link and run, with every line handed to the sink as it
 // arrives - the compiler's first and then the program's own. Only for a target
 // runsHere accepts; anything else stops at the assembly and there is nothing to

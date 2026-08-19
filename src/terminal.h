@@ -28,6 +28,10 @@ enum Key {
     KEY_F2,
     KEY_F3,
     KEY_F5,
+    KEY_F6,
+    KEY_F7,
+    KEY_F8,
+    KEY_F9,
     KEY_F10,
 
     // The same keys with shift held, which is how a selection is made. A

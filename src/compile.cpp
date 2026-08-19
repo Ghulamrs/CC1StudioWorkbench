@@ -226,10 +226,10 @@ Build build(const Toolchain& tool, ToolchainKind kind, const std::string& source
     return result;
 }
 
-Ran runProgram(const Toolchain& tool, ToolchainKind kind, const std::string& sourcePath,
-               Language lang, const std::string& arch, Configuration config,
-               LineSink sink, void* context) {
-    Ran result;
+Built buildProgram(const Toolchain& tool, ToolchainKind kind, const std::string& sourcePath,
+                   Language lang, const std::string& arch, Configuration config,
+                   LineSink sink, void* context) {
+    Built result;
 
     if (!prepareFor(kind)) {
         result.output = "no Visual Studio 2022 found - cl cannot be run\n";
@@ -238,6 +238,9 @@ Ran runProgram(const Toolchain& tool, ToolchainKind kind, const std::string& sou
     }
 
     Recipe recipe = programRecipe(tool, kind, sourcePath, lang, arch, config);
+    result.program = recipe.assemblyPath;
+    result.leftovers = recipe.leftovers;
+
     int made = runCaptured(recipe.command, result.output, sink, context);
     if (made < 0) {
         result.output = std::string("could not run ") + programOf(tool, kind);
@@ -245,16 +248,34 @@ Ran runProgram(const Toolchain& tool, ToolchainKind kind, const std::string& sou
     }
 
     result.diag = parseDiagnostic(result.output);
-    result.built = (made == 0);
+    result.ok = (made == 0);
 
-    if (!result.built) {
-        if (!result.diag.present && looksLikeMissingProgram(result.output)) {
-            std::string hint = std::string(programOf(tool, kind)) +
-                               " could not be run - name it with --cc1 or --cl, or put it on PATH";
-            result.output += hint + "\n";
-            if (sink) sink(context, hint);
-        }
-    } else {
+    if (!result.ok && !result.diag.present && looksLikeMissingProgram(result.output)) {
+        std::string hint = std::string(programOf(tool, kind)) +
+                           " could not be run - name it with --cc1 or --cl, or put it on PATH";
+        result.output += hint + "\n";
+        if (sink) sink(context, hint);
+    }
+    return result;
+}
+
+void removeProgram(const Built& built) {
+    if (!built.program.empty()) std::remove(built.program.c_str());
+    for (size_t i = 0; i < built.leftovers.size(); ++i)
+        std::remove(built.leftovers[i].c_str());
+}
+
+Ran runProgram(const Toolchain& tool, ToolchainKind kind, const std::string& sourcePath,
+               Language lang, const std::string& arch, Configuration config,
+               LineSink sink, void* context) {
+    Ran result;
+
+    Built made = buildProgram(tool, kind, sourcePath, lang, arch, config, sink, context);
+    result.output = made.output;
+    result.diag = made.diag;
+    result.built = made.ok;
+
+    if (result.built) {
         // Its input is emptied rather than left as the editor's own, which in a
         // terminal is the keyboard and under a test is the rest of the keys.
         // A program that reads would otherwise eat what it was never sent.
@@ -264,14 +285,11 @@ Ran runProgram(const Toolchain& tool, ToolchainKind kind, const std::string& sou
         const char* noInput = " < /dev/null";
 #endif
         result.ran = true;
-        result.status = runCaptured("\"" + recipe.assemblyPath + "\"" + noInput,
+        result.status = runCaptured("\"" + made.program + "\"" + noInput,
                                     result.output, sink, context);
     }
 
-    std::remove(recipe.assemblyPath.c_str());
-    for (size_t i = 0; i < recipe.leftovers.size(); ++i)
-        std::remove(recipe.leftovers[i].c_str());
-
+    removeProgram(made);
     return result;
 }
 

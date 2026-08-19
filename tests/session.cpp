@@ -69,6 +69,10 @@ void checkEqual(const std::string& got, const std::string& want, const std::stri
 
 // Keys, spelled the way the terminal sends them.
 const std::string kF5 = "\x1b[15~";
+const std::string kF6 = "\x1b[17~";
+const std::string kF7 = "\x1b[18~";
+const std::string kF8 = "\x1b[19~";
+const std::string kF9 = "\x1b[20~";
 const std::string kF10 = "\x1b[21~";
 const std::string kDown = "\x1b[B";
 const std::string kRight = "\x1b[C";
@@ -715,14 +719,17 @@ void debugPanelPerTarget(const std::string& ed1) {
     writeFile(file, "int main(void) { return 0; }\n");
     std::string common = "\"" + file.string() + "\" --project \"" + dir.string() + "\"";
 
-    // Menus are reached by counting, so an item added to one moves everything
-    // under it: Build is the fourth column, and its Debug panel is the sixth
-    // item now that Run is the second. Target is the column after Build.
+    // Menus are reached by counting, so anything added to one moves everything
+    // after it - a column added moves the columns to its right, and an item
+    // added moves the items below it. Build is the fourth column, its Debug
+    // panel the sixth item, and Target is two columns further on now that
+    // Debug sits between them.
     const int kBuildColumn = 3;
+    const int kTargetColumn = 5;
     const int kDebugPanelItem = 5;
     const std::string showDebugTab =
         kF10 + times(kRight, kBuildColumn) + times(kDown, kDebugPanelItem) + kEnter;
-    const std::string toTarget = kF10 + kRight;
+    const std::string toTarget = kF10 + times(kRight, kTargetColumn - kBuildColumn);
 
     Screen linux = drive(ed1, common,
                          showDebugTab + toTarget + kDown + kEnter + ctrl('q'), dir);
@@ -755,12 +762,15 @@ void debugPanelPerTarget(const std::string& ed1) {
     const std::string sayConfig = ctrl('d') + ctrl('d');
 
     Screen debugOnLinux = drive(ed1, common,
-                                kF10 + times(kRight, 4) + kDown + kEnter + sayConfig + ctrl('q'),
+                                kF10 + times(kRight, kTargetColumn) + kDown + kEnter +
+                                    sayConfig + ctrl('q'),
                                 dir);
     check(wasShown(debugOnLinux, "-g -D_DEBUG=1"), "a debug build of it asks for -g");
 
     Screen debugOnWindows = drive(ed1, common,
-                                  kF10 + times(kRight, 4) + kEnter + sayConfig + ctrl('q'), dir);
+                                  kF10 + times(kRight, kTargetColumn) + kEnter + sayConfig +
+                                      ctrl('q'),
+                                  dir);
     check(wasShown(debugOnWindows, "-D_DEBUG=1"),
           "a debug build of the third defines _DEBUG");
     check(!wasShown(debugOnWindows, "-g -D_DEBUG=1"),
@@ -791,10 +801,11 @@ void runningTheProgram(const std::string& ed1, const std::string& cc1) {
     // It gets a project of its own because a chosen target is remembered in the
     // project file, and a second editor started on the same one would open on
     // the target this left behind rather than on the host.
+    const int kTargetColumn = 5;   // File, Edit, Project, Build, Debug, Target
 #ifdef _WIN32
-    const std::string toElsewhere = kF10 + times(kRight, 4) + kDown + kEnter;
+    const std::string toElsewhere = kF10 + times(kRight, kTargetColumn) + kDown + kEnter;
 #else
-    const std::string toElsewhere = kF10 + times(kRight, 4) + kEnter;
+    const std::string toElsewhere = kF10 + times(kRight, kTargetColumn) + kEnter;
 #endif
     file::path away = freshProject("run-elsewhere");
     file::path awayFile = away / "src" / "three.c";
@@ -840,6 +851,85 @@ void runningTheProgram(const std::string& ed1, const std::string& cc1) {
     file::remove_all(dir);
 }
 
+const char* const kWorthStoppingIn =
+    "static int twice(int n)\n"
+    "{\n"
+    "    int doubled = n * 2;\n"
+    "    return doubled;\n"
+    "}\n"
+    "\n"
+    "int main(void)\n"
+    "{\n"
+    "    int total = 0;\n"
+    "    for (int i = 1; i <= 3; ++i) {\n"
+    "        total = total + twice(i);\n"
+    "    }\n"
+    "    return total;\n"
+    "}\n";
+
+// Stopping the program on a line and walking through it, driven the way a
+// person drives it: F9 on the line, F8 to start, F7 and F6 to move.
+void stoppingAndStepping(const std::string& ed1, const std::string& cc1) {
+    std::printf("breakpoints, and stepping through what stopped\n");
+
+    file::path dir = freshProject("debugging");
+    file::path file = dir / "src" / "stepped.c";
+    writeFile(file, kWorthStoppingIn);
+    std::string common = "\"" + file.string() + "\" --project \"" + dir.string() + "\"";
+
+    // Line 11 is the one inside the loop, and the caret starts on line 1.
+    const std::string toLoopBody = times(kDown, 10);
+
+    // A breakpoint is the editor's own note and needs no compiler: it can be
+    // set, seen and taken away with nothing installed at all.
+    Screen marked = drive(ed1, common, toLoopBody + kF9 + ctrl('q'), dir);
+    check(wasShown(marked, "breakpoint on line 11"), "F9 puts a breakpoint on the line");
+    // The number is right-aligned with a gap after it, so the marker sits in
+    // the column before the first digit and nothing moves when it appears.
+    check(onScreen(marked, "*11"), "and marks it in the gutter, beside the number");
+
+    Screen unmarked = drive(ed1, common, toLoopBody + kF9 + kF9 + ctrl('q'), dir);
+    check(wasShown(unmarked, "breakpoint off line 11"), "and F9 again takes it away");
+    check(!onScreen(unmarked, "*11"), "leaving the gutter as it was");
+
+#ifdef _WIN32
+    // cc1 generates MASM for this machine's own target, which carries no line
+    // table, so there is nothing here for a debugger to read.
+    Screen refused = drive(ed1, common, toLoopBody + kF9 + kF8 + ctrl('q'), dir);
+    check(wasShown(refused, "no debugger here"), "and debugging says why it cannot start");
+    file::remove_all(dir);
+    return;
+#else
+    if (cc1.empty()) {
+        std::printf("  (no cc1 named, so nothing is built to stop inside)\n");
+        file::remove_all(dir);
+        return;
+    }
+
+    std::string withCc1 = common + " --cc1 \"" + cc1 + "\"";
+
+    Screen stopped = drive(ed1, withCc1, toLoopBody + kF9 + kF8 + ctrl('q'), dir);
+    check(onScreen(stopped, "stopped at stepped.c:11"), "F8 runs it and it stops on the line");
+    check(onScreen(stopped, "in main"), "saying which function that line is in");
+    check(onScreen(stopped, ">11"), "the gutter marks where it is standing");
+
+    // The variables are cc1's own debug information, read back by somebody
+    // else's debugger and shown by this editor.
+    check(onScreen(stopped, "total = 0"), "and the locals are there, with their values");
+    check(onScreen(stopped, "i = 1"), "including the one the loop declared");
+
+    Screen inside = drive(ed1, withCc1, toLoopBody + kF9 + kF8 + kF6 + ctrl('q'), dir);
+    check(onScreen(inside, "in twice"), "F6 steps into the call");
+    check(onScreen(inside, "n = 1"), "where the argument is in scope");
+
+    Screen carried = drive(ed1, withCc1, toLoopBody + kF9 + kF8 + kF7 + kF8 + ctrl('q'), dir);
+    check(onScreen(carried, "total = 2"), "F7 steps over it and F8 carries on round the loop");
+    check(onScreen(carried, "i = 2"), "with the counter moved on");
+
+    file::remove_all(dir);
+#endif
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -872,6 +962,7 @@ int main(int argc, char** argv) {
     configurations(ed1, cc1);
     debugPanelPerTarget(ed1);
     runningTheProgram(ed1, cc1);
+    stoppingAndStepping(ed1, cc1);
 
     std::printf("\n%d checks, %d failed\n", checks, failures);
     return failures == 0 ? 0 : 1;

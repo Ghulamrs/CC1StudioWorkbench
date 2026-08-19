@@ -60,6 +60,19 @@ Menu::Menu() : active_(false), dropped_(false), column_(0), item_(0) {
     build.items.push_back({"Assembly", "", ActionShowAssembly});
     columns_.push_back(build);
 
+    // Stopping the program and walking through it. Its own column because it is
+    // a mode rather than a command: once it has started, most of what the
+    // editor does next is one of these.
+    MenuColumn debug;
+    debug.title = "Debug";
+    debug.items.push_back({"Start / continue", "F8", ActionDebug});
+    debug.items.push_back({"Toggle breakpoint", "F9", ActionToggleBreak});
+    debug.items.push_back({"Step over", "F7", ActionStepOver});
+    debug.items.push_back({"Step into", "F6", ActionStepInto});
+    debug.items.push_back({"Step out", "", ActionStepOut});
+    debug.items.push_back({"Stop debugging", "", ActionDebugStop});
+    columns_.push_back(debug);
+
     // The three cc1 generates for. Two of them reach -S and no further on any
     // given machine, which is the whole reason the assembly tab exists.
     MenuColumn target;

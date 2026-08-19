@@ -59,6 +59,37 @@ cc1 hands off to are the host's, so a cross build stops at the assembly and
 there is nothing to start. cl is never in that position: it builds for the
 machine it was installed on.
 
+**It stops the program on a line and walks through it.** F9 puts a breakpoint
+on the line the caret is on - a `*` in the gutter, and no compiler needed to put
+it there. F8 builds with `-g`, starts the debugger, sets every breakpoint it has
+been given and runs; when the program stops, the caret goes to the line, a `>`
+marks it, and the Debug tab says where it is and what is in scope:
+
+```
+stopped at stepped.c:11 in main
+
+  total = 0   [int]
+  i = 1   [int]
+```
+
+F6 steps into a call, F7 over one, F8 carries on, and the Debug menu has those
+and step-out. Those variables are cc1's own DWARF, read back by the machine's
+own debugger.
+
+It drives that debugger rather than being one: lldb on a Mac, gdb on the Linux
+box, both spoken through `src/debugger.cpp`, which is the one place their two
+vocabularies differ. `x86_64-windows` has no debugging at all and says so -
+cc1 generates MASM there, which carries no line table.
+
+Two things about driving lldb are worth writing down, because both cost an hour
+and neither is guessable. It must be put in synchronous mode with `script
+lldb.debugger.SetAsync(False)`, or over a pipe it forwards each command to the
+program instead of running it, and every answer after `run` is an echo. And the
+marker used to know an answer is complete has to be printed in two halves -
+`print("<<ed1" + "-done>>")` - because lldb echoes the command that contains it,
+so a marker written whole appears before the answer rather than after it, and
+every reply read that way is the one before the one asked for.
+
 **It shows the assembly for any of the three targets.** Ctrl-T, or the Target
 menu. Two of the three reach `-S` and no further on any given machine, since the
 assembler is the host's - which is exactly what the assembly tab is for. A
@@ -459,6 +490,9 @@ because that is what cc1's own sources use, and they contain no tab at all.
 | `F10` | the menu |
 | `Ctrl-B` | build |
 | `F5` | build it and run it |
+| `F9` | breakpoint on this line |
+| `F8` | start debugging, or carry on |
+| `F7` / `F6` | step over / step into |
 | `Ctrl-F` / `Ctrl-G` | find / find the next |
 | `Ctrl-R` | replace |
 | shift + arrows | select |

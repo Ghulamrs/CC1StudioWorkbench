@@ -80,6 +80,10 @@ int fromNumber(int number) {
         case 12: return KEY_F2;
         case 13: return KEY_F3;
         case 15: return KEY_F5;
+        case 17: return KEY_F6;
+        case 18: return KEY_F7;
+        case 19: return KEY_F8;
+        case 20: return KEY_F9;
         case 21: return KEY_F10;
         default: return '\x1b';
     }

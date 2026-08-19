@@ -3,6 +3,7 @@
 #include "utf8.h"
 #include "symbols.h"
 #include "workspace.h"
+#include "path.h"
 
 #include <cstdio>
 #include <cstdlib>
@@ -164,6 +165,7 @@ Editor::Editor()
       treeSel_(0), treeOff_(0), treeOpen_(true),
       panelOff_(0), panelOpen_(true), tab_(TabConsole),
       focus_(FocusText), lang_(LangPlain), config_(ConfigDebug), arch_(0), numbers_(true), needsDraw_(true),
+      stopLine_(0),
       marked_(false), markRow_(0), markCol_(0),
       quitConfirm_(0), running_(true),
       screenRows_(24), screenCols_(80),
@@ -491,16 +493,31 @@ void Editor::drawBody(std::string& out) const {
 
         if (numbers_) {
             std::string cell(static_cast<size_t>(gutterCols_), ' ');
+            bool hasBreak = false, isStopped = false;
             if (row < buf_.lineCount()) {
                 std::string num = number(row + 1);
                 // Right-aligned, with the last column left as a gap so the
                 // digits never touch the text.
                 size_t at = cell.size() - 1 - num.size();
                 for (size_t i = 0; i < num.size(); ++i) cell[at + i] = num[i];
+
+                // The first column of the gutter is the debugger's: a
+                // breakpoint waiting, and the line the program is standing on.
+                // Both in the space the numbers are already right-aligned away
+                // from, so nothing moves when a breakpoint is set.
+                hasBreak = breakpointOn(row + 1);
+                isStopped = stopLine_ == row + 1 && !stopFile_.empty() &&
+                            path::filename(stopFile_) == path::filename(buf_.path());
+                if (isStopped) cell[0] = '>';
+                else if (hasBreak) cell[0] = '*';
             }
+
             // The line the caret is on is picked out, which is the whole reason
-            // for having the numbers where you can see them.
-            out += (row == cy_) ? "\x1b[93m" : "\x1b[90m";
+            // for having the numbers where you can see them. Where the program
+            // stopped outranks it: that is the one line being looked at.
+            if (isStopped) out += "\x1b[92m";
+            else if (hasBreak) out += "\x1b[91m";
+            else out += (row == cy_) ? "\x1b[93m" : "\x1b[90m";
             out += cell;
             out += "\x1b[39m";
         }
@@ -1389,12 +1406,190 @@ void Editor::buildAndRun() {
         panelOff_ = console_.size() - static_cast<size_t>(panelRows_);
 }
 
+bool Editor::breakpointOn(size_t line) const {
+    std::map<std::string, std::set<size_t> >::const_iterator found =
+        breaks_.find(buf_.path());
+    if (found == breaks_.end()) return false;
+    return found->second.count(line) > 0;
+}
+
+void Editor::toggleBreak() {
+    if (buf_.path().empty()) { say("save the file first - a breakpoint is on a line of a file"); return; }
+
+    size_t line = cy_ + 1;   // the debugger counts from one, the buffer from zero
+    std::set<size_t>& here = breaks_[buf_.path()];
+    if (here.count(line)) {
+        here.erase(line);
+        if (debugger_.running()) {
+            // The whole set is put back rather than one taken away: neither
+            // debugger promises the numbering of what it hands out, and there
+            // are never enough breakpoints here for it to matter.
+            debugger_.clearBreakpoints();
+            for (std::set<size_t>::iterator it = here.begin(); it != here.end(); ++it)
+                debugger_.breakAt(buf_.path(), *it);
+        }
+        say("breakpoint off line " + number(line));
+        return;
+    }
+
+    here.insert(line);
+    if (debugger_.running()) debugger_.breakAt(buf_.path(), line);
+    say("breakpoint on line " + number(line));
+}
+
+void Editor::showStop(const Stop& where) {
+    panelOpen_ = true;
+    tab_ = TabDebug;
+    panelOff_ = 0;
+    debug_.clear();
+
+    if (where.exited) {
+        stopFile_.clear();
+        stopLine_ = 0;
+        locals_.clear();
+        debug_.push_back("the program ran to the end and returned " + number(static_cast<size_t>(where.status)));
+        debug_.push_back("");
+        debug_.push_back("F8 starts it again. The breakpoints are still where you put them.");
+        debugStop();
+        say("the program returned " + number(static_cast<size_t>(where.status)));
+        return;
+    }
+
+    if (!where.stopped) {
+        debug_.push_back("the debugger stopped answering");
+        debug_.push_back("");
+        for (size_t i = 0; i < where.said.size() && i < 400; ++i) {}
+        debug_.push_back(where.said);
+        debugStop();
+        say("the debugger stopped answering - see the Debug tab");
+        return;
+    }
+
+    stopFile_ = where.file;
+    stopLine_ = where.line;
+    locals_ = debugger_.locals();
+
+    // The caret follows it, but only into the file it is actually in: jumping
+    // the screen to a line of a file that is not open would be a lie about
+    // where you are.
+    if (path::filename(where.file) == path::filename(buf_.path()) && where.line > 0) {
+        cy_ = where.line - 1;
+        if (cy_ >= buf_.lineCount()) cy_ = buf_.lineCount() - 1;
+        cx_ = 0;
+        clampCursor();
+        focus_ = FocusText;
+    }
+
+    debug_.push_back("stopped at " + path::filename(where.file) + ":" + number(where.line) +
+                     (where.function.empty() ? std::string() : " in " + where.function));
+    debug_.push_back("");
+    if (locals_.empty()) {
+        debug_.push_back("  (nothing in scope here)");
+    } else {
+        for (size_t i = 0; i < locals_.size(); ++i) {
+            std::string said = "  " + locals_[i].name + " = " + locals_[i].value;
+            if (!locals_[i].type.empty()) said += "   [" + locals_[i].type + "]";
+            debug_.push_back(said);
+        }
+    }
+    debug_.push_back("");
+    debug_.push_back("F8 carries on   F7 steps over   F6 steps into   F9 sets a breakpoint");
+
+    say(path::filename(where.file) + ":" + number(where.line) +
+        (where.function.empty() ? std::string() : " in " + where.function));
+}
+
+void Editor::debug() {
+    if (debugger_.running()) { showStop(debugger_.resume()); return; }
+
+    ToolchainKind kind = resolve(tool_, lang_);
+    if (!canCompile(kind, lang_)) { say(refusal(kind, lang_)); return; }
+    if (!runsHere(kind, kArches[arch_])) { say(whyNotRun(kind, kArches[arch_])); return; }
+
+    if (debuggerHere() == DebuggerNone) {
+        say(noDebuggerBecause(kArches[arch_]));
+        return;
+    }
+    if (config_ != ConfigDebug) {
+        say("release is built without -g - Ctrl-D for debug, then F8");
+        return;
+    }
+    if (buf_.dirty() || buf_.path().empty()) {
+        if (!save()) return;
+    }
+
+    panelOpen_ = true;
+    tab_ = TabConsole;
+    console_.clear();
+    console_.push_back("$ building for the debugger");
+    panelOff_ = 0;
+    say("building for the debugger ...");
+    refresh();
+
+    debugBuilt_ = buildProgram(tool_, kind, buf_.path(), lang_, kArches[arch_], config_,
+                               consoleSink, this);
+    lastDiag_ = debugBuilt_.diag;
+    if (!debugBuilt_.ok) {
+        if (debugBuilt_.diag.present) {
+            cy_ = debugBuilt_.diag.line - 1;
+            if (cy_ >= buf_.lineCount()) cy_ = buf_.lineCount() - 1;
+            cx_ = debugBuilt_.diag.col - 1;
+            clampCursor();
+            focus_ = FocusText;
+            say(number(debugBuilt_.diag.line) + ":" + number(debugBuilt_.diag.col) + ": error: " +
+                debugBuilt_.diag.message);
+        } else {
+            say(std::string(toolchainName(kind)) + " built no program - see the console");
+        }
+        removeProgram(debugBuilt_);
+        debugBuilt_ = Built();
+        return;
+    }
+
+    if (!debugger_.start(debugBuilt_.program)) {
+        console_.push_back(std::string(debuggerName(debuggerHere())) + " could not be started");
+        say(std::string(debuggerName(debuggerHere())) + " could not be started - is it installed?");
+        removeProgram(debugBuilt_);
+        debugBuilt_ = Built();
+        return;
+    }
+
+    size_t set = 0;
+    for (std::map<std::string, std::set<size_t> >::iterator file = breaks_.begin();
+         file != breaks_.end(); ++file)
+        for (std::set<size_t>::iterator line = file->second.begin();
+             line != file->second.end(); ++line)
+            if (debugger_.breakAt(file->first, *line)) ++set;
+
+    console_.push_back(std::string("started ") + debuggerName(debugger_.kind()) + " with " +
+                       number(set) + " breakpoint" + (set == 1 ? "" : "s"));
+    showStop(debugger_.run());
+}
+
+void Editor::debugStep(Action how) {
+    if (!debugger_.running()) { say("nothing is running - F8 starts it"); return; }
+
+    if (how == ActionStepInto)      showStop(debugger_.stepInto());
+    else if (how == ActionStepOut)  showStop(debugger_.stepOut());
+    else                            showStop(debugger_.stepOver());
+}
+
+void Editor::debugStop() {
+    if (debugger_.running()) debugger_.stop();
+    removeProgram(debugBuilt_);
+    debugBuilt_ = Built();
+    stopFile_.clear();
+    stopLine_ = 0;
+    locals_.clear();
+}
+
 void Editor::showKeys() {
     panelOpen_ = true;
     tab_ = TabConsole;
     console_.clear();
     console_.push_back("F10          the menu             Ctrl-B   build with cc1");
     console_.push_back("F5           build it and run it  F1       these keys");
+    console_.push_back("F9 / F8      breakpoint / debug   F7 / F6  step over / into");
     console_.push_back("F2 / F3      previous / next file Ctrl-L   line numbers");
     console_.push_back("Ctrl-K       automatic, cc1, cl   Ctrl-T   next target");
     console_.push_back("Ctrl-D       debug or release");
@@ -1454,6 +1649,15 @@ void Editor::perform(Action action) {
             break;
         case ActionBuild:        compile(); break;
         case ActionRun:          buildAndRun(); break;
+        case ActionToggleBreak:  toggleBreak(); break;
+        case ActionDebug:        debug(); break;
+        case ActionStepOver:
+        case ActionStepInto:
+        case ActionStepOut:      debugStep(action); break;
+        case ActionDebugStop:
+            if (debugger_.running()) { debugStop(); say("debugging stopped"); }
+            else say("nothing is running");
+            break;
         case ActionConfigDebug:
             config_ = ConfigDebug;
             if (project_.loaded()) project_.setConfig(config_);
@@ -1541,6 +1745,10 @@ void Editor::processKey(int key) {
         case KEY_F2:  nextDocument(-1); return;
         case KEY_F3:  nextDocument(1); return;
         case KEY_F5:  perform(ActionRun); return;
+        case KEY_F6:  perform(ActionStepInto); return;
+        case KEY_F7:  perform(ActionStepOver); return;
+        case KEY_F8:  perform(ActionDebug); return;
+        case KEY_F9:  perform(ActionToggleBreak); return;
 
         case ctrl('q'):
             if (buf_.dirty() && quitConfirm_ == 0) {

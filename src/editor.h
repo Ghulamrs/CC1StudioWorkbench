@@ -2,11 +2,14 @@
 #define EDITOR_EDITOR_H
 
 #include <cstddef>
+#include <map>
+#include <set>
 #include <string>
 #include <vector>
 
 #include "buffer.h"
 #include "compile.h"
+#include "debugger.h"
 #include "find.h"
 #include "indent.h"
 #include "menu.h"
@@ -106,6 +109,16 @@ private:
     void newFile();
     void compile();
     void buildAndRun();
+
+    // Stopping the program and walking through it. The debugger is a child
+    // process that outlives each of these calls, which is what makes this a
+    // session rather than a command.
+    void toggleBreak();
+    void debug();          // starts it, or carries on from where it stopped
+    void debugStep(Action how);
+    void debugStop();
+    void showStop(const Stop& where);
+    bool breakpointOn(size_t line) const;
     void openSelected();
     void goToProblem();
 
@@ -168,6 +181,16 @@ private:
     size_t arch_;
     bool numbers_;
     bool needsDraw_;
+    // Where the program is to stop, by file and by line counting from one, and
+    // where it actually is once it has. Kept by file rather than by buffer so
+    // that a breakpoint survives the file being closed and opened again.
+    Debugger debugger_;
+    std::map<std::string, std::set<size_t> > breaks_;
+    Built debugBuilt_;
+    std::string stopFile_;
+    size_t stopLine_;            // 0 when the program is not standing still
+    std::vector<Variable> locals_;
+
     bool marked_;             // whether one end of a selection has been put down
     size_t markRow_, markCol_;
     std::string clipboard_;   // the editor's own, not the machine's

@@ -10,6 +10,8 @@
 
 #include "buffer.h"
 #include "path.h"
+#include "process.h"
+#include "debugger.h"
 #include "compile.h"
 #include "indent.h"
 #include "symbols.h"
@@ -1140,8 +1142,229 @@ void paths() {
     check(!p::exists(dir), "leaving nothing behind");
 }
 
+// Talking to a child rather than only listening to one. Everything else here
+// runs a command with popen, says nothing to it and reads until it ends; a
+// debugger needs the other direction as well.
+void talkingToAChild() {
+    std::printf("a child that answers back\n");
+
+    // Something that reads lines and writes them back, which both machines
+    // have under different names.
+#ifdef _WIN32
+    const char* echoes = "findstr /r \"^\"";
+#else
+    const char* echoes = "cat";
+#endif
+
+    editor::Process child;
+    check(child.start(echoes), "a child starts");
+    check(child.running(), "and says it is running");
+
+    check(child.say("first <<mark>>"), "a line can be said to it");
+    bool found = false;
+    std::string answer = child.readUntil("<<mark>>", &found);
+    check(found, "and the marker in the answer is found");
+    check(answer.find("first") != std::string::npos, "with what came before it");
+
+    // The second answer must not carry the first: what was read past the
+    // marker last time is kept for this time rather than thrown away.
+    check(child.say("second <<mark>>"), "and another after it");
+    answer = child.readUntil("<<mark>>", &found);
+    check(found, "which is found too");
+    check(answer.find("second") != std::string::npos, "with its own line");
+    check(answer.find("first") == std::string::npos, "and not the one before it");
+
+    child.stop();
+    check(!child.running(), "it stops when it is told to");
+
+    // A marker that will never arrive ends when the child does, rather than
+    // waiting for it forever.
+    editor::Process brief;
+    check(brief.start("exit 0"), "a child that does nothing starts");
+    brief.readUntil("<<never>>", &found);
+    check(!found, "a marker that never comes is not reported as found");
+    check(!brief.running(), "and the child is known to have gone");
+
+    editor::Process missing;
+    // The shell is what fails here, not this - it is started either way and
+    // says its piece on the same stream.
+    missing.start("no-such-program-ed1-test");
+    missing.readUntil("<<never>>", &found);
+    check(!found, "a command that is not there answers nothing");
+    missing.stop();
+}
+
+void writeSource(const std::string& where, const char* text) {
+    std::ofstream out(where.c_str());
+    out << text;
+}
+
+// What the two debuggers say when they stop, which is the fiddly half of
+// driving them and needs neither a debugger nor a built program to check.
+// Both of these are what they actually printed, kept as they came.
+const char* const kLldbStop =
+    "Process 10819 stopped\n"
+    "* thread #1, queue = 'com.apple.main-thread', stop reason = breakpoint 1.1\n"
+    "    frame #0: 0x0000000100000508 dbg`main at dbg.c:13:9\n"
+    "   12  \tfor (int i = 1; i <= 3; ++i) {\n"
+    "-> 13  \t    total = total + twice(i);\n";
+
+const char* const kGdbStop =
+    "Breakpoint 1, main () at dbg.c:13\n"
+    "13\t        total = total + twice(i);\n";
+
+void whatADebuggerSays() {
+    std::printf("where a debugger says it stopped\n");
+
+    editor::Stop lldb = editor::readStop(editor::DebuggerLldb, kLldbStop);
+    check(lldb.stopped, "lldb's stop is read as a stop");
+    check(lldb.file == "dbg.c", "with the file it names");
+    check(lldb.line == 13, "and the line");
+    check(lldb.function == "main", "and the function, without the program in front of it");
+    check(!lldb.exited, "and it has not exited");
+
+    editor::Stop gdb = editor::readStop(editor::DebuggerGdb, kGdbStop);
+    check(gdb.stopped && gdb.file == "dbg.c" && gdb.line == 13,
+          "gdb says the same thing in its own words");
+    check(gdb.function == "main", "including the function, without its empty brackets");
+
+    // lldb writes file:line:column and gdb writes file:line. The column must
+    // not be read as the line, which is the one way this goes quietly wrong.
+    editor::Stop inside = editor::readStop(
+        editor::DebuggerLldb, "    frame #0: 0x100 dbg`twice(n=1) at dbg.c:5:9\n");
+    check(inside.line == 5, "a column after the line is not mistaken for it");
+    check(inside.function == "twice", "and arguments are not part of the name");
+
+    // Gone, and what it went with.
+    editor::Stop doneLldb = editor::readStop(
+        editor::DebuggerLldb, "Process 10819 exited with status = 3 (0x00000003)\n");
+    check(doneLldb.exited && !doneLldb.stopped, "a program that ended is not stopped");
+    check(doneLldb.status == 3, "and what it returned is read");
+
+    editor::Stop doneGdb = editor::readStop(
+        editor::DebuggerGdb, "[Inferior 1 (process 41) exited with code 03]\n");
+    check(doneGdb.exited && doneGdb.status == 3, "gdb's way of saying it is read too");
+
+    // gdb prints that code in octal, so the two agree on three and disagree on
+    // anything above seven. Twelve is where it would have gone wrong quietly.
+    check(editor::readStop(editor::DebuggerGdb,
+                           "[Inferior 1 (process 41) exited with code 014]\n").status == 12,
+          "and it is read as the octal gdb wrote");
+    check(editor::readStop(editor::DebuggerLldb,
+                           "Process 41 exited with status = 12 (0x0000000c)\n").status == 12,
+          "while lldb's is the decimal lldb wrote");
+    check(editor::readStop(editor::DebuggerGdb,
+                           "[Inferior 1 (process 41) exited normally]\n").status == 0,
+          "and normally means nothing went wrong");
+
+    // The variables, which each spells with the type in a different place.
+    std::vector<editor::Variable> mine = editor::readVariables(
+        editor::DebuggerLldb, "(int) total = 0\n(int) i = 1\n");
+    check(mine.size() == 2, "lldb's variables are read");
+    check(mine[0].name == "total" && mine[0].type == "int" && mine[0].value == "0",
+          "with name, type and value apart");
+
+    std::vector<editor::Variable> theirs = editor::readVariables(
+        editor::DebuggerGdb, "total = 0\ni = 1\n");
+    check(theirs.size() == 2 && theirs[1].name == "i" && theirs[1].value == "1",
+          "and gdb's, which say no type");
+    check(theirs[0].type.empty(), "so none is invented for them");
+
+    check(editor::readVariables(editor::DebuggerGdb, "No symbol table info available.\n").empty(),
+          "and a line that is not a variable is not read as one");
+}
+
+// The whole conversation, against a program cc1 built. Needs both a debugger
+// and a compiler, so it says when it is skipping rather than passing quietly.
+void debuggingForReal() {
+    std::printf("stopping, stepping and looking, for real\n");
+
+    const char* cc1 = std::getenv("CC1");
+    if (!cc1 || !*cc1) {
+        std::printf("  (no $CC1, so nothing is built to debug)\n");
+        return;
+    }
+    if (editor::debuggerHere() == editor::DebuggerNone) {
+        std::printf("  (no debugger on this machine)\n");
+        return;
+    }
+
+    std::string dir = editor::path::join(editor::path::tempDir(), "ed1-debug-test");
+    editor::path::removeTree(dir);
+    editor::path::makeDirectories(dir);
+
+    std::string source = editor::path::join(dir, "stepped.c");
+    writeSource(source,
+              "static int twice(int n)\n"
+              "{\n"
+              "    int doubled = n * 2;\n"
+              "    return doubled;\n"
+              "}\n"
+              "\n"
+              "int main(void)\n"
+              "{\n"
+              "    int total = 0;\n"
+              "    for (int i = 1; i <= 3; ++i) {\n"
+              "        total = total + twice(i);\n"
+              "    }\n"
+              "    return total;\n"
+              "}\n");
+
+    std::string program = editor::path::join(dir, "stepped");
+    std::string build = "\"" + std::string(cc1) + "\" \"" + source + "\" -o \"" + program +
+                        "\" -g > /dev/null 2>&1";
+    if (std::system(build.c_str()) != 0 || !editor::path::exists(program)) {
+        std::printf("  (cc1 built nothing to debug)\n");
+        editor::path::removeTree(dir);
+        return;
+    }
+
+    editor::Debugger debugger;
+    check(debugger.start(program), "the debugger starts on what cc1 built");
+    if (!debugger.running()) { editor::path::removeTree(dir); return; }
+
+    check(debugger.breakAt(source, 11), "a breakpoint is set on a line of C");
+
+    editor::Stop at = debugger.run();
+    check(at.stopped, "and running stops on it");
+    check(at.line == 11, "on the line it was asked for");
+    check(at.function == "main", "in the function that line is in");
+
+    // The variables are the point of the whole exercise: this is cc1's DWARF
+    // being read back by somebody else's debugger.
+    std::vector<editor::Variable> locals = debugger.locals();
+    bool sawTotal = false, sawCounter = false;
+    for (size_t i = 0; i < locals.size(); ++i) {
+        if (locals[i].name == "total" && locals[i].value == "0") sawTotal = true;
+        if (locals[i].name == "i" && locals[i].value == "1") sawCounter = true;
+    }
+    check(sawTotal, "the local it declared is there, with the value it has");
+    check(sawCounter, "and so is the one the loop declared");
+
+    editor::Stop into = debugger.stepInto();
+    check(into.stopped && into.function == "twice", "stepping into a call arrives inside it");
+
+    editor::Stop out = debugger.stepOut();
+    check(out.stopped && out.function == "main", "and stepping out comes back");
+
+    editor::Stop again = debugger.resume();
+    check(again.stopped && again.line == 11, "a breakpoint in a loop is hit again");
+
+    debugger.clearBreakpoints();
+    editor::Stop ended = debugger.resume();
+    check(ended.exited, "and with none left the program runs to the end");
+    check(ended.status == 12, "returning what it worked out - 2 + 4 + 6");
+
+    debugger.stop();
+    check(!debugger.running(), "the debugger goes when it is told to");
+    editor::path::removeTree(dir);
+}
+
 int main() {
     paths();
+    talkingToAChild();
+    whatADebuggerSays();
+    debuggingForReal();
     diagnostics();
     layout();
     typing();

@@ -38,7 +38,7 @@ SRC := src/main.cpp src/editor.cpp src/buffer.cpp src/compile.cpp \
        src/indent.cpp src/menu.cpp src/tree.cpp src/syntax.cpp \
        src/toolchain.cpp src/json.cpp src/project.cpp src/find.cpp \
        src/utf8.cpp src/workspace.cpp src/symbols.cpp src/demangle_win.cpp \
-       src/path.cpp src/terminal_common.cpp \
+       src/path.cpp src/process.cpp src/debugger.cpp src/terminal_common.cpp \
        $(TERM_SRC)
 
 # The objects go under src/obj rather than beside the sources they came from,
@@ -68,6 +68,8 @@ $(OBJDIR)/json.o:     src/json.h
 $(OBJDIR)/find.o:     src/find.h
 $(OBJDIR)/utf8.o:     src/utf8.h
 $(OBJDIR)/path.o:     src/path.h
+$(OBJDIR)/process.o:  src/process.h
+$(OBJDIR)/debugger.o: src/debugger.h src/process.h src/path.h
 $(OBJDIR)/workspace.o: src/workspace.h src/project.h src/path.h
 $(OBJDIR)/symbols.o:  src/symbols.h
 $(OBJDIR)/project.o:  src/project.h src/json.h src/indent.h src/toolchain.h src/path.h
@@ -87,12 +89,12 @@ test: tests/test
 tests/test: tests/test.cpp src/compile.cpp src/indent.cpp src/syntax.cpp \
             src/toolchain.cpp src/json.cpp src/project.cpp src/find.cpp \
        src/utf8.cpp src/workspace.cpp src/symbols.cpp src/demangle_win.cpp \
-            src/path.cpp src/buffer.cpp src/compile.h src/indent.h src/syntax.h \
+            src/path.cpp src/process.cpp src/debugger.cpp src/buffer.cpp src/compile.h src/indent.h src/syntax.h \
             src/json.h src/project.h src/path.h src/buffer.h
 	$(CXX) $(CXXFLAGS) -Isrc -o $@ tests/test.cpp src/compile.cpp src/indent.cpp \
 	    src/syntax.cpp src/toolchain.cpp src/json.cpp src/project.cpp src/find.cpp \
        src/utf8.cpp src/workspace.cpp src/symbols.cpp src/demangle_win.cpp \
-	    src/path.cpp src/buffer.cpp
+	    src/path.cpp src/process.cpp src/debugger.cpp src/buffer.cpp
 
 # The other half of the checking: the editor itself, driven by keystrokes.
 # CC1 names a compiler for the build cases; without one they are skipped.

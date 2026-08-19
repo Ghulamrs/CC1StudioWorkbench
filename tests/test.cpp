@@ -1148,10 +1148,16 @@ void paths() {
 void talkingToAChild() {
     std::printf("a child that answers back\n");
 
-    // Something that reads lines and writes them back, which both machines
-    // have under different names.
+    // Something that reads lines and writes them straight back. cat does it on
+    // one machine; on the other, findstr looks like the answer and is not -
+    // it holds its output until it exits, so a marker sent to it never comes
+    // back and the wait for it hung this whole suite on the Windows box. What
+    // is wanted there is something that flushes each line as it writes it, and
+    // says so.
 #ifdef _WIN32
-    const char* echoes = "findstr /r \"^\"";
+    const char* echoes =
+        "powershell -NoProfile -Command \"while (($l = [Console]::In.ReadLine()) -ne $null)"
+        " { [Console]::Out.WriteLine($l); [Console]::Out.Flush() }\"";
 #else
     const char* echoes = "cat";
 #endif
@@ -1272,6 +1278,30 @@ void whatADebuggerSays() {
 
     check(editor::readVariables(editor::DebuggerGdb, "No symbol table info available.\n").empty(),
           "and a line that is not a variable is not read as one");
+
+    // Both print their prompt and then, on the same line, the first line of the
+    // answer. Left on, it is read as part of the name - which showed up as the
+    // first variable of every gdb listing being missing and nothing else.
+    std::vector<editor::Variable> prompted =
+        editor::readVariables(editor::DebuggerGdb, "(gdb) i = 1\ntotal = 0\n");
+    check(prompted.size() == 2 && prompted[0].name == "i",
+          "a prompt in front of the first variable is not part of its name");
+
+    // Stepping out, where gdb says what it is leaving before it says where it
+    // arrived, and names the address because it did not land on a line start.
+    editor::Stop out = editor::readStop(
+        editor::DebuggerGdb,
+        "(gdb) Run till exit from #0  twice (n=1) at s.c:3\n"
+        "0x00000000004011b3 in main () at s.c:11\n"
+        "11\t        total = total + twice(i);\n"
+        "Value returned is $1 = 2\n");
+    check(out.function == "main" && out.line == 11,
+          "stepping out reports where it came back to, not what it left");
+
+    editor::Stop afterPrompt = editor::readStop(
+        editor::DebuggerGdb, "(gdb) twice (n=1) at s.c:3\n3\t    int doubled = n * 2;\n");
+    check(afterPrompt.stopped && afterPrompt.function == "twice" && afterPrompt.line == 3,
+          "nor of the function it stopped in");
 }
 
 // The whole conversation, against a program cc1 built. Needs both a debugger

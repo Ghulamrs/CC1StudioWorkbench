@@ -95,6 +95,10 @@ private:
     Process child_;
     DebuggerKind kind_;
     std::string executable_;
+
+    // Where it was standing before this move, so that a debugger which reports
+    // only what changed can be asked where it is.
+    Stop last_;
 };
 
 // Reading what each of them says. Free functions, and tested as such: a stop

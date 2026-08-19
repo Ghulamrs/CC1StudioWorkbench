@@ -50,35 +50,19 @@ ed1: $(OBJ)
 	$(CXX) $(CXXFLAGS) -o $@ $(OBJ)
 
 $(OBJDIR)/%.o: src/%.cpp | $(OBJDIR)
-	$(CXX) $(CXXFLAGS) -c -o $@ $<
+	$(CXX) $(CXXFLAGS) -MMD -MP -c -o $@ $<
 
 $(OBJDIR):
 	mkdir -p $(OBJDIR)
 
-$(OBJDIR)/main.o:     src/editor.h src/buffer.h src/compile.h src/terminal.h src/indent.h \
-                src/menu.h src/tree.h
-$(OBJDIR)/editor.o:   src/editor.h src/buffer.h src/compile.h src/terminal.h src/indent.h \
-                src/menu.h src/tree.h
-$(OBJDIR)/indent.o:   src/indent.h
-$(OBJDIR)/menu.o:     src/menu.h src/terminal.h
-$(OBJDIR)/tree.o:     src/tree.h src/path.h
-$(OBJDIR)/syntax.o:   src/syntax.h
-$(OBJDIR)/toolchain.o: src/toolchain.h src/syntax.h
-$(OBJDIR)/json.o:     src/json.h
-$(OBJDIR)/find.o:     src/find.h
-$(OBJDIR)/utf8.o:     src/utf8.h
-$(OBJDIR)/path.o:     src/path.h
-$(OBJDIR)/process.o:  src/process.h
-$(OBJDIR)/debugger.o: src/debugger.h src/process.h src/path.h
-$(OBJDIR)/workspace.o: src/workspace.h src/project.h src/path.h
-$(OBJDIR)/symbols.o:  src/symbols.h
-$(OBJDIR)/project.o:  src/project.h src/json.h src/indent.h src/toolchain.h src/path.h
-$(OBJDIR)/compile.o:  src/compile.h src/toolchain.h
-$(OBJDIR)/buffer.o:   src/buffer.h
-$(OBJDIR)/compile.o:  src/compile.h
-$(OBJDIR)/terminal.o: src/terminal.h
-$(OBJDIR)/terminal_common.o: src/terminal.h
-$(OBJDIR)/terminal_win.o: src/terminal.h
+# Which headers each object depends on is the compiler's answer, not a list
+# kept by hand here. The list that used to be here had gone stale: editor.cpp
+# had come to include debugger.h and the line for editor.o did not say so, so a
+# member added to Debugger rebuilt debugger.o and not editor.o. One binary then
+# held two ideas of where that class's members were, and it segfaulted - after
+# a run of tests that had looked like a parser bug. A clean build hid it, which
+# is the worst thing a bug of this kind can do.
+-include $(OBJ:.o=.d)
 
 # The two pieces with a contract: the layout rules, and the reading of cc1's
 # diagnostic - which has to cope with a Windows path whose drive letter is

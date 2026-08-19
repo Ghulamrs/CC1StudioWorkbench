@@ -894,7 +894,10 @@ void stoppingAndStepping(const std::string& ed1, const std::string& cc1) {
 
 #ifdef _WIN32
     // cc1 generates MASM for this machine's own target, which carries no line
-    // table, so there is nothing here for a debugger to read.
+    // table, so there is nothing here for a debugger to read - and so nothing
+    // for the compiler named here to do. Said out loud because MSVC at /W4 /WX
+    // treats an untouched parameter as an error, where clang and gcc do not.
+    (void)cc1;
     Screen refused = drive(ed1, common, toLoopBody + kF9 + kF8 + ctrl('q'), dir);
     check(wasShown(refused, "no debugger here"), "and debugging says why it cannot start");
     file::remove_all(dir);

@@ -23,6 +23,8 @@
       "src/json.h",
       "src/project.cpp",
       "src/project.h",
+      "src/symbols.cpp",
+      "src/symbols.h",
       "src/syntax.cpp",
       "src/syntax.h",
       "src/workspace.cpp",
@@ -35,6 +37,7 @@
       "src/toolchain.h"
     ],
     "Terminal": [
+      "src/demangle_win.cpp",
       "src/terminal.cpp",
       "src/terminal.h",
       "src/terminal.o",

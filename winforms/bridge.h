@@ -78,6 +78,13 @@ int ed1_language_for(const char* path);
 int ed1_highlight(const char* line, int language, int* state,
                   unsigned char* kinds, int kindsSize);
 
+/* ---- what a build produced ---------------------------------------------- */
+
+/* The functions, exports, imports and strings found in an assembly listing,
+   already laid out a line at a time. Not debug information - there is none -
+   but what there is to know when there is none. */
+char* ed1_describe_build(const char* assembly);
+
 /* ---- the project -------------------------------------------------------- */
 
 typedef struct Ed1Project Ed1Project;

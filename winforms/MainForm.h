@@ -204,11 +204,21 @@ private:
             "Compile", nullptr, gcnew EventHandler(this, &MainForm::OnCompile));
         compile->ShortcutKeys = Keys::F7;
         build->DropDownItems->Add(compile);
-        build->DropDownItems->Add("Debug", nullptr,
+        build->DropDownItems->Add("Debug build", nullptr,
                                   gcnew EventHandler(this, &MainForm::OnDebugConfig));
-        build->DropDownItems->Add("Release", nullptr,
+        build->DropDownItems->Add("Release build", nullptr,
                                   gcnew EventHandler(this, &MainForm::OnReleaseConfig));
         bar->Items->Add(build);
+
+        // The panel's three tabs, reachable without the mouse.
+        ToolStripMenuItem^ view = gcnew ToolStripMenuItem("&View");
+        view->DropDownItems->Add(Item("Console", Keys::Control | Keys::D1,
+                                      gcnew EventHandler(this, &MainForm::OnShowConsole)));
+        view->DropDownItems->Add(Item("Debug", Keys::Control | Keys::D2,
+                                      gcnew EventHandler(this, &MainForm::OnShowDebug)));
+        view->DropDownItems->Add(Item("Assembly", Keys::Control | Keys::D3,
+                                      gcnew EventHandler(this, &MainForm::OnShowAssembly)));
+        bar->Items->Add(view);
 
         ToolStripMenuItem^ target = gcnew ToolStripMenuItem("&Target");
         for (int i = 0; i < 3; ++i)
@@ -288,7 +298,7 @@ private:
         text_ = first->box;
 
         console_->Text = "cc1 or cl output appears here.  F7 builds.";
-        SayDebugTab();
+        SayDebugTab(nullptr);
     }
 
     // A menu item with its key, since there are a dozen of them now. The
@@ -506,15 +516,19 @@ private:
         return box;
     }
 
-    void SayDebugTab() {
-        // The same thing the terminal one says, and for the same reason.
+    // What the build produced, read out of its own assembly - the same reader
+    // the terminal front end uses, and the same words.
+    void SayDebugTab(String^ assembly) {
+        array<Byte>^ bytes = Utf8Of(assembly == nullptr ? "" : assembly);
+        pin_ptr<Byte> pinned = &bytes[0];
+        String^ found = TakeUtf8(ed1_describe_build(reinterpret_cast<const char*>(pinned)));
+
         debug_->Text = String::Join(
-            "\r\n", gcnew array<String^>{
-                        "Variables, watches and the call stack belong here.", "",
-                        "Nothing to show yet: cc1 emits no debug information -",
-                        "no -g, no DWARF, no CodeView - so a debugger has no",
-                        "symbols to read. Until the compiler emits some, this",
-                        "tab stays empty rather than inventing values."});
+            "\r\n",
+            gcnew array<String^>{
+                "cc1 emits no debug information - no -g, no DWARF, no CodeView - so",
+                "there is nothing to step through. This is what the build produced,",
+                "read back out of its own assembly.", "", found->Replace("\n", "\r\n")});
     }
 
     // ---- laying out and colouring -----------------------------------------
@@ -1165,7 +1179,9 @@ private:
             return;
         }
 
-        assembly_->Text = FromUtf8(ed1_build_assembly(built))->Replace("\n", "\r\n");
+        String^ produced = FromUtf8(ed1_build_assembly(built));
+        assembly_->Text = produced->Replace("\n", "\r\n");
+        SayDebugTab(produced);
         int lines = ed1_build_assembly_lines(built);
         ed1_build_free(built);
 
@@ -1185,6 +1201,19 @@ private:
         text_->Focus();
         panel_->SelectedIndex = 0;
     }
+
+    // A read-only box selects all of itself when it is given the keyboard,
+    // which looks like a mistake rather than a highlight.
+    void ShowPanel(int which) {
+        panel_->SelectedIndex = which;
+        console_->SelectionLength = 0;
+        debug_->SelectionLength = 0;
+        assembly_->SelectionLength = 0;
+    }
+
+    void OnShowConsole(Object^, EventArgs^) { ShowPanel(0); }
+    void OnShowDebug(Object^, EventArgs^) { ShowPanel(1); }
+    void OnShowAssembly(Object^, EventArgs^) { ShowPanel(2); }
 
     void OnDebugConfig(Object^, EventArgs^) {
         config_ = ED1_CONFIG_DEBUG;

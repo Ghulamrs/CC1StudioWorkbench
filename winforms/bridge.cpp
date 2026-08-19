@@ -23,6 +23,7 @@
 #include "find.h"
 #include "indent.h"
 #include "project.h"
+#include "symbols.h"
 #include "syntax.h"
 #include "toolchain.h"
 #include "workspace.h"
@@ -213,6 +214,10 @@ char* ed1_indent_for(const char* text, int row, int width, int tabs, int caseInd
 }
 
 void ed1_free(char* what) { std::free(what); }
+
+char* ed1_describe_build(const char* assembly) {
+    return give(join(editor::describe(editor::symbolsIn(split(assembly)))));
+}
 
 int ed1_find_next(const char* text, const char* needle, int row, int col,
                   int* foundRow, int* foundCol) {

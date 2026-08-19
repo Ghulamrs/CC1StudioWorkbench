@@ -1,6 +1,7 @@
 #include "editor.h"
 
 #include "utf8.h"
+#include "symbols.h"
 #include "workspace.h"
 
 #include <cstdio>
@@ -553,7 +554,7 @@ void Editor::drawPanel(std::string& out) const {
     if (tab_ == TabConsole)
         right = number(console_.size()) + (console_.size() == 1 ? " line" : " lines");
     else if (tab_ == TabDebug)
-        right = "no debug info";
+        right = assembly_.empty() ? "nothing built yet" : "read from the assembly";
     else
         right = assembly_.empty() ? std::string("nothing built yet")
                                   : number(assembly_.size()) + " lines";
@@ -1227,18 +1228,19 @@ void Editor::saveProject() {
 }
 
 void Editor::resetDebug() {
-    // Said plainly rather than left blank. cc1 emits no debug information at
-    // all today - no -g, no DWARF, no CodeView - so there is nothing for a
-    // debugger to read and no variables anyone could show. The tab is here so
-    // that the panel is the shape it will keep; what fills it is compiler work,
-    // not editor work.
+    // Not a debugger, and it does not pretend to be one. There is nothing to
+    // step through because there is nothing to step with: cc1 emits no debug
+    // information at all. What every build does leave behind is its assembly,
+    // and this is what is in it.
     debug_.clear();
-    debug_.push_back("Variables, watches and the call stack belong here.");
+    debug_.push_back("cc1 emits no debug information - no -g, no DWARF, no CodeView - so");
+    debug_.push_back("there is nothing to step through. This is what the build produced,");
+    debug_.push_back("read back out of its own assembly.");
     debug_.push_back("");
-    debug_.push_back("Nothing to show yet: cc1 emits no debug information -");
-    debug_.push_back("no -g, no DWARF, no CodeView - so a debugger has no");
-    debug_.push_back("symbols to read. Until the compiler emits some, this");
-    debug_.push_back("tab stays empty rather than inventing values.");
+
+    std::vector<std::string> said = describe(symbolsIn(assembly_));
+    for (size_t i = 0; i < said.size(); ++i) debug_.push_back(said[i]);
+
     debug_.push_back("");
     debug_.push_back("target: " + std::string(kArches[arch_]));
     debug_.push_back("build:  " + std::string(configName(config_)) + " (" +

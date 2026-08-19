@@ -49,7 +49,11 @@ param(
     [string]$Editor = "",
 
     # How long to wait for the build, in seconds.
-    [int]$BuildSeconds = 10
+    [int]$BuildSeconds = 10,
+
+    # Which of the panel's tabs to leave showing: Console, Debug or Assembly.
+    [ValidateSet("", "Console", "Debug", "Assembly")]
+    [string]$Panel = ""
 )
 
 Add-Type -AssemblyName System.Drawing
@@ -120,6 +124,12 @@ Start-Sleep -Milliseconds 700
 if ($Build) {
     [System.Windows.Forms.SendKeys]::SendWait("{F7}")
     Start-Sleep -Seconds $BuildSeconds
+}
+
+if ($Panel -ne "") {
+    $which = @{ "Console" = "^1"; "Debug" = "^2"; "Assembly" = "^3" }[$Panel]
+    [System.Windows.Forms.SendKeys]::SendWait($which)
+    Start-Sleep -Milliseconds 600
 }
 
 $box = New-Object Ed1Window+RECT

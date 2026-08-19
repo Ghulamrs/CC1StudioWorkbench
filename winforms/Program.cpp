@@ -8,6 +8,8 @@
 
 #include "MainForm.h"
 
+#include "symbols.h"
+
 
 
 using namespace System;
@@ -38,6 +40,7 @@ int main(array<String^>^ arguments) {
 
     try {
         Note("starting, " + arguments->Length + " arguments");
+        editor::installPlatformDemangler();
         Application::EnableVisualStyles();
         Application::SetCompatibleTextRenderingDefault(false);
 

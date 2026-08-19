@@ -197,10 +197,20 @@ Three tabs:
 
 * **Console** - the command, everything cc1 said, and the error. Enter goes to
   the line it named.
-* **Debug** - variables, watches and the call stack, when there are any. There
-  are none today: cc1 emits no debug information at all - no `-g`, no DWARF, no
-  CodeView - so nothing can read symbols out of what it produces. The tab says
-  so rather than sitting blank, and filling it is compiler work.
+* **Debug** - what the build produced, read back out of its own assembly. cc1
+  emits no debug information at all - no `-g`, no DWARF, no CodeView - so there
+  is nothing to step through and this does not pretend otherwise. What there
+  always is, is the assembly: which functions came out and how much stack each
+  takes, what is exported, what is called but not defined, and what strings
+  ended up in the binary. That is what you look at when there is no debugger.
+
+  It reads both spellings, since cc1 writes GNU on two targets and MASM on the
+  third and cl writes MASM always - including a string MASM broke across two
+  `DB` lines, and the arm64 frame size that is put in a register before it is
+  subtracted. C++ names are decorated in a listing, so on Windows
+  `src/demangle_win.cpp` reads them back with `UnDecorateSymbolName`:
+  `?value@Counter@demo@@QEBAHXZ` shows as `demo::Counter::value(void)const`.
+  One file, compiled into both front ends.
 * **Assembly** - what `-S` produced.
 
 ## Trying it
@@ -376,7 +386,7 @@ house bug, and this is the one place it was easy to prevent.
 
 `buffer`, `indent`, `menu` and `tree` touch no screen and no OS. `indent`, `syntax`, `json`, `project` and
 the diagnostic parser are the pieces with a contract, and `tests/test.cpp`
-checks them - 251 cases, including that a Windows path's drive letter is not
+checks them - 264 cases, including that a Windows path's drive letter is not
 mistaken for a `line:col` separator, that a brace inside a string is not
 counted, and that `class` is a keyword in C++ and nothing in particular in C,
 and that cl's `bad.c(3,13)` is read as well as cc1's `bad.c:3:13`. They run on

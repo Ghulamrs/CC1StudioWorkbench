@@ -4,6 +4,7 @@
 #include <string>
 
 #include "editor.h"
+#include "symbols.h"
 
 int main(int argc, char** argv) {
     std::string file;
@@ -74,6 +75,8 @@ int main(int argc, char** argv) {
         std::fprintf(stderr, "ed1: unknown toolchain %s\n", toolchain.c_str());
         return 2;
     }
+
+    editor::installPlatformDemangler();
 
     editor::Editor ed;
 

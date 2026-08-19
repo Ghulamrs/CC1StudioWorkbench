@@ -12,6 +12,7 @@
 #include "buffer.h"
 #include "compile.h"
 #include "indent.h"
+#include "symbols.h"
 #include "syntax.h"
 #include "find.h"
 #include "json.h"
@@ -849,6 +850,82 @@ void operations() {
     std::filesystem::remove_all(dir);
 }
 
+void whatTheBuildMade() {
+    std::printf("reading a build out of its assembly\n");
+
+    // cc1's own output, in the GNU spelling it uses for arm64 and Linux.
+    std::vector<std::string> gnu = split(
+        ".L.str.0:\n"
+        "  .ascii \"as expected\\000\"\n"
+        "  .globl _main\n"
+        "_factorial:\n"
+        "  stp x29, x30, [sp, #-16]!\n"
+        "  mov x9, #16\n"
+        "  sub sp, sp, x9\n"
+        "L.factorial.end.0:\n"
+        "  ret\n");
+
+    std::vector<editor::Symbol> gnuFound = editor::symbolsIn(gnu);
+
+    int functions = 0, exported = 0, strings = 0;
+    std::string frame;
+    for (size_t i = 0; i < gnuFound.size(); ++i) {
+        if (gnuFound[i].kind == editor::SymbolFunction) {
+            ++functions;
+            if (gnuFound[i].name == "_factorial") frame = gnuFound[i].detail;
+        }
+        if (gnuFound[i].kind == editor::SymbolExported) ++exported;
+        if (gnuFound[i].kind == editor::SymbolText) ++strings;
+    }
+    check(functions == 1, "a function is found in the GNU spelling");
+    check(exported == 1, "and what is exported");
+    check(strings == 1, "and a string");
+    checkEqual(frame, "stack 16 bytes",
+               "and the stack it takes, though arm64 puts the number in a register first");
+
+    // The compiler's own labels are not symbols anyone asked for.
+    for (size_t i = 0; i < gnuFound.size(); ++i)
+        check(gnuFound[i].name.compare(0, 2, "L.") != 0,
+              "the compiler's own labels are left out");
+
+    // MASM, which cc1 writes for Windows and cl writes always.
+    std::vector<std::string> masm = split(
+        "PUBLIC main\n"
+        "EXTERN puts:PROC\n"
+        "$_L_str_1 DB 115, 111, 109, 101, 116, 104, 105, 110, 103, 32, 105, 115, 32, 119\n"
+        "  DB 114, 111, 110, 103, 0\n"
+        "factorial PROC FRAME\n"
+        "  sub rsp, 16\n"
+        "  .ENDPROLOG\n"
+        "factorial ENDP\n");
+
+    std::vector<editor::Symbol> masmFound = editor::symbolsIn(masm);
+
+    std::string said, stack;
+    bool sawExternal = false;
+    for (size_t i = 0; i < masmFound.size(); ++i) {
+        if (masmFound[i].kind == editor::SymbolText) said = masmFound[i].detail;
+        if (masmFound[i].kind == editor::SymbolExternal) sawExternal = true;
+        if (masmFound[i].kind == editor::SymbolFunction) stack = masmFound[i].detail;
+    }
+    checkEqual(said, "something is wrong",
+               "a string broken across two DB lines is put back together");
+    check(sawExternal, "what is called but not defined is found");
+    checkEqual(stack, "stack 16 bytes", "and the stack a MASM function takes");
+
+    // cl's own way of writing a string.
+    std::vector<std::string> cl = split("$SG5346 DB 'first is %d', 0aH, 00H\n");
+    std::vector<editor::Symbol> clFound = editor::symbolsIn(cl);
+    check(clFound.size() == 1 && clFound[0].detail.compare(0, 8, "first is") == 0,
+          "and cl's quoted form of the same thing");
+
+    // Nothing in, nothing claimed.
+    std::vector<std::string> nothing;
+    check(editor::symbolsIn(nothing).empty(), "no assembly means no symbols");
+    check(!editor::describe(editor::symbolsIn(nothing)).empty(),
+          "and it says so rather than showing a blank");
+}
+
 }  // namespace
 
 int main() {
@@ -856,6 +933,7 @@ int main() {
     layout();
     typing();
     colours();
+    whatTheBuildMade();
     routing();
     multiByte();
     ranges();

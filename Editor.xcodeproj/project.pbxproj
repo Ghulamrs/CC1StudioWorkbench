@@ -9,6 +9,7 @@
 /* Begin PBXBuildFile section */
 		97FFB8BB0AC97A21C7A4757F /* buffer.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 5C7DB39D5FD9D475BCD4F0C7 /* buffer.cpp */; };
 		1FC4B6E50C649A42ED81B876 /* compile.cpp in Sources */ = {isa = PBXBuildFile; fileRef = E6713F20D968BAD64F68A18C /* compile.cpp */; };
+		6537F2D7EF073DF11B4C84A0 /* demangle_win.cpp in Sources */ = {isa = PBXBuildFile; fileRef = F3E03F9490EC89A673E917B1 /* demangle_win.cpp */; };
 		98C2471C216A7DBE90B9B7E2 /* editor.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 2F5A1C28EAE6607DA8165D7D /* editor.cpp */; };
 		508C2362F10FF9BAA9F25AA2 /* find.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 13E5D12297D0589739F25FDB /* find.cpp */; };
 		6116CFE1396049D523DA1825 /* indent.cpp in Sources */ = {isa = PBXBuildFile; fileRef = D2E64B9AA0EC4F8480AA1F79 /* indent.cpp */; };
@@ -16,6 +17,7 @@
 		02F7836B5A8324F354F4B2F0 /* main.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 273ADF4EEBAD9EB32FF6DD1E /* main.cpp */; };
 		D3374CF3D9C21F4A17EDEE05 /* menu.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 0A089356BEFF50C1AFA54D92 /* menu.cpp */; };
 		ABD48D64D34269BCC699237B /* project.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 382D31299E438FE27982C983 /* project.cpp */; };
+		10863181DC8664D991422082 /* symbols.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 8265CA7F23697692D5F534E7 /* symbols.cpp */; };
 		29CF57271457D495CF74F7C2 /* syntax.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 03FCE268EBA4CF71B65D677E /* syntax.cpp */; };
 		772A0B0C25136B24D5392F59 /* terminal.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 8BE97FFDB23358708DEB221C /* terminal.cpp */; };
 		75FF565B4D8BDB24274F8D78 /* terminal_common.cpp in Sources */ = {isa = PBXBuildFile; fileRef = CC406D9B67F622E06615B15A /* terminal_common.cpp */; };
@@ -28,6 +30,7 @@
 /* Begin PBXFileReference section */
 		5C7DB39D5FD9D475BCD4F0C7 /* buffer.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = buffer.cpp; sourceTree = "<group>"; };
 		E6713F20D968BAD64F68A18C /* compile.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = compile.cpp; sourceTree = "<group>"; };
+		F3E03F9490EC89A673E917B1 /* demangle_win.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = demangle_win.cpp; sourceTree = "<group>"; };
 		2F5A1C28EAE6607DA8165D7D /* editor.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = editor.cpp; sourceTree = "<group>"; };
 		13E5D12297D0589739F25FDB /* find.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = find.cpp; sourceTree = "<group>"; };
 		D2E64B9AA0EC4F8480AA1F79 /* indent.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = indent.cpp; sourceTree = "<group>"; };
@@ -35,6 +38,7 @@
 		273ADF4EEBAD9EB32FF6DD1E /* main.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = main.cpp; sourceTree = "<group>"; };
 		0A089356BEFF50C1AFA54D92 /* menu.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = menu.cpp; sourceTree = "<group>"; };
 		382D31299E438FE27982C983 /* project.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = project.cpp; sourceTree = "<group>"; };
+		8265CA7F23697692D5F534E7 /* symbols.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = symbols.cpp; sourceTree = "<group>"; };
 		03FCE268EBA4CF71B65D677E /* syntax.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = syntax.cpp; sourceTree = "<group>"; };
 		8BE97FFDB23358708DEB221C /* terminal.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = terminal.cpp; sourceTree = "<group>"; };
 		CC406D9B67F622E06615B15A /* terminal_common.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = terminal_common.cpp; sourceTree = "<group>"; };
@@ -50,6 +54,7 @@
 		087BBE6F350ACEA01E92A4CD /* json.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = json.h; sourceTree = "<group>"; };
 		FF5BCAAC7E025B46A446A743 /* menu.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = menu.h; sourceTree = "<group>"; };
 		831BFBE72520D32EE16FA81E /* project.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = project.h; sourceTree = "<group>"; };
+		3B61B382A0F486397F0A1C42 /* symbols.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = symbols.h; sourceTree = "<group>"; };
 		E0116C468B9F26172A9F3A04 /* syntax.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = syntax.h; sourceTree = "<group>"; };
 		0CF142B0BD677EBE405D89A5 /* terminal.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = terminal.h; sourceTree = "<group>"; };
 		743F8C4585EAAE081CCDCA41 /* toolchain.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = toolchain.h; sourceTree = "<group>"; };
@@ -83,6 +88,7 @@
 			children = (
 				5C7DB39D5FD9D475BCD4F0C7 /* buffer.cpp */,
 				E6713F20D968BAD64F68A18C /* compile.cpp */,
+				F3E03F9490EC89A673E917B1 /* demangle_win.cpp */,
 				2F5A1C28EAE6607DA8165D7D /* editor.cpp */,
 				13E5D12297D0589739F25FDB /* find.cpp */,
 				D2E64B9AA0EC4F8480AA1F79 /* indent.cpp */,
@@ -90,6 +96,7 @@
 				273ADF4EEBAD9EB32FF6DD1E /* main.cpp */,
 				0A089356BEFF50C1AFA54D92 /* menu.cpp */,
 				382D31299E438FE27982C983 /* project.cpp */,
+				8265CA7F23697692D5F534E7 /* symbols.cpp */,
 				03FCE268EBA4CF71B65D677E /* syntax.cpp */,
 				8BE97FFDB23358708DEB221C /* terminal.cpp */,
 				CC406D9B67F622E06615B15A /* terminal_common.cpp */,
@@ -105,6 +112,7 @@
 				087BBE6F350ACEA01E92A4CD /* json.h */,
 				FF5BCAAC7E025B46A446A743 /* menu.h */,
 				831BFBE72520D32EE16FA81E /* project.h */,
+				3B61B382A0F486397F0A1C42 /* symbols.h */,
 				E0116C468B9F26172A9F3A04 /* syntax.h */,
 				0CF142B0BD677EBE405D89A5 /* terminal.h */,
 				743F8C4585EAAE081CCDCA41 /* toolchain.h */,
@@ -175,6 +183,7 @@
 			files = (
 				97FFB8BB0AC97A21C7A4757F /* buffer.cpp in Sources */,
 				1FC4B6E50C649A42ED81B876 /* compile.cpp in Sources */,
+				6537F2D7EF073DF11B4C84A0 /* demangle_win.cpp in Sources */,
 				98C2471C216A7DBE90B9B7E2 /* editor.cpp in Sources */,
 				508C2362F10FF9BAA9F25AA2 /* find.cpp in Sources */,
 				6116CFE1396049D523DA1825 /* indent.cpp in Sources */,
@@ -182,6 +191,7 @@
 				02F7836B5A8324F354F4B2F0 /* main.cpp in Sources */,
 				D3374CF3D9C21F4A17EDEE05 /* menu.cpp in Sources */,
 				ABD48D64D34269BCC699237B /* project.cpp in Sources */,
+				10863181DC8664D991422082 /* symbols.cpp in Sources */,
 				29CF57271457D495CF74F7C2 /* syntax.cpp in Sources */,
 				772A0B0C25136B24D5392F59 /* terminal.cpp in Sources */,
 				75FF565B4D8BDB24274F8D78 /* terminal_common.cpp in Sources */,

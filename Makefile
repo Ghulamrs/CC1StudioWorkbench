@@ -101,8 +101,23 @@ check: test session
 xcodeproj:
 	python3 tools/make-xcodeproj.py
 
+# What gets used, as against what gets built. The binaries land beside their
+# objects because that is where a build puts them; this is where the product
+# lives - one directory holding what you would actually run, away from the
+# project space it was compiled in.
+#
+# PRODUCT names it, so a different one can be asked for without editing this.
+PRODUCT ?= $(HOME)/cc1-studio
+
+product: ed1
+	mkdir -p "$(PRODUCT)/bin" "$(PRODUCT)/examples"
+	cp ed1 "$(PRODUCT)/bin/"
+	cp README.md "$(PRODUCT)/"
+	cp examples/*.c examples/*.cpp "$(PRODUCT)/examples/"
+	@echo "CC1 Studio Workbench is in $(PRODUCT)"
+
 clean:
 	rm -rf $(OBJDIR)
 	rm -f ed1 tests/test tests/session
 
-.PHONY: test session check xcodeproj clean
+.PHONY: test session check xcodeproj product clean

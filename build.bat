@@ -35,10 +35,27 @@ cl /nologo /std:c++14 /W4 /WX /EHsc /permissive- /O2 /D_CRT_SECURE_NO_WARNINGS ^
    src\terminal_win.cpp
 if errorlevel 1 goto :fail
 
+if "%1"=="product" goto :product
 if "%1"=="test" goto :unit
 if "%1"=="check" goto :unit
 if "%1"=="session" goto :session
 goto :done
+
+:product
+rem The product, as against the build: one directory holding what you would
+rem actually run, away from the project space it was compiled in. ed1gui.exe is
+rem copied when msbuild has made it and passed over when it has not.
+set PRODUCT=%USERPROFILE%\cc1-studio
+if not exist "%PRODUCT%\bin" mkdir "%PRODUCT%\bin"
+if not exist "%PRODUCT%\examples" mkdir "%PRODUCT%\examples"
+copy /y ed1.exe "%PRODUCT%\bin\" >nul
+if exist winforms\x64\Release\ed1gui.exe copy /y winforms\x64\Release\ed1gui.exe "%PRODUCT%\bin\" >nul
+copy /y README.md "%PRODUCT%\" >nul
+copy /y examples\*.c "%PRODUCT%\examples\" >nul
+copy /y examples\*.cpp "%PRODUCT%\examples\" >nul
+echo CC1 Studio Workbench is in %PRODUCT%
+goto :done
+
 
 :unit
 

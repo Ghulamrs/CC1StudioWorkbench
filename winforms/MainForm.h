@@ -1480,7 +1480,9 @@ private:
             return;
         }
 
-        if (ed1_debugger_start(debugger_, ed1_program_path(built_)) == 0) {
+        if (ed1_debugger_start(debugger_,
+                               ed1_debugger_for(kind, reinterpret_cast<const char*>(arch)),
+                               ed1_program_path(built_)) == 0) {
             what_->Text = FromUtf8(ed1_debugger_name(
                               ed1_debugger_for(kind, reinterpret_cast<const char*>(arch)))) +
                           " could not be started - is it installed?";

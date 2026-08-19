@@ -77,7 +77,14 @@ bool Process::start(const std::string& command) {
 
     // Through cmd, like every other command here, and writable because
     // CreateProcess is allowed to modify what it is given.
-    std::string line = "cmd /c " + command;
+    //
+    // The extra pair of quotes is the same one compile.cpp needs and for the
+    // same reason: cmd removes the first and last quote when a command has
+    // both a quoted program and quoted arguments, which every command here
+    // does. Without it the debugger was never reached - cdb lives under
+    // "Program Files (x86)", so its path is quoted, and the program it is
+    // given is quoted too.
+    std::string line = "cmd /c \"" + command + "\"";
     std::vector<char> writable(line.begin(), line.end());
     writable.push_back('\0');
 

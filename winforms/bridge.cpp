@@ -599,10 +599,11 @@ const char* ed1_no_debugger_because(int kind, const char* arch) {
 Ed1Debugger* ed1_debugger_new(void) { return new Ed1Debugger(); }
 void ed1_debugger_free(Ed1Debugger* debugger) { delete debugger; }
 
-int ed1_debugger_start(Ed1Debugger* debugger, const char* program) {
+int ed1_debugger_start(Ed1Debugger* debugger, int debuggerKind, const char* program) {
     debugger->stop = editor::Stop();
     debugger->locals.clear();
-    return debugger->debugger.start(program ? program : "") ? 1 : 0;
+    return debugger->debugger.start(static_cast<editor::DebuggerKind>(debuggerKind),
+                                    program ? program : "") ? 1 : 0;
 }
 
 int ed1_debugger_running(Ed1Debugger* debugger) {

@@ -1297,6 +1297,41 @@ void whatADebuggerSays() {
     check(editor::readVariables(editor::DebuggerGdb, "No symbol table info available.\n").empty(),
           "and a line that is not a variable is not read as one");
 
+    // cdb, which answers a move with an address and has to be asked separately
+    // where that is. This is what it actually printed for `ln`.
+    editor::Stop cdb = editor::readStop(
+        editor::DebuggerCdb,
+        "0:000> C:\\Users\\me\\seam.cpp(10)+0x9\n"
+        "(00007ff6`44e87160)   seam!main+0x27   |  (00007ff6`44e871c0)   seam!pre_c_init\n");
+    check(cdb.stopped, "cdb's answer is read as a stop");
+    check(cdb.file == "C:\\Users\\me\\seam.cpp", "with the whole Windows path, drive and all");
+    check(cdb.line == 10, "and the line in brackets after it");
+    check(cdb.function == "main", "and the function, without its module or its offset");
+
+    // Its program ending is a break in ntdll rather than a message, and what
+    // the program returned is in edx - printed in hex, whatever the radix.
+    editor::Stop cdbEnd = editor::readStop(
+        editor::DebuggerCdb,
+        "ntdll!NtTerminateProcess+0x14:\n00007ffb`d6460904 c3   ret\n"
+        "0:000> Last event: 8ec.1ff0: Exit process 0:8ec, code c\n");
+    check(cdbEnd.exited && !cdbEnd.stopped, "cdb's ending is read as an ending");
+    check(cdbEnd.status == 12, "and the code it gives is read as the hex it is");
+
+    // Which thread it happens to break on when the program ends is not fixed,
+    // so the ending must be recognised without depending on that at all.
+    editor::Stop onAnother = editor::readStop(
+        editor::DebuggerCdb,
+        "ntdll!ZwWaitForWorkViaWorkerFactory+0x14:\n00007ffb`d6464034 c3   ret\n"
+        "0:001> Last event: 8ec.1ff0: Exit process 0:8ec, code c\n");
+    check(onAnother.exited && onAnother.status == 12,
+          "including when it ends on a worker thread rather than the main one");
+
+    std::vector<editor::Variable> cdbLocals = editor::readVariables(
+        editor::DebuggerCdb, "0:000>               i = 0n1\n          total = 0n0\n");
+    check(cdbLocals.size() == 2, "cdb's variables are read");
+    check(cdbLocals[0].name == "i" && cdbLocals[0].value == "1",
+          "with the 0n it puts in front of a decimal taken off again");
+
     // Both print their prompt and then, on the same line, the first line of the
     // answer. Left on, it is read as part of the name - which showed up as the
     // first variable of every gdb listing being missing and nothing else.
@@ -1368,7 +1403,8 @@ void debuggingForReal() {
     }
 
     editor::Debugger debugger;
-    check(debugger.start(program), "the debugger starts on what cc1 built");
+    check(debugger.start(editor::debuggerFor(editor::ToolCc1, editor::hostArch()), program),
+          "the debugger starts on what cc1 built");
     if (!debugger.running()) { editor::path::removeTree(dir); return; }
 
     check(debugger.breakAt(source, 11), "a breakpoint is set on a line of C");
@@ -1408,6 +1444,82 @@ void debuggingForReal() {
     editor::path::removeTree(dir);
 }
 
+// C++ on Windows, where none of the chain is ours: cl writes the .pdb, cdb
+// reads it, and the editor only drives them. This is the other half of the
+// same machine - the C file next to it goes to cc1 and cannot be debugged at
+// all, because MASM carries no line table.
+void debuggingCppForReal() {
+    std::printf("stopping inside what cl built\n");
+
+    if (editor::debuggerFor(editor::ToolMsvc, editor::hostArch()) == editor::DebuggerNone) {
+        std::printf("  (%s)\n",
+                    editor::noDebuggerBecause(editor::ToolMsvc, editor::hostArch()).c_str());
+        return;
+    }
+
+    std::string dir = editor::path::join(editor::path::tempDir(), "ed1-cpp-debug-test");
+    editor::path::removeTree(dir);
+    editor::path::makeDirectories(dir);
+    std::string source = editor::path::join(dir, "counted.cpp");
+    writeSource(source,
+                "static int twice(int n)\n"
+                "{\n"
+                "    return n * 2;\n"
+                "}\n"
+                "\n"
+                "int main(void)\n"
+                "{\n"
+                "    int total = 0;\n"
+                "    for (int i = 1; i <= 3; ++i) {\n"
+                "        total = total + twice(i);\n"
+                "    }\n"
+                "    return total;\n"
+                "}\n");
+
+    editor::Toolchain tool;
+    editor::Built made = editor::buildProgram(tool, editor::ToolMsvc, source, editor::LangCpp,
+                                              editor::hostArch(), editor::ConfigDebug);
+    check(made.ok, "cl builds a program from the C++ file");
+    if (!made.ok) { editor::removeProgram(made); editor::path::removeTree(dir); return; }
+
+    editor::Debugger debugger;
+    check(debugger.start(editor::debuggerFor(editor::ToolMsvc, editor::hostArch()), made.program),
+          "cdb starts on it");
+    if (!debugger.running()) { editor::removeProgram(made); editor::path::removeTree(dir); return; }
+
+    check(debugger.breakAt(source, 10), "a breakpoint is set on a line of C++");
+
+    editor::Stop at = debugger.run();
+    check(at.stopped, "and running stops on it");
+    check(at.line == 10, "on the line asked for");
+    check(at.function == "main", "in the function that line is in");
+
+    // These come out of the .pdb cl wrote, read by Microsoft's own debugger.
+    std::vector<editor::Variable> locals = debugger.locals();
+    bool sawTotal = false, sawCounter = false;
+    for (size_t i = 0; i < locals.size(); ++i) {
+        if (locals[i].name == "total" && locals[i].value == "0") sawTotal = true;
+        if (locals[i].name == "i" && locals[i].value == "1") sawCounter = true;
+    }
+    check(sawTotal, "the local it declared is there, with the value it has");
+    check(sawCounter, "and so is the one the loop declared");
+
+    editor::Stop into = debugger.stepInto();
+    check(into.stopped && into.function == "twice", "stepping into a call arrives inside it");
+
+    editor::Stop out = debugger.stepOut();
+    check(out.stopped && out.function == "main", "and stepping out comes back");
+
+    debugger.clearBreakpoints();
+    editor::Stop ended = debugger.resume();
+    check(ended.exited, "and with none left the program runs to the end");
+    check(ended.status == 12, "returning what it worked out - 2 + 4 + 6");
+
+    debugger.stop();
+    editor::removeProgram(made);
+    editor::path::removeTree(dir);
+}
+
 // Everything the Windows front end does to stop a program on a line, done
 // through the same seam it uses, on a machine where a debugger exists.
 void theSeamTheWindowUses() {
@@ -1428,9 +1540,17 @@ void theSeamTheWindowUses() {
     check(std::string(ed1_no_debugger_because(editor::ToolCc1, "x86_64-windows"))
               .find("MASM") != std::string::npos,
           "and the reason names the MASM that has no line table");
-    check(std::string(ed1_no_debugger_because(editor::ToolMsvc, "x86_64-windows"))
-              .find("pdb") != std::string::npos,
-          "while cl's reason is a .pdb nothing here reads, which is a different problem");
+    // cl is a different matter on the same machine, and which way it goes
+    // depends on whether Microsoft's own debugger is installed - so the check
+    // is that the answer and the reason agree, not that either is fixed.
+    int forCl = ed1_debugger_for(editor::ToolMsvc, "x86_64-windows");
+    std::string whyNotCl = ed1_no_debugger_because(editor::ToolMsvc, "x86_64-windows");
+    if (forCl == static_cast<int>(editor::DebuggerCdb)) {
+        check(whyNotCl.empty(), "where cdb is installed, cl's C++ has nothing standing in its way");
+    } else {
+        check(whyNotCl.find("cdb") != std::string::npos,
+              "and where it is not, the reason names the debugger that is missing");
+    }
 
     if (editor::debuggerFor(editor::ToolCc1, host) == editor::DebuggerNone) {
         std::printf("  (no debugger on this machine, so the rest is not tried)\n");
@@ -1472,7 +1592,8 @@ void theSeamTheWindowUses() {
           "and leaves it where it said it did, for a debugger to open");
 
     Ed1Debugger* debugger = ed1_debugger_new();
-    check(ed1_debugger_start(debugger, ed1_program_path(built)) != 0,
+    check(ed1_debugger_start(debugger, ed1_debugger_for(editor::ToolCc1, host.c_str()),
+                             ed1_program_path(built)) != 0,
           "the debugger starts on it");
     check(ed1_debugger_running(debugger) != 0, "and says it is running");
 
@@ -1523,6 +1644,7 @@ int main() {
     talkingToAChild();
     whatADebuggerSays();
     debuggingForReal();
+    debuggingCppForReal();
     theSeamTheWindowUses();
     diagnostics();
     layout();

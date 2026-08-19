@@ -1546,7 +1546,7 @@ void Editor::debug() {
         return;
     }
 
-    if (!debugger_.start(debugBuilt_.program)) {
+    if (!debugger_.start(debuggerFor(kind, kArches[arch_]), debugBuilt_.program)) {
         const char* named = debuggerName(debuggerFor(kind, kArches[arch_]));
         console_.push_back(std::string(named) + " could not be started");
         say(std::string(named) + " could not be started - is it installed?");

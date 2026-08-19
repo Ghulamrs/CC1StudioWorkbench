@@ -236,7 +236,7 @@ typedef struct Ed1Debugger Ed1Debugger;
 Ed1Debugger* ed1_debugger_new(void);
 void ed1_debugger_free(Ed1Debugger* debugger);
 
-int ed1_debugger_start(Ed1Debugger* debugger, const char* program);
+int ed1_debugger_start(Ed1Debugger* debugger, int debuggerKind, const char* program);
 int ed1_debugger_running(Ed1Debugger* debugger);
 void ed1_debugger_stop(Ed1Debugger* debugger);
 

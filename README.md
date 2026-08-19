@@ -76,10 +76,21 @@ F6 steps into a call, F7 over one, F8 carries on, and the Debug menu has those
 and step-out. Those variables are cc1's own DWARF, read back by the machine's
 own debugger.
 
-It drives that debugger rather than being one: lldb on a Mac, gdb on the Linux
-box, both spoken through `src/debugger.cpp`, which is the one place their two
-vocabularies differ. `x86_64-windows` has no debugging at all and says so -
-cc1 generates MASM there, which carries no line table.
+It drives that debugger rather than being one - lldb on a Mac, gdb on the Linux
+box, cdb on Windows - all three spoken through `src/debugger.cpp`, which is the
+one place their vocabularies differ.
+
+Which of them applies is a question about the compiler, not about the machine,
+and on Windows the two languages part company. A C file goes to cc1 and comes
+out as MASM, which carries no line table, so it can never be stopped on a line
+there and the editor says why. A C++ file goes to cl, which writes CodeView
+into a `.pdb`, and cdb reads it - so C++ is debugged inside this editor with
+nothing of ours in the chain except the editor. `debuggerFor(kind, arch)` asks
+that question; `noDebuggerBecause` gives the answer that applies rather than a
+general one.
+
+cdb comes with the Windows SDK's debugging tools and is not installed by
+default; when it is missing the editor says that too, and names it.
 
 Both front ends have it, from that same core: the window has a Debug menu with
 the same keys, a red dot in its gutter where a breakpoint is and an arrow where

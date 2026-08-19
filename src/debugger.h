@@ -25,7 +25,8 @@ namespace editor {
 enum DebuggerKind {
     DebuggerNone = 0,
     DebuggerLldb,      // what a Mac has
-    DebuggerGdb        // what the Linux box has
+    DebuggerGdb,       // what the Linux box has
+    DebuggerCdb        // what Windows has, for what cl built
 };
 
 // The DWARF debugger this machine has: lldb on a Mac, gdb on Linux, and none
@@ -72,9 +73,12 @@ public:
     Debugger();
     ~Debugger();
 
-    // Starts the debugger on a program that has already been built with -g.
-    // `program` is the debugger to run, empty for this machine's usual one.
-    bool start(const std::string& executable, const std::string& program = std::string());
+    // Starts a debugger on a program already built with debug information.
+    // Which debugger is the caller's to decide, because it follows from the
+    // compiler rather than from the machine - see debuggerFor. `program` names
+    // the debugger to run, and is empty for the usual one.
+    bool start(DebuggerKind kind, const std::string& executable,
+               const std::string& program = std::string());
     bool running() const { return kind_ != DebuggerNone && child_.running(); }
     DebuggerKind kind() const { return kind_; }
     void stop();

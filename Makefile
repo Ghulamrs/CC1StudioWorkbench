@@ -1,4 +1,5 @@
-# ed1 - an editor that drives the cc1 compiler.
+# CC1 Studio Workbench - an editor that drives the cc1 compiler. ed1 is the
+# terminal half and ed1gui the window; this builds ed1.
 #
 # Everything except one file is ordinary C++14 and builds anywhere. The
 # exception is the terminal, and even that is smaller than it looks: Windows 10

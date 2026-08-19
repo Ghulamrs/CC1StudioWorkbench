@@ -42,6 +42,16 @@ protected:
         text_->Focus();
     }
 
+    // What the pair of programs is called. The binaries stay ed1 and ed1gui;
+    // this is the name of the thing they are two halves of, and it is not
+    // CC1 Studio, which is the VS Code extension for the same compiler.
+    //
+    // A function rather than a static string, because a global or static of a
+    // managed type is refused outright - C3145 - since there would be nothing
+    // rooting it for the collector. That is a fourth mixed-mode hazard to put
+    // beside the three in the README.
+    static String^ ProductName() { return "CC1 Studio Workbench"; }
+
     ~MainForm() { this->!MainForm(); }
     !MainForm() {
         if (project_ != nullptr) {
@@ -162,7 +172,7 @@ private:
     }
 
     void Lay() {
-        Text = "ed1";
+        Text = ProductName();
         Width = 1100;
         Height = 760;
         colouring_ = false;
@@ -493,7 +503,7 @@ private:
         text_ = sheet->box;
         path_ = sheet->path;
         Text = path_ == nullptr ? "ed1"
-                                : "ed1 - " + System::IO::Path::GetFileName(path_);
+                                : String::Format("{0} - {1}", ProductName(), System::IO::Path::GetFileName(path_));
         what_->Text = path_ == nullptr
                           ? "untitled"
                           : System::IO::Path::GetFileName(path_) + "  " +
@@ -1049,7 +1059,7 @@ private:
         }
         if (String::Equals(path_, target, StringComparison::OrdinalIgnoreCase)) {
             path_ = now;
-            Text = "ed1 - " + System::IO::Path::GetFileName(now);
+            Text = String::Format("{0} - {1}", ProductName(), System::IO::Path::GetFileName(now));
         }
         FillTree();
     }
@@ -1184,7 +1194,7 @@ private:
         }
         text_ = sheet->box;
         path_ = path;
-        Text = "ed1 - " + System::IO::Path::GetFileName(path);
+        Text = String::Format("{0} - {1}", ProductName(), System::IO::Path::GetFileName(path));
         Recolour();
         OnTextChanged(nullptr, nullptr);
         text_->Select(0, 0);

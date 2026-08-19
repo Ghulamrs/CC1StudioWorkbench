@@ -41,14 +41,16 @@ int main(int argc, char** argv) {
                 "usage: ed1 [file.c] [--project dir] [--toolchain auto|cc1|msvc]\n"
                 "           [--config debug|release] [--cc1 path] [--cl path]\n"
                 "           [--width n] [--tabs] [--case-indent]\n"
-                "  an editor for the cc1 compiler\n"
+                "  CC1 Studio Workbench - the terminal half. ed1gui is the same\n"
+                "  editor in a window, over the same core.\n"
                 "\n"
                 "  --toolchain    auto (the default) lets the file choose: C goes\n"
                 "                 to cc1, C++ to cl, since cc1 compiles C. Naming\n"
                 "                 cc1 or msvc uses that one for everything\n"
                 "  --config       debug (the default) or release. For cl that is\n"
-                "                 /Od /D_DEBUG or /O2 /DNDEBUG; for cc1 it is the\n"
-                "                 define alone, since cc1 has no -O and no -g\n"
+                "                 /Od /Zi /D_DEBUG or /O2 /DNDEBUG; for cc1, -g and\n"
+                "                 the define on the targets that carry a line table,\n"
+                "                 and the define alone on the one that does not\n"
                 "  --cc1, --cl    the programs to run; $CC1 names the first, and\n"
                 "                 without either they are looked for on PATH. cl is\n"
                 "                 also found through Visual Studio 2022 itself, so\n"
@@ -60,7 +62,9 @@ int main(int argc, char** argv) {
                 "  --case-indent  put case labels one step inside their switch\n"
                 "                 rather than in its own column\n"
                 "\n"
-                "  F10 menu   Ctrl-B build   Ctrl-F lay out   F1 keys   Ctrl-Q quit\n");
+                "  F10 menu   Ctrl-B build   F5 run    Ctrl-A lay out\n"
+                "  F9 breakpoint   F8 debug   F7/F6 step over/into\n"
+                "  F1 keys    Ctrl-Q quit\n");
             return 0;
         } else if (argv[i][0] == '-' && argv[i][1] != '\0') {
             std::fprintf(stderr, "ed1: unknown option %s\n", argv[i]);

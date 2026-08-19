@@ -1,10 +1,20 @@
-# ed1
+# CC1 Studio Workbench
 
-A terminal editor that drives [cc1](../Compiler-C), and nothing else. It runs on
-Windows, which is what it is for, and on a Mac, which is where it is written.
+An editor that drives [cc1](../Compiler-C), and nothing else. It runs on
+Windows, which is what it is for, and on a Mac and a Linux box, which are where
+it is written and checked.
+
+Two programs over one core: **`ed1`**, which is a terminal editor, and
+**`ed1gui`**, which is the same editor in a window. Those are the names of the
+binaries and of nothing else - every rule they share lives in `src/`, and the
+name above is what the pair of them is called.
+
+It is not [CC1 Studio](../CC1Studio), which is a different thing for the same
+compiler: that one is an extension that teaches VS Code about cc1, and this one
+is an editor of our own.
 
 ```
- File   Edit   Build   Target   Help
+ File   Edit   Project   Build   Debug   Target   Tools   Help
  factorial.c  broken.c
 +------------------------+---------------------------------------+
 | + include              |   1 int factorial(int n)              |
@@ -401,9 +411,13 @@ to be respected, and each one was found the hard way:
   first time it is reached, and that corrupts the heap too. The three in the
   core are made once and never destroyed.
 * The managed side must not instantiate the STL the native side instantiates.
+* A global or `static` of a managed type is refused outright - `C3145` - since
+  there would be nothing rooting it for the collector. A `static` member
+  function returning it does the same job and is allowed.
 
-The second of those was found by giving the program its own debugger: there is
-no WinDbg on the machine, so `bridge.cpp` installs a vectored exception handler
+The second of those was found by giving the program its own debugger: there was
+no debugger on that machine at the time, so `bridge.cpp` installs a vectored
+exception handler
 that walks and symbolises its own stack into `ed1-fault.log`. It printed
 `Json::get -> atexit -> register_onexit_function -> RtlSizeHeap` and named the
 line.

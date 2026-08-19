@@ -2,7 +2,6 @@
 
 #include <cstdio>
 #include <cstdlib>
-#include <fstream>
 
 #ifdef _WIN32
 #define POPEN  _popen
@@ -168,11 +167,28 @@ Build build(const Toolchain& tool, ToolchainKind kind, const std::string& source
     }
 
     if (result.ok) {
-        std::ifstream in(recipe.assemblyPath.c_str());
-        std::string line;
-        while (std::getline(in, line)) {
-            if (!line.empty() && line[line.size() - 1] == '\r') line.resize(line.size() - 1);
-            result.asmLines.push_back(line);
+        // stdio, not <fstream> - see the note in buffer.cpp: iostreams'
+        // static initialisation makes a mixed native/managed binary die on
+        // load, and reading a file of lines needs nothing streams provide.
+        FILE* assembly = std::fopen(recipe.assemblyPath.c_str(), "rb");
+        if (assembly) {
+            std::string line;
+            for (;;) {
+                int c = std::fgetc(assembly);
+                if (c == EOF) {
+                    if (!line.empty()) result.asmLines.push_back(line);
+                    break;
+                }
+                if (c == '\n') {
+                    if (!line.empty() && line[line.size() - 1] == '\r')
+                        line.resize(line.size() - 1);
+                    result.asmLines.push_back(line);
+                    line.clear();
+                    continue;
+                }
+                line += static_cast<char>(c);
+            }
+            std::fclose(assembly);
         }
     }
 

@@ -1,8 +1,8 @@
 #include "buffer.h"
 
 #include <cerrno>
+#include <cstdio>
 #include <cstring>
-#include <fstream>
 
 namespace editor {
 
@@ -79,7 +79,12 @@ bool Buffer::redo(size_t& cx, size_t& cy) {
 }
 
 Buffer::LoadResult Buffer::load(const std::string& path, std::string& error) {
-    std::ifstream in(path.c_str(), std::ios::binary);
+    // stdio rather than <fstream>, and not as a matter of taste. Including
+    // <fstream> gives a translation unit iostreams' static initialisation, and
+    // in a mixed native/managed binary that initialisation runs under the
+    // loader lock and corrupts the heap before main - which is what stopped the
+    // Windows Forms front end from starting at all. Nothing here needs streams.
+    FILE* in = std::fopen(path.c_str(), "rb");
     if (!in) {
         path_ = path;
         if (errno == ENOENT) return NewFile;
@@ -87,19 +92,37 @@ Buffer::LoadResult Buffer::load(const std::string& path, std::string& error) {
         return Failed;
     }
 
+    std::string text;
+    char chunk[4096];
+    size_t got;
+    while ((got = std::fread(chunk, 1, sizeof chunk, in)) > 0) text.append(chunk, got);
+    bool trouble = std::ferror(in) != 0;
+    std::fclose(in);
+
+    if (trouble) {
+        error = path + ": " + std::strerror(errno);
+        return Failed;
+    }
+
     std::vector<std::string> lines;
     std::string line;
     bool sawNewline = false;
-    while (std::getline(in, line)) {
-        // getline strips the newline but not the carriage return a file
-        // written on Windows carries in front of it.
+    for (size_t i = 0; i < text.size(); ++i) {
+        if (text[i] != '\n') {
+            line += text[i];
+            continue;
+        }
+        // The newline is dropped, and so is the carriage return a file written
+        // on Windows carries in front of it.
         if (!line.empty() && line[line.size() - 1] == '\r') line.resize(line.size() - 1);
         lines.push_back(line);
-        sawNewline = !in.eof();
+        line.clear();
+        sawNewline = true;
     }
-    if (in.bad()) {
-        error = path + ": " + std::strerror(errno);
-        return Failed;
+    if (!line.empty()) {
+        if (line[line.size() - 1] == '\r') line.resize(line.size() - 1);
+        lines.push_back(line);
+        sawNewline = false;   // the last line had no newline after it
     }
 
     if (lines.empty()) lines.push_back(std::string());
@@ -122,18 +145,22 @@ bool Buffer::save(std::string& error) {
         return false;
     }
 
-    std::ofstream out(path_.c_str(), std::ios::binary | std::ios::trunc);
+    std::string text;
+    for (size_t i = 0; i < lines_.size(); ++i) {
+        text += lines_[i];
+        if (i + 1 < lines_.size() || finalNewline_) text += '\n';
+    }
+
+    FILE* out = std::fopen(path_.c_str(), "wb");
     if (!out) {
         error = path_ + ": " + std::strerror(errno);
         return false;
     }
+    size_t written = text.empty() ? 0 : std::fwrite(text.data(), 1, text.size(), out);
+    bool trouble = (written != text.size()) || std::ferror(out) != 0;
+    if (std::fclose(out) != 0) trouble = true;
 
-    for (size_t i = 0; i < lines_.size(); ++i) {
-        out << lines_[i];
-        if (i + 1 < lines_.size() || finalNewline_) out << '\n';
-    }
-    out.flush();
-    if (!out) {
+    if (trouble) {
         error = path_ + ": " + std::strerror(errno);
         return false;
     }

@@ -1,9 +1,8 @@
 #include "project.h"
 
 #include <algorithm>
+#include <cstdio>
 #include <filesystem>
-#include <fstream>
-#include <sstream>
 #include <system_error>
 
 #include "json.h"
@@ -81,14 +80,18 @@ bool Project::load(const std::string& dir, std::string& error) {
     std::string base = withSlashes(fs::absolute(fs::path(dir), ec).lexically_normal().string());
     std::string path = base + "/" + fileName();
 
-    std::ifstream in(path.c_str());
+    // stdio, not <fstream> - see the note in buffer.cpp.
+    FILE* in = std::fopen(path.c_str(), "rb");
     if (!in) return false;   // no project here, which is not a fault
 
-    std::stringstream buffer;
-    buffer << in.rdbuf();
+    std::string text;
+    char chunk[4096];
+    size_t got;
+    while ((got = std::fread(chunk, 1, sizeof chunk, in)) > 0) text.append(chunk, got);
+    std::fclose(in);
 
     std::string why;
-    Json root = Json::parse(buffer.str(), why);
+    Json root = Json::parse(text, why);
     if (!why.empty()) {
         error = std::string(fileName()) + ": " + why;
         return false;
@@ -167,13 +170,18 @@ bool Project::save(std::string& error) {
     }
     root.set("groups", groups);
 
-    std::ofstream out(file_.c_str());
+    std::string text = root.write() + "\n";
+
+    FILE* out = std::fopen(file_.c_str(), "wb");
     if (!out) {
         error = "cannot write " + file_;
         return false;
     }
-    out << root.write() << "\n";
-    if (!out) {
+    size_t written = std::fwrite(text.data(), 1, text.size(), out);
+    bool trouble = (written != text.size()) || std::ferror(out) != 0;
+    if (std::fclose(out) != 0) trouble = true;
+
+    if (trouble) {
         error = "cannot write " + file_;
         return false;
     }

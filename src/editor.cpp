@@ -2,9 +2,9 @@
 
 #include "utf8.h"
 
+#include <cstdio>
 #include <cstdlib>
 #include <filesystem>
-#include <fstream>
 #include <system_error>
 
 namespace editor {
@@ -1134,7 +1134,9 @@ void Editor::createFile() {
     std::filesystem::path parent = std::filesystem::path(path).parent_path();
     if (!parent.empty()) std::filesystem::create_directories(parent, ec);
 
-    { std::ofstream made(path.c_str()); }
+    // Made and closed at once; stdio for the same reason as everywhere else.
+    FILE* made = std::fopen(path.c_str(), "wb");
+    if (made) std::fclose(made);
     if (!std::filesystem::exists(path, ec)) {
         say("could not make " + name);
         return;

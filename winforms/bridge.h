@@ -81,9 +81,15 @@ int ed1_highlight(const char* line, int language, int* state,
 /* ---- what a build produced ---------------------------------------------- */
 
 /* The functions, exports, imports and strings found in an assembly listing,
-   already laid out a line at a time. Not debug information - there is none -
-   but what there is to know when there is none. */
+   already laid out a line at a time. Not debug information, whatever the target
+   writes: this build stops at the assembly, so there is nothing running to
+   debug. This is what there is to know instead. */
 char* ed1_describe_build(const char* assembly);
+
+/* What the panel says above that listing - what debug information this target
+   has, and what the listing is instead. The terminal front end shows the same
+   words, because both ask here rather than writing them out. */
+char* ed1_debug_note(int kind, const char* arch);
 
 /* ---- the project -------------------------------------------------------- */
 

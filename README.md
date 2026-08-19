@@ -102,12 +102,23 @@ which rather than pretending they are the same:
 | | debug | release |
 |---|---|---|
 | `cl` | `/Od /D_DEBUG` | `/O2 /DNDEBUG` |
-| `cc1` | `-D_DEBUG=1` | `-DNDEBUG=1` |
+| `cc1`, `x86_64-linux` and `arm64-darwin` | `-g -D_DEBUG=1` | `-DNDEBUG=1` |
+| `cc1`, `x86_64-windows` | `-D_DEBUG=1` | `-DNDEBUG=1` |
 
-cc1 has no `-O` and no `-g` at all, so for it a configuration is the define and
-nothing else. That is not nothing - it is what `assert` and every `#ifdef
-NDEBUG` in the source are looking for - but passing it a `-O` it would refuse
-would be worse than saying so plainly.
+cc1 still has no `-O`, so for it release is the define and nothing else. That is
+not nothing - it is what `assert` and every `#ifdef NDEBUG` in the source are
+looking for - but passing it a `-O` it would refuse would be worse than saying
+so plainly.
+
+Debug is more than the define now. cc1 writes DWARF for two of its three
+targets - line tables, types, objects and lexical blocks, read by both `gdb`
+and `lldb` - so a debug build for those asks for `-g` and gets it. The third
+does not: cc1 generates MASM for `x86_64-windows`, MASM carries no line table,
+and the assembler there cannot spell the relocations CodeView would need. cc1
+does take `-g` for that target in the GNU spelling, which routes the DWARF out
+of the Linux emitter, but the editor asks each target for the assembly its own
+assembler reads. So that target gets the define alone, and no `-g` it would
+refuse.
 
 **Line numbers down the left**, in the manner of Shalimar's, with the caret's
 own line picked out. `Ctrl-L` turns them off.
@@ -197,12 +208,16 @@ Three tabs:
 
 * **Console** - the command, everything cc1 said, and the error. Enter goes to
   the line it named.
-* **Debug** - what the build produced, read back out of its own assembly. cc1
-  emits no debug information at all - no `-g`, no DWARF, no CodeView - so there
-  is nothing to step through and this does not pretend otherwise. What there
-  always is, is the assembly: which functions came out and how much stack each
-  takes, what is exported, what is called but not defined, and what strings
-  ended up in the binary. That is what you look at when there is no debugger.
+* **Debug** - what the build produced, read back out of its own assembly, and a
+  line above it saying what debug information this target actually has. This is
+  not a debugger and does not pretend to be: cc1 does write DWARF for two of the
+  three targets now, but a debugger needs a program to run and nothing here is
+  assembled, linked or run - the build stops at `-S`. What there always is, is
+  the assembly: which functions came out and how much stack each takes, what is
+  exported, what is called but not defined, and what strings ended up in the
+  binary. That is what you look at when nothing is running. Both front ends ask
+  the core for those words rather than writing them out, which is how the window
+  came to be saying there was no debug information a day after there was.
 
   It reads both spellings, since cc1 writes GNU on two targets and MASM on the
   third and cl writes MASM always - including a string MASM broke across two

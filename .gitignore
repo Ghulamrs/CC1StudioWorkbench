@@ -6,6 +6,9 @@ ed1.exe
 test
 test.exe
 tests/test
+tests/test.exe
+tests/session
+tests/session.exe
 *.pdb
 *.ilk
 *.o.tmp

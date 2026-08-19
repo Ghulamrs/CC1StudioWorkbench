@@ -1228,14 +1228,16 @@ void Editor::saveProject() {
 }
 
 void Editor::resetDebug() {
-    // Not a debugger, and it does not pretend to be one. There is nothing to
-    // step through because there is nothing to step with: cc1 emits no debug
-    // information at all. What every build does leave behind is its assembly,
-    // and this is what is in it.
+    // Not a debugger, and it does not pretend to be one - but the reason has
+    // changed. cc1 writes DWARF for two of the three targets now, so on those
+    // there is something for a debugger to read; what there is not is a program
+    // to read it against, since this builds to assembly and stops there. The
+    // words come from the core so that the window says the same ones.
     debug_.clear();
-    debug_.push_back("cc1 emits no debug information - no -g, no DWARF, no CodeView - so");
-    debug_.push_back("there is nothing to step through. This is what the build produced,");
-    debug_.push_back("read back out of its own assembly.");
+    ToolchainKind kind = resolve(tool_, lang_);
+
+    std::vector<std::string> note = debugNote(kind, kArches[arch_]);
+    for (size_t i = 0; i < note.size(); ++i) debug_.push_back(note[i]);
     debug_.push_back("");
 
     std::vector<std::string> said = describe(symbolsIn(assembly_));
@@ -1244,7 +1246,7 @@ void Editor::resetDebug() {
     debug_.push_back("");
     debug_.push_back("target: " + std::string(kArches[arch_]));
     debug_.push_back("build:  " + std::string(configName(config_)) + " (" +
-                     configFlags(resolve(tool_, lang_), config_) + " )");
+                     configFlags(kind, config_, kArches[arch_]) + " )");
 }
 
 void Editor::goToProblem() {
@@ -1397,17 +1399,17 @@ void Editor::perform(Action action) {
             config_ = ConfigDebug;
             if (project_.loaded()) project_.setConfig(config_);
             resetDebug();
-            say(optimises(resolve(tool_, lang_))
-                    ? "debug: /Od /D_DEBUG"
-                    : "debug: -D_DEBUG=1, which is all cc1 has - no -O, no -g");
+            // The flags themselves, rather than a second copy of them written
+            // out by hand: that copy is what went stale when cc1 grew a -g.
+            say("debug:" + configFlags(resolve(tool_, lang_), config_, kArches[arch_]) +
+                (optimises(resolve(tool_, lang_)) ? "" : " - cc1 has no -O"));
             break;
         case ActionConfigRelease:
             config_ = ConfigRelease;
             if (project_.loaded()) project_.setConfig(config_);
             resetDebug();
-            say(optimises(resolve(tool_, lang_))
-                    ? "release: /O2 /DNDEBUG"
-                    : "release: -DNDEBUG=1, which is all cc1 has - no -O, no -g");
+            say("release:" + configFlags(resolve(tool_, lang_), config_, kArches[arch_]) +
+                (optimises(resolve(tool_, lang_)) ? "" : " - cc1 has no -O"));
             break;
         case ActionShowConsole:  panelOpen_ = true; tab_ = TabConsole; panelOff_ = 0; break;
         case ActionShowDebug:    panelOpen_ = true; tab_ = TabDebug; panelOff_ = 0; break;
@@ -1423,15 +1425,18 @@ void Editor::perform(Action action) {
             break;
         case ActionToolAuto:
             tool_.kind = ToolAuto;
+            resetDebug();   // which compiler it is decides what the panel says
             say(std::string("compiler: chosen by the file - this one goes to ") +
                 toolchainName(resolve(tool_, lang_)));
             break;
         case ActionToolCc1:
             tool_.kind = ToolCc1;
+            resetDebug();
             say("compiler: cc1, for every file");
             break;
         case ActionToolMsvc:
             tool_.kind = ToolMsvc;
+            resetDebug();
             say("compiler: cl, for every file");
             break;
         case ActionKeys:         showKeys(); break;

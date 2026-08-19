@@ -142,14 +142,44 @@ const char* configName(Configuration config) {
 
 bool optimises(ToolchainKind kind) { return kind == ToolMsvc; }
 
-std::string configFlags(ToolchainKind kind, Configuration config) {
+// The names are written out rather than taken from kArches, which lives above
+// this file and cannot be reached from it. There are three of them and they do
+// not move.
+bool emitsDebugInfo(ToolchainKind kind, const std::string& arch) {
+    if (kind != ToolCc1) return false;
+    return arch == "x86_64-linux" || arch == "arm64-darwin";
+}
+
+std::string configFlags(ToolchainKind kind, Configuration config,
+                        const std::string& arch) {
     if (kind == ToolMsvc)
         return config == ConfigRelease ? " /O2 /DNDEBUG" : " /Od /D_DEBUG";
 
-    // cc1 has no optimiser and emits no debug information, so this is the whole
-    // of what a configuration can mean to it. Saying so is better than passing
-    // a -O it would refuse.
-    return config == ConfigRelease ? " -DNDEBUG=1" : " -D_DEBUG=1";
+    // cc1 has no optimiser, so release is the define and nothing else. Debug is
+    // more than a define wherever cc1 can write the debug information.
+    if (config == ConfigRelease) return " -DNDEBUG=1";
+    return emitsDebugInfo(kind, arch) ? " -g -D_DEBUG=1" : " -D_DEBUG=1";
+}
+
+std::vector<std::string> debugNote(ToolchainKind kind, const std::string& arch) {
+    std::vector<std::string> said;
+    if (emitsDebugInfo(kind, arch)) {
+        said.push_back("cc1 writes DWARF for " + arch + " - line tables, types, objects and");
+        said.push_back("lexical blocks - so a debugger has something to read here. This");
+        said.push_back("editor is not that debugger: it builds to assembly and stops, so");
+        said.push_back("nothing has been assembled, linked or run. What the build did leave");
+        said.push_back("behind is the assembly, and this is what is in it.");
+    } else if (kind == ToolCc1) {
+        said.push_back("cc1 writes no debug information for " + arch + ": it generates MASM");
+        said.push_back("there, and MASM carries no line table. So there is nothing to step");
+        said.push_back("through. This is what the build produced, read back out of its own");
+        said.push_back("assembly.");
+    } else {
+        said.push_back("cl is not asked for /Zi here, so this build carries no debug");
+        said.push_back("information either. This is what it produced, read back out of its");
+        said.push_back("own assembly.");
+    }
+    return said;
 }
 
 bool canCompile(ToolchainKind kind, Language lang) {
@@ -186,7 +216,7 @@ Recipe assemblyRecipe(const Toolchain& tool, ToolchainKind kind,
         // /diagnostics:column is what turns 'bad.c(3)' into 'bad.c(3,13)'; the
         // editor wants the column, and cl gives none without being asked.
         recipe.command = quote(program) + " /nologo /c /diagnostics:column /FAs" +
-                         forLanguage + configFlags(kind, config) +
+                         forLanguage + configFlags(kind, config, arch) +
                          " /Fa" + quote(recipe.assemblyPath) +
                          " /Fo" + quote(obj) + " " + quote(source);
         recipe.leftovers.push_back(obj);
@@ -196,7 +226,7 @@ Recipe assemblyRecipe(const Toolchain& tool, ToolchainKind kind,
     recipe.assemblyPath = stem + ".s";
     recipe.command = quote(program) + " -S " + quote(source) + " -o " +
                      quote(recipe.assemblyPath) + " -arch " + arch +
-                     configFlags(kind, config);
+                     configFlags(kind, config, arch);
     return recipe;
 }
 
@@ -207,8 +237,9 @@ std::string shownCommand(const Toolchain& tool, ToolchainKind kind,
     if (kind == ToolMsvc)
         return program + " /c /diagnostics:column /FAs" +
                ((lang == LangCpp) ? " /TP /EHsc /std:c++17" : " /TC") +
-               configFlags(kind, config) + " " + source;
-    return program + " -S " + source + " -arch " + arch + configFlags(kind, config);
+               configFlags(kind, config, arch) + " " + source;
+    return program + " -S " + source + " -arch " + arch +
+           configFlags(kind, config, arch);
 }
 
 bool prepareFor(ToolchainKind kind) {

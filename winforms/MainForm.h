@@ -517,18 +517,30 @@ private:
     }
 
     // What the build produced, read out of its own assembly - the same reader
-    // the terminal front end uses, and the same words.
+    // the terminal front end uses, and now the same words too. They used to be
+    // written out here as well, and that copy went stale the day cc1 started
+    // writing DWARF; it says whatever the core says.
     void SayDebugTab(String^ assembly) {
         array<Byte>^ bytes = Utf8Of(assembly == nullptr ? "" : assembly);
         pin_ptr<Byte> pinned = &bytes[0];
         String^ found = TakeUtf8(ed1_describe_build(reinterpret_cast<const char*>(pinned)));
 
+        array<Byte>^ archBytes = Utf8Of(arch_ == nullptr ? "" : arch_);
+        pin_ptr<Byte> archPin = &archBytes[0];
+        String^ note = TakeUtf8(ed1_debug_note(
+            ed1_resolve(toolKind_, LanguageNow()),
+            reinterpret_cast<const char*>(archPin)));
+
         debug_->Text = String::Join(
             "\r\n",
-            gcnew array<String^>{
-                "cc1 emits no debug information - no -g, no DWARF, no CodeView - so",
-                "there is nothing to step through. This is what the build produced,",
-                "read back out of its own assembly.", "", found->Replace("\n", "\r\n")});
+            gcnew array<String^>{note->Replace("\n", "\r\n"), "",
+                                 found->Replace("\n", "\r\n")});
+    }
+
+    // Said again about the same assembly, because what is said about it depends
+    // on the target and the compiler, and both can be changed after a build.
+    void RefreshDebugTab() {
+        SayDebugTab(assembly_->Text->Replace("\r\n", "\n"));
     }
 
     // ---- laying out and colouring -----------------------------------------
@@ -1225,18 +1237,22 @@ private:
     }
     void OnTarget(Object^ sender, EventArgs^) {
         arch_ = safe_cast<ToolStripMenuItem^>(sender)->Text;
+        RefreshDebugTab();   // what the target can carry is part of what it says
         what_->Text = "target: " + arch_;
     }
     void OnToolAuto(Object^, EventArgs^) {
         toolKind_ = ED1_TOOL_AUTO;
+        RefreshDebugTab();
         what_->Text = "compiler: chosen by the file";
     }
     void OnToolCc1(Object^, EventArgs^) {
         toolKind_ = ED1_TOOL_CC1;
+        RefreshDebugTab();
         what_->Text = "compiler: cc1";
     }
     void OnToolCl(Object^, EventArgs^) {
         toolKind_ = ED1_TOOL_MSVC;
+        RefreshDebugTab();
         what_->Text = "compiler: cl";
     }
 };

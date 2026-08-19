@@ -660,6 +660,72 @@ void configurations(const std::string& ed1, const std::string& cc1) {
     fs::remove_all(dir);
 }
 
+// What the Debug panel says depends on the target: cc1 writes DWARF for two of
+// the three and nothing for the one it generates MASM for. Both answers are the
+// editor's own words about a compiler it has not run, so this needs no cc1 and
+// runs on every machine.
+//
+// The menu reopens on the column it was left on, and on that column's first
+// item. So the second F10 in each of these is one step right of Build, not four
+// steps right of File - which cost an hour of believing the panel was broken.
+void debugPanelPerTarget(const std::string& ed1) {
+    std::printf("what the Debug panel says about each target\n");
+
+    fs::path dir = freshProject("debugpanel");
+    fs::path file = dir / "src" / "one.c";
+    writeFile(file, "int main(void) { return 0; }\n");
+    std::string common = "\"" + file.string() + "\" --project \"" + dir.string() + "\"";
+
+    // Build is the fourth column and its Debug panel the fifth item; Target is
+    // the column after it.
+    const std::string showDebugTab = kF10 + times(kRight, 3) + times(kDown, 4) + kEnter;
+    const std::string toTarget = kF10 + kRight;
+
+    Screen linux = drive(ed1, common,
+                         showDebugTab + toTarget + kDown + kEnter + ctrl('q'), dir);
+    check(onScreen(linux, "DWARF"), "x86_64-linux is said to carry DWARF");
+    check(onScreen(linux, "x86_64-linux"), "and named while it is said");
+
+    Screen darwin = drive(ed1, common,
+                          showDebugTab + toTarget + times(kDown, 2) + kEnter + ctrl('q'), dir);
+    check(onScreen(darwin, "DWARF"), "and arm64-darwin carries it as well");
+
+    Screen windows = drive(ed1, common,
+                           showDebugTab + toTarget + kEnter + ctrl('q'), dir);
+    check(onScreen(windows, "no debug information"),
+          "x86_64-windows is said to carry none");
+    check(!onScreen(windows, "DWARF"), "and is not told it has DWARF");
+
+    // Switching the target under an open panel refills it, rather than leaving
+    // what was true of the target before.
+    // The third F10 needs no Right at all: the menu is already on Target, and
+    // one more step would land on Tools.
+    Screen switched = drive(ed1, common,
+                            showDebugTab + toTarget + kDown + kEnter +
+                                kF10 + kEnter + ctrl('q'),
+                            dir);
+    check(onScreen(switched, "no debug information") && !onScreen(switched, "DWARF"),
+          "and switching target changes what the open panel already said");
+
+    // The flag itself, in the status bar, with no compiler run. Ctrl-D is the
+    // toggle, so twice from debug is release and back to debug again.
+    const std::string sayConfig = ctrl('d') + ctrl('d');
+
+    Screen debugOnLinux = drive(ed1, common,
+                                kF10 + times(kRight, 4) + kDown + kEnter + sayConfig + ctrl('q'),
+                                dir);
+    check(wasShown(debugOnLinux, "-g -D_DEBUG=1"), "a debug build of it asks for -g");
+
+    Screen debugOnWindows = drive(ed1, common,
+                                  kF10 + times(kRight, 4) + kEnter + sayConfig + ctrl('q'), dir);
+    check(wasShown(debugOnWindows, "-D_DEBUG=1"),
+          "a debug build of the third defines _DEBUG");
+    check(!wasShown(debugOnWindows, "-g -D_DEBUG=1"),
+          "and asks for no -g, which it would be refused");
+
+    fs::remove_all(dir);
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -690,6 +756,7 @@ int main(int argc, char** argv) {
     compiling(ed1, cc1);
     buildingWithCl(ed1);
     configurations(ed1, cc1);
+    debugPanelPerTarget(ed1);
 
     std::printf("\n%d checks, %d failed\n", checks, failures);
     return failures == 0 ? 0 : 1;

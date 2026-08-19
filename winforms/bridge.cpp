@@ -219,6 +219,11 @@ char* ed1_describe_build(const char* assembly) {
     return give(join(editor::describe(editor::symbolsIn(split(assembly)))));
 }
 
+char* ed1_debug_note(int kind, const char* arch) {
+    return give(join(editor::debugNote(static_cast<editor::ToolchainKind>(kind),
+                                       arch ? arch : "")));
+}
+
 int ed1_find_next(const char* text, const char* needle, int row, int col,
                   int* foundRow, int* foundCol) {
     if (row < 0) row = 0;

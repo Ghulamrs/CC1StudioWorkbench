@@ -9,12 +9,14 @@ namespace editor {
 
 // What a build produced, read out of the assembly it produced it as.
 //
-// This is not debug information and does not pretend to be. cc1 emits none at
-// all - no -g, no DWARF, no CodeView - so there is nothing for a debugger to
-// read and nothing to step through. What there is, always, is the assembly:
-// which functions came out, how much stack each one takes, what it calls that
-// it did not define, and what strings ended up in the binary. That is what you
-// look at when there is no debugger, so that is what this finds.
+// This is not debug information and does not pretend to be. cc1 does write
+// DWARF now, for x86_64-linux and arm64-darwin - see emitsDebugInfo in
+// toolchain.h for what that covers and what it does not - but a debugger needs
+// a program to run, and nothing here is assembled, linked or run. What there
+// is, always, is the assembly: which functions came out, how much stack each
+// one takes, what it calls that it did not define, and what strings ended up in
+// the binary. That is what you look at when nothing is running, so that is what
+// this finds.
 //
 // It reads both spellings, because cc1 writes GNU on two targets and MASM on
 // the third, and cl writes MASM as well.

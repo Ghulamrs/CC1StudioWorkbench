@@ -22,9 +22,9 @@ enum ToolchainKind {
 // Debug or release. What each compiler can actually do about it differs, and
 // the editor says which rather than pretending they are the same:
 //
-//   cl   /Od /D_DEBUG  or  /O2 /DNDEBUG - a real difference in the code
-//   cc1  -D_DEBUG=1    or  -DNDEBUG=1   - the define and nothing else, because
-//        cc1 has no -O and no -g at all
+//   cl   /Od /D_DEBUG    or  /O2 /DNDEBUG - a real difference in the code
+//   cc1  -g -D_DEBUG=1   or  -DNDEBUG=1   - the define, and on the two targets
+//        that can carry it, real debug information. cc1 still has no -O.
 //
 // The define is not nothing: it is what assert and every #ifdef NDEBUG in the
 // source are looking for.
@@ -36,12 +36,33 @@ enum Configuration {
 
 const char* configName(Configuration config);
 
-// The flags this compiler is given for this configuration, already spaced.
-std::string configFlags(ToolchainKind kind, Configuration config);
+// The flags this compiler is given for this configuration, already spaced. The
+// target is asked for because a debug build's -g depends on it.
+std::string configFlags(ToolchainKind kind, Configuration config,
+                        const std::string& arch);
 
 // Whether the configuration changes the code, or only what is defined while
 // compiling it.
 bool optimises(ToolchainKind kind);
+
+// Whether cc1 writes debug information for this target, and so whether a debug
+// build is given -g.
+//
+// It writes DWARF for x86_64-linux and arm64-darwin - line tables, types,
+// objects and lexical blocks - and gdb and lldb both read it. The Windows
+// target is where it stops: cc1 generates MASM there, MASM carries no line
+// table, and the assembler cannot spell the relocations CodeView would need.
+// cc1 does take -g for that target in the GNU spelling, which routes the DWARF
+// out of the Linux emitter, but this editor asks for the assembly the target's
+// own assembler reads. So a Windows debug build gets the define and nothing
+// more, which is better than passing a -g that run would refuse.
+bool emitsDebugInfo(ToolchainKind kind, const std::string& arch);
+
+// What the Debug panel says above its listing: what this build has by way of
+// debug information, and what the listing is instead. Both front ends call it,
+// rather than each writing the words out - which is how the window came to be
+// still saying there was none.
+std::vector<std::string> debugNote(ToolchainKind kind, const std::string& arch);
 
 struct Toolchain {
     ToolchainKind kind;

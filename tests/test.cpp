@@ -26,6 +26,16 @@ namespace {
 int failures = 0;
 int checks = 0;
 
+const std::string kWindows = "x86_64-windows";
+const std::string kLinux = "x86_64-linux";
+const std::string kDarwin = "arm64-darwin";
+
+std::string joined(const std::vector<std::string>& lines) {
+    std::string all;
+    for (size_t i = 0; i < lines.size(); ++i) all += lines[i] + "\n";
+    return all;
+}
+
 void check(bool ok, const std::string& what) {
     ++checks;
     if (ok) return;
@@ -351,35 +361,83 @@ void routing() {
 
     // Debug and release, and an honest account of what each compiler can do
     // about them.
-    check(editor::configFlags(editor::ToolMsvc, editor::ConfigDebug).find("/Od") !=
+    check(editor::configFlags(editor::ToolMsvc, editor::ConfigDebug, kWindows).find("/Od") !=
               std::string::npos,
           "cl's debug turns the optimiser off");
-    check(editor::configFlags(editor::ToolMsvc, editor::ConfigRelease).find("/O2") !=
+    check(editor::configFlags(editor::ToolMsvc, editor::ConfigRelease, kWindows).find("/O2") !=
               std::string::npos,
           "and its release turns it up");
-    check(editor::configFlags(editor::ToolMsvc, editor::ConfigRelease).find("NDEBUG") !=
+    check(editor::configFlags(editor::ToolMsvc, editor::ConfigRelease, kWindows).find("NDEBUG") !=
               std::string::npos,
           "with NDEBUG defined alongside");
 
-    // cc1 has no -O and no -g, so its configuration is the define and nothing
-    // else. Passing it a -O it would refuse would be worse than saying so.
-    std::string cc1Debug = editor::configFlags(editor::ToolCc1, editor::ConfigDebug);
-    std::string cc1Release = editor::configFlags(editor::ToolCc1, editor::ConfigRelease);
-    check(cc1Debug.find("_DEBUG") != std::string::npos, "cc1's debug defines _DEBUG");
+    // cc1 has no -O, so release is the define and nothing else. Debug is the
+    // define plus -g on the two targets cc1 writes DWARF for, and the define
+    // alone on the one it does not - where passing -g would be refused.
+    std::string linuxDebug = editor::configFlags(editor::ToolCc1, editor::ConfigDebug, kLinux);
+    std::string darwinDebug = editor::configFlags(editor::ToolCc1, editor::ConfigDebug, kDarwin);
+    std::string winDebug = editor::configFlags(editor::ToolCc1, editor::ConfigDebug, kWindows);
+    std::string cc1Release = editor::configFlags(editor::ToolCc1, editor::ConfigRelease, kLinux);
+
+    check(linuxDebug.find("_DEBUG") != std::string::npos, "cc1's debug defines _DEBUG");
     check(cc1Release.find("NDEBUG") != std::string::npos, "and its release defines NDEBUG");
-    check(cc1Debug.find("-O") == std::string::npos &&
+    check(linuxDebug.find("-g") != std::string::npos, "debug asks x86_64-linux for -g");
+    check(darwinDebug.find("-g") != std::string::npos, "and arm64-darwin for -g as well");
+    check(winDebug.find("-g") == std::string::npos,
+          "but not x86_64-windows, whose MASM carries no line table");
+    check(winDebug.find("_DEBUG") != std::string::npos,
+          "which still gets the define, since that is what assert reads");
+
+    // A release build is never given -g on any target: debug information is
+    // what debug means here, and release means its absence.
+    check(editor::configFlags(editor::ToolCc1, editor::ConfigRelease, kLinux).find("-g") ==
+              std::string::npos &&
+          editor::configFlags(editor::ToolCc1, editor::ConfigRelease, kDarwin).find("-g") ==
+              std::string::npos,
+          "and release asks for -g nowhere");
+    check(linuxDebug.find("-O") == std::string::npos &&
+              darwinDebug.find("-O") == std::string::npos &&
               cc1Release.find("-O") == std::string::npos,
-          "and neither passes a -O, which cc1 has not got");
-    check(cc1Debug.find("-g") == std::string::npos, "nor a -g, which it has not got either");
+          "no configuration passes a -O, which cc1 still has not got");
+
+    check(editor::emitsDebugInfo(editor::ToolCc1, kLinux) &&
+              editor::emitsDebugInfo(editor::ToolCc1, kDarwin),
+          "cc1 writes DWARF for two of its three targets");
+    check(!editor::emitsDebugInfo(editor::ToolCc1, kWindows), "and not for the third");
+    check(!editor::emitsDebugInfo(editor::ToolMsvc, kWindows),
+          "and cl is not asked for debug information at all");
+
+    // The words the panel says are the core's, and they follow the target
+    // rather than being written out once and left.
+    std::vector<std::string> carries = editor::debugNote(editor::ToolCc1, kDarwin);
+    std::vector<std::string> carriesNot = editor::debugNote(editor::ToolCc1, kWindows);
+    check(!carries.empty() && !carriesNot.empty(), "the panel is told something either way");
+    check(carries != carriesNot, "and not the same thing about both targets");
+    check(joined(carries).find("DWARF") != std::string::npos &&
+              joined(carries).find(kDarwin) != std::string::npos,
+          "the target that carries DWARF is said to, by name");
+    check(joined(carriesNot).find("no debug information") != std::string::npos,
+          "and the one that does not is said not to");
 
     check(editor::optimises(editor::ToolMsvc), "cl optimises");
     check(!editor::optimises(editor::ToolCc1), "cc1 does not, and does not pretend to");
 
     std::string release = editor::shownCommand(tool, editor::ToolCc1, "a.c",
-                                               editor::LangC, "arm64-darwin",
+                                               editor::LangC, kDarwin,
                                                editor::ConfigRelease);
     check(release.find("-DNDEBUG=1") != std::string::npos,
           "and the define reaches the command line");
+
+    // The flag has to survive the whole way to what is actually run, not just
+    // to what is shown.
+    std::string shownDebug = editor::shownCommand(tool, editor::ToolCc1, "a.c",
+                                                  editor::LangC, kDarwin,
+                                                  editor::ConfigDebug);
+    check(shownDebug.find("-g") != std::string::npos, "and -g reaches it too");
+    check(editor::assemblyRecipe(tool, editor::ToolCc1, "a.c", editor::LangC,
+                                 kDarwin, editor::ConfigDebug)
+              .command.find("-g") != std::string::npos,
+          "and reaches the command that is run, not only the one that is shown");
 }
 
 void multiByte() {

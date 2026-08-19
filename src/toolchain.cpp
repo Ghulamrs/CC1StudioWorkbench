@@ -5,10 +5,12 @@
 #include <cstring>
 
 #ifdef _WIN32
+#include <windows.h>
 #define POPEN  _popen
 #define PCLOSE _pclose
 const char kSep = '\\';
 #else
+#include <unistd.h>
 #define POPEN  popen
 #define PCLOSE pclose
 const char kSep = '/';
@@ -229,8 +231,24 @@ std::string whyNotRun(ToolchainKind kind, const std::string& arch) {
 // rather than beside the source: a directory that is checked into something
 // should not fill up with what the editor made while looking at it.
 namespace {
+
+// A working name of this editor's own. The process id is in it because the
+// name used to be fixed, and two editors - or an editor and the test suite -
+// then wrote to the same file. That is not hypothetical: a screenshot run and
+// the suite built at the same moment, one held the program the other was
+// linking, and the failure read as a compiler that could not build C++.
+std::string mine(const char* what) {
+    char id[32];
+#ifdef _WIN32
+    std::snprintf(id, sizeof id, "%lu", static_cast<unsigned long>(GetCurrentProcessId()));
+#else
+    std::snprintf(id, sizeof id, "%ld", static_cast<long>(getpid()));
+#endif
+    return tempDir() + kSep + what + "-" + id;
+}
+
 std::string programPath() {
-    std::string path = tempDir() + kSep + "ed1-run";
+    std::string path = mine("ed1-run");
 #ifdef _WIN32
     path += ".exe";
 #endif
@@ -248,12 +266,12 @@ Recipe programRecipe(const Toolchain& tool, ToolchainKind kind,
     if (kind == ToolMsvc) {
         // Without /c, cl compiles and links. /Fe names the program and /Fo the
         // object it goes through; the object is the editor's mess to clear up.
-        std::string obj = tempDir() + kSep + "ed1-run.obj";
+        std::string obj = mine("ed1-run") + ".obj";
         std::string forLanguage = (lang == LangCpp) ? " /TP /EHsc /std:c++14" : " /TC";
         // The .pdb goes where the program goes rather than beside the source,
         // and the linker is told as well as the compiler - /Zi alone describes
         // the object, and /DEBUG is what puts it in the program.
-        std::string pdb = tempDir() + kSep + "ed1-run.pdb";
+        std::string pdb = mine("ed1-run") + ".pdb";
         recipe.command = quote(program) + " /nologo /diagnostics:column" + forLanguage +
                          configFlags(kind, config, arch) +
                          (config == ConfigDebug ? " /Fd" + quote(pdb) : std::string()) +
@@ -263,7 +281,7 @@ Recipe programRecipe(const Toolchain& tool, ToolchainKind kind,
         recipe.leftovers.push_back(obj);
         if (config == ConfigDebug) {
             recipe.leftovers.push_back(pdb);
-            recipe.leftovers.push_back(tempDir() + kSep + "ed1-run.ilk");
+            recipe.leftovers.push_back(mine("ed1-run") + ".ilk");
         }
         return recipe;
     }
@@ -292,7 +310,7 @@ Recipe assemblyRecipe(const Toolchain& tool, ToolchainKind kind,
                       const std::string& source, Language lang,
                       const std::string& arch, Configuration config) {
     Recipe recipe;
-    std::string stem = tempDir() + kSep + "ed1-build";
+    std::string stem = mine("ed1-build");
     std::string program = programOf(tool, kind);
 
     if (kind == ToolMsvc) {

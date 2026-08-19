@@ -3,6 +3,7 @@
 // neither is checked by typing into one and looking.
 
 #include <cstdio>
+
 #include <fstream>
 #include <sstream>
 #include <string>
@@ -499,6 +500,14 @@ void routing() {
     check(program.command.find("-o") != std::string::npos, "and names what to make");
     check(program.command.find("a.c") != std::string::npos, "out of the file being edited");
     check(!program.assemblyPath.empty(), "and says where it put it");
+
+    // Named for the editor that built it. It used to be one fixed name, so two
+    // editors - or an editor and this suite - wrote to the same file.
+    size_t named = program.assemblyPath.find("ed1-run-");
+    check(named != std::string::npos, "and gives it a name of this editor's own");
+    check(named + 8 < program.assemblyPath.size() &&
+              program.assemblyPath[named + 8] >= '0' && program.assemblyPath[named + 8] <= '9',
+          "with the number that tells one editor's from another's");
     check(editor::emitsDebugInfo(editor::ToolCc1, host) ==
               (program.command.find("-g") != std::string::npos),
           "and asks for -g exactly when the target can carry it");

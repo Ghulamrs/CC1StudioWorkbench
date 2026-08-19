@@ -52,6 +52,13 @@
       "README.md",
       "build.bat",
       "tools/make-xcodeproj.py"
+    ],
+    "Windows Forms": [
+      "winforms/MainForm.h",
+      "winforms/Program.cpp",
+      "winforms/bridge.cpp",
+      "winforms/bridge.h",
+      "winforms/ed1gui.vcxproj"
     ]
   }
 }

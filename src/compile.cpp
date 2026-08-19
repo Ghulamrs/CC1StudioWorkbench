@@ -161,7 +161,7 @@ Build build(const Toolchain& tool, ToolchainKind kind, const std::string& source
          result.output.find("not recognized") != std::string::npos ||
          result.output.find("No such file") != std::string::npos)) {
         std::string hint = std::string(programOf(tool, kind)) +
-                           " could not be run - name it with --compiler, or put it on PATH";
+                           " could not be run - name it with --cc1 or --cl, or put it on PATH";
         result.output += hint + "\n";
         if (sink) sink(context, hint);
     }

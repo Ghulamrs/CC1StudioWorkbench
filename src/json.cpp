@@ -7,9 +7,18 @@ namespace editor {
 
 namespace {
 
+// Made once and never destroyed, deliberately. A function-local static with a
+// destructor registers an atexit handler the first time it is reached, and
+// doing that from a native file inside a mixed native/managed binary corrupts
+// the heap - found from a stack trace on Windows reading
+//
+//     Json::get -> atexit -> register_onexit_function -> RtlSizeHeap
+//
+// One object of a few bytes outlives the program instead. Nothing here owns
+// anything the operating system will not take back.
 const Json& nothing() {
-    static const Json empty;
-    return empty;
+    static const Json* empty = new Json();
+    return *empty;
 }
 
 bool space(char c) { return c == ' ' || c == '\t' || c == '\r' || c == '\n'; }
@@ -241,9 +250,10 @@ const Json& Json::get(const std::string& key) const {
 }
 
 const std::string& Json::keyAt(size_t index) const {
-    static const std::string none;
+    // Never destroyed, for the reason given above nothing().
+    static const std::string* none = new std::string();
     if (type_ == Object && index < members_.size()) return members_[index].first;
-    return none;
+    return *none;
 }
 
 const Json& Json::valueAt(size_t index) const {

@@ -13,3 +13,8 @@ tests/test
 *.xcodeproj/xcuserdata/
 *.xcodeproj/project.xcworkspace/
 DerivedData/
+winforms/x64/
+winforms/obj/
+*.pdb
+*.log
+gui.png

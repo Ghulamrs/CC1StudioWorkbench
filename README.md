@@ -235,6 +235,38 @@ make check
 Object files go to `src/obj`, so a listing of `src` is the code and nothing
 else.
 
+### As a Windows Forms application
+
+```
+winforms\ed1gui.vcxproj
+```
+
+An ordinary macOS-style menu-and-panes window: the project down the left, the
+file in the middle, Console, Debug and Assembly across the bottom. It is C++/CLI
+and it **consumes the native core directly** - the same indent.cpp, syntax.cpp,
+project.cpp and compile.cpp the terminal editor uses, compiled into the same
+binary as native code. Nothing is duplicated: laying a file out, colouring it,
+reading ed1.json and choosing between cc1 and cl are all the same code running.
+
+The managed form talks to it through `winforms/bridge.h`, which names no C++
+type at all - opaque handles and char pointers, nothing else. That is not
+fastidiousness; three separate things about mixed native/managed binaries have
+to be respected, and each one was found the hard way:
+
+* A translation unit that includes `<fstream>` gets iostreams' static
+  initialisation, and linking it corrupts the heap **before main runs**. The
+  core uses stdio now.
+* A function-local `static` with a destructor registers an `atexit` handler the
+  first time it is reached, and that corrupts the heap too. The three in the
+  core are made once and never destroyed.
+* The managed side must not instantiate the STL the native side instantiates.
+
+The second of those was found by giving the program its own debugger: there is
+no WinDbg on the machine, so `bridge.cpp` installs a vectored exception handler
+that walks and symbolises its own stack into `ed1-fault.log`. It printed
+`Json::get -> atexit -> register_onexit_function -> RtlSizeHeap` and named the
+line.
+
 ### In Xcode
 
 ```

@@ -1,6 +1,7 @@
 #include "editor.h"
 
 #include "utf8.h"
+#include "workspace.h"
 
 #include <cstdio>
 #include <cstdlib>
@@ -306,6 +307,7 @@ void Editor::openProject(const std::string& path) {
         // No project file is not a fault. It means the pane shows the
         // directory, which is what it did before projects existed.
         tree_.setRoot(path);
+        project_.setRoot(tree_.root());
         if (!error.empty()) say(error);
         else if (!tree_.error().empty()) say(tree_.error());
     }
@@ -1113,102 +1115,54 @@ std::string Editor::targetFile() const {
     return buf_.path();
 }
 
+std::string Editor::groupUnderCursor() const {
+    if (!project_.loaded()) return std::string();
+    for (size_t i = treeSel_ + 1; i-- > 0;)
+        if (i < tree_.size() && tree_.entries()[i].group) return tree_.entries()[i].name;
+    return std::string();
+}
+
 void Editor::createFile() {
     bool cancelled = false;
     std::string name = prompt("new file: ", cancelled);
     if (cancelled || name.empty()) { say("nothing made"); return; }
 
-    // The shape rule is checked before anything is written rather than after.
-    std::string why;
-    if (!Project::allows(name, why)) { say(name + ": " + why); return; }
-
-    std::string base = project_.loaded() ? project_.root() : tree_.root();
-    std::string path = base.empty() ? name : base + "/" + name;
-
-    std::error_code ec;
-    if (std::filesystem::exists(path, ec)) {
-        say(name + " is already there");
-        return;
-    }
-
-    std::filesystem::path parent = std::filesystem::path(path).parent_path();
-    if (!parent.empty()) std::filesystem::create_directories(parent, ec);
-
-    // Made and closed at once; stdio for the same reason as everywhere else.
-    FILE* made = std::fopen(path.c_str(), "wb");
-    if (made) std::fclose(made);
-    if (!std::filesystem::exists(path, ec)) {
-        say("could not make " + name);
-        return;
-    }
-
-    if (project_.loaded()) {
-        // Into the group the pane is standing in, so a file made while looking
-        // at a group lands in it.
-        std::string group;
-        if (treeSel_ < tree_.size()) {
-            for (size_t i = treeSel_ + 1; i-- > 0;) {
-                if (tree_.entries()[i].group) { group = tree_.entries()[i].name; break; }
-            }
-        }
-        project_.addFile(project_.relative(path), group);
-        std::string error;
-        project_.save(error);
-    }
+    Outcome done = editor::createFile(project_, name, groupUnderCursor());
+    say(done.message);
+    if (!done.ok) return;
 
     refreshTree();
-    open(path);
-    say(name + " made");
+    open(done.path);
 }
 
 void Editor::renameFile() {
     std::string path = targetFile();
     if (path.empty()) { say("no file to rename"); return; }
 
-    std::string was = project_.loaded() ? project_.relative(path) : baseName(path);
+    std::string was = project_.relative(path);
     bool cancelled = false;
     std::string name = prompt("rename " + was + " to: ", cancelled);
     if (cancelled || name.empty()) { say("not renamed"); return; }
 
-    std::string why;
-    if (!Project::allows(name, why)) { say(name + ": " + why); return; }
-
-    std::string base = project_.loaded() ? project_.root()
-                                         : std::filesystem::path(path).parent_path().string();
-    std::string now = base.empty() ? name : base + "/" + name;
-
-    std::error_code ec;
-    if (std::filesystem::exists(now, ec)) { say(name + " is already there"); return; }
-
-    std::filesystem::path parent = std::filesystem::path(now).parent_path();
-    if (!parent.empty()) std::filesystem::create_directories(parent, ec);
-
-    std::filesystem::rename(path, now, ec);
-    if (ec) { say("could not rename: " + ec.message()); return; }
-
-    if (project_.loaded()) {
-        project_.renameFile(project_.relative(path), project_.relative(now));
-        std::string error;
-        project_.save(error);
-    }
+    Outcome done = editor::renameFile(project_, path, name);
+    say(done.message);
+    if (!done.ok) return;
 
     // A file open in a tab has to follow its own name, or saving would write
     // the old one back.
     for (size_t i = 0; i < docs_.size(); ++i) {
         Buffer& b = (i == doc_) ? buf_ : docs_[i].buf;
-        if (b.path() == path) b.setPath(now);
+        if (b.path() == path) b.setPath(done.path);
     }
     lang_ = languageFor(buf_.path());
-
     refreshTree();
-    say(was + " is now " + name);
 }
 
 void Editor::deleteFile() {
     std::string path = targetFile();
     if (path.empty()) { say("no file to delete"); return; }
 
-    std::string shown = project_.loaded() ? project_.relative(path) : baseName(path);
+    std::string shown = project_.relative(path);
 
     // Typed in full, on purpose. This is the one command here that cannot be
     // undone, and a single keypress is not enough to ask for it.
@@ -1216,25 +1170,15 @@ void Editor::deleteFile() {
     std::string answer = prompt("delete " + shown + " from disk? type yes: ", cancelled);
     if (cancelled || answer != "yes") { say("not deleted"); return; }
 
-    std::error_code ec;
-    if (!std::filesystem::remove(path, ec) || ec) {
-        say("could not delete: " + (ec ? ec.message() : std::string("it is still there")));
-        return;
-    }
-
-    if (project_.loaded()) {
-        project_.removeFile(project_.relative(path));
-        std::string error;
-        project_.save(error);
-    }
+    Outcome done = editor::deleteFile(project_, path);
+    say(done.message);
+    if (!done.ok) return;
 
     for (size_t i = 0; i < docs_.size(); ++i) {
         Buffer& b = (i == doc_) ? buf_ : docs_[i].buf;
         if (b.path() == path) b.setPath(std::string());
     }
-
     refreshTree();
-    say(shown + " deleted");
 }
 
 void Editor::regroupFile() {
@@ -1243,62 +1187,43 @@ void Editor::regroupFile() {
     std::string path = targetFile();
     if (path.empty()) { say("no file to move"); return; }
 
-    std::string rel = project_.relative(path);
     bool cancelled = false;
-    std::string group = prompt("move " + rel + " to group: ", cancelled);
+    std::string group = prompt("move " + project_.relative(path) + " to group: ", cancelled);
     if (cancelled || group.empty()) { say("not moved"); return; }
 
-    if (!project_.moveToGroup(rel, group)) {
-        // Not in the project yet, so moving it in is the same as adding it.
-        if (!project_.addFile(rel, group)) { say("could not move it"); return; }
-    }
-
-    std::string error;
-    if (!project_.save(error)) { say(error); return; }
-    refreshTree();
-    say(rel + " is in " + group);
+    Outcome done = editor::moveToGroup(project_, path, group);
+    say(done.message);
+    if (done.ok) refreshTree();
 }
 
 void Editor::addToProject() {
     if (!project_.loaded()) { say("there is no project - make one first"); return; }
     if (buf_.path().empty()) { say("save the file first, so it has a name"); return; }
 
-    std::string rel = project_.relative(buf_.path());
     bool cancelled = false;
-    std::string group = prompt("add " + rel + " to group [Sources]: ", cancelled);
+    std::string group =
+        prompt("add " + project_.relative(buf_.path()) + " to group [Sources]: ", cancelled);
     if (cancelled) { say("not added"); return; }
-    if (group.empty()) group = "Sources";
 
-    if (!project_.addFile(rel, group)) { say(rel + " is already in the project"); return; }
-
-    std::string error;
-    if (!project_.save(error)) { say(error); return; }
-    refreshTree();
-    say(rel + " added to " + group);
+    Outcome done = editor::addExisting(project_, buf_.path(), group);
+    say(done.message);
+    if (done.ok) refreshTree();
 }
 
 void Editor::newProject() {
-    std::string where = projectDir_.empty() ? std::string(".") : projectDir_;
-
     bool cancelled = false;
     std::string name = prompt("project name: ", cancelled);
     if (cancelled || name.empty()) { say("no project made"); return; }
 
-    project_.begin(where, name);
-    if (!buf_.path().empty()) project_.addFile(project_.relative(buf_.path()), "Sources");
-
-    std::string error;
-    if (!project_.save(error)) { say(error); return; }
-
-    refreshTree();
-    say(std::string(Project::fileName()) + " written - " + name);
+    Outcome done = editor::beginProject(project_, projectDir_.empty() ? "." : projectDir_,
+                                        name, buf_.path());
+    say(done.message);
+    if (done.ok) refreshTree();
 }
 
 void Editor::saveProject() {
-    if (!project_.loaded()) { say("there is no project to save"); return; }
-    std::string error;
-    if (!project_.save(error)) { say(error); return; }
-    say(project_.file() + " written");
+    Outcome done = editor::saveProject(project_);
+    say(done.message);
 }
 
 void Editor::resetDebug() {

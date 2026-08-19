@@ -24,7 +24,9 @@
       "src/project.cpp",
       "src/project.h",
       "src/syntax.cpp",
-      "src/syntax.h"
+      "src/syntax.h",
+      "src/workspace.cpp",
+      "src/workspace.h"
     ],
     "Compilers": [
       "src/compile.cpp",

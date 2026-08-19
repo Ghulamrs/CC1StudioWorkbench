@@ -52,6 +52,9 @@ public:
 
     bool loaded() const { return loaded_; }
     const std::string& root() const { return root_; }
+    // The directory paths are counted from, set even when there is no project
+    // file - so the file operations work the same either way.
+    void setRoot(const std::string& path) { root_ = path; }
     const std::string& file() const { return file_; }
     const std::string& name() const { return name_; }
     void setName(const std::string& name) { name_ = name; }

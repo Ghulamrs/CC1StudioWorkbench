@@ -65,6 +65,7 @@ private:
     int indentCase_;
 
     String^ path_;
+    String^ projectDirectory_;
     String^ needle_;      // what was last searched for
     bool colouring_;
 
@@ -174,6 +175,29 @@ private:
         edit->DropDownItems->Add(
             Item("Lay out file", Keys::Control | Keys::L, gcnew EventHandler(this, &MainForm::OnLayOut)));
         bar->Items->Add(edit);
+
+        // Everything that changes what the project holds. Each of these asks a
+        // question and then hands the answer to the core, which does the disk
+        // work, keeps the list in step and writes the project back - the same
+        // code the terminal front end calls.
+        ToolStripMenuItem^ project = gcnew ToolStripMenuItem("&Project");
+        project->DropDownItems->Add("New project...", nullptr,
+                                    gcnew EventHandler(this, &MainForm::OnNewProject));
+        project->DropDownItems->Add("Save project", nullptr,
+                                    gcnew EventHandler(this, &MainForm::OnSaveProject));
+        project->DropDownItems->Add("Add this file...", nullptr,
+                                    gcnew EventHandler(this, &MainForm::OnAddThisFile));
+        project->DropDownItems->Add(gcnew ToolStripSeparator());
+        project->DropDownItems->Add(
+            Item("New file...", Keys::Control | Keys::N,
+                 gcnew EventHandler(this, &MainForm::OnNewFile)));
+        project->DropDownItems->Add(Item("Rename...", Keys::F2,
+                                         gcnew EventHandler(this, &MainForm::OnRenameFile)));
+        project->DropDownItems->Add("Move to group...", nullptr,
+                                    gcnew EventHandler(this, &MainForm::OnMoveToGroup));
+        project->DropDownItems->Add("Delete...", nullptr,
+                                    gcnew EventHandler(this, &MainForm::OnDeleteFile));
+        bar->Items->Add(project);
 
         ToolStripMenuItem^ build = gcnew ToolStripMenuItem("&Build");
         ToolStripMenuItem^ compile = gcnew ToolStripMenuItem(
@@ -775,6 +799,7 @@ private:
     }
 
     void LoadProject(String^ directory) {
+        projectDirectory_ = directory;
         tree_->Nodes->Clear();
 
         array<Byte>^ bytes = Utf8Of(directory);
@@ -788,8 +813,31 @@ private:
         if (loaded == 0) {
             String^ why = FromUtf8(reinterpret_cast<const char*>(errorPin));
             what_->Text = why->Length > 0 ? why : "no ed1.json in that directory";
+
+            // No project file still leaves a directory that paths are counted
+            // from, so the file commands work either way.
+            ed1_project_set_root(project_, reinterpret_cast<const char*>(pinned));
             return;
         }
+
+        FillTree();
+
+        indentWidth_ = ed1_project_indent_width(project_);
+        indentTabs_ = ed1_project_indent_tabs(project_);
+        indentCase_ = ed1_project_case_indent(project_);
+        toolKind_ = ed1_project_toolchain(project_);
+        config_ = ed1_project_config(project_);
+        arch_ = FromUtf8(ed1_project_arch(project_));
+
+        what_->Text = String::Format("{0} - {1} groups",
+                                     FromUtf8(ed1_project_name(project_)),
+                                     ed1_project_groups(project_));
+    }
+
+    // Rebuilt from the project as it stands, so a change shows without the
+    // file being read again.
+    void FillTree() {
+        tree_->Nodes->Clear();
 
         int groups = ed1_project_groups(project_);
         for (int group = 0; group < groups; ++group) {
@@ -819,6 +867,169 @@ private:
         what_->Text = String::Format("{0} - {1} groups",
                                      FromUtf8(ed1_project_name(project_)), groups);
     }
+
+    // What the file commands act on: whatever the project pane is standing on
+    // when that is a file, and the tab in front otherwise.
+    String^ TargetFile() {
+        if (tree_->SelectedNode != nullptr && tree_->SelectedNode->Tag != nullptr)
+            return safe_cast<String^>(tree_->SelectedNode->Tag);
+        return path_;
+    }
+
+    // The group the pane is standing in, so a file made while looking at a
+    // group lands in it.
+    String^ GroupUnderCursor() {
+        TreeNode^ node = tree_->SelectedNode;
+        while (node != nullptr && node->Tag != nullptr) node = node->Parent;
+        return node == nullptr ? "Sources" : node->Text;
+    }
+
+    // A native call whose answer is a message either way.
+    bool Did(int outcome) {
+        what_->Text = FromUtf8(ed1_outcome_message(project_));
+        return outcome != 0;
+    }
+
+    String^ OutcomePath() { return FromUtf8(ed1_outcome_path(project_)); }
+
+    void OnNewFile(Object^, EventArgs^) {
+        String^ name = Ask("New file (name, or one directory and a name)", "");
+        if (name == nullptr || name->Length == 0) return;
+
+        array<Byte>^ relative = Utf8Of(name);
+        pin_ptr<Byte> relativePin = &relative[0];
+        array<Byte>^ group = Utf8Of(GroupUnderCursor());
+        pin_ptr<Byte> groupPin = &group[0];
+
+        if (!Did(ed1_create_file(project_, reinterpret_cast<const char*>(relativePin),
+                                 reinterpret_cast<const char*>(groupPin))))
+            return;
+
+        FillTree();
+        OpenPath(OutcomePath());
+    }
+
+    void OnRenameFile(Object^, EventArgs^) {
+        String^ target = TargetFile();
+        if (target == nullptr) { what_->Text = "no file to rename"; return; }
+
+        array<Byte>^ was = Utf8Of(target);
+        pin_ptr<Byte> wasPin = &was[0];
+        String^ shown = FromUtf8(ed1_project_relative(project_,
+                                                      reinterpret_cast<const char*>(wasPin)));
+
+        String^ name = Ask("Rename " + shown + " to", shown);
+        if (name == nullptr || name->Length == 0) return;
+
+        array<Byte>^ from = Utf8Of(target);
+        pin_ptr<Byte> fromPin = &from[0];
+        array<Byte>^ to = Utf8Of(name);
+        pin_ptr<Byte> toPin = &to[0];
+
+        if (!Did(ed1_rename_file(project_, reinterpret_cast<const char*>(fromPin),
+                                 reinterpret_cast<const char*>(toPin))))
+            return;
+
+        // A tab showing that file has to follow its own name, or saving would
+        // write the old one back.
+        String^ now = OutcomePath();
+        for (int i = 0; i < sheets_->Count; ++i) {
+            if (sheets_[i]->path == nullptr) continue;
+            if (!String::Equals(sheets_[i]->path, target, StringComparison::OrdinalIgnoreCase))
+                continue;
+            sheets_[i]->path = now;
+            sheets_[i]->page->Text = System::IO::Path::GetFileName(now);
+        }
+        if (String::Equals(path_, target, StringComparison::OrdinalIgnoreCase)) {
+            path_ = now;
+            Text = "ed1 - " + System::IO::Path::GetFileName(now);
+        }
+        FillTree();
+    }
+
+    void OnDeleteFile(Object^, EventArgs^) {
+        String^ target = TargetFile();
+        if (target == nullptr) { what_->Text = "no file to delete"; return; }
+
+        // The one command here that cannot be undone, so it is asked plainly
+        // and the safe answer is the one already chosen.
+        System::Windows::Forms::DialogResult answer = MessageBox::Show(
+            this, "Delete " + System::IO::Path::GetFileName(target) + " from disk?",
+            "Delete", MessageBoxButtons::YesNo, MessageBoxIcon::Warning,
+            MessageBoxDefaultButton::Button2);
+        if (answer != System::Windows::Forms::DialogResult::Yes) {
+            what_->Text = "not deleted";
+            return;
+        }
+
+        array<Byte>^ path = Utf8Of(target);
+        pin_ptr<Byte> pathPin = &path[0];
+        if (!Did(ed1_delete_file(project_, reinterpret_cast<const char*>(pathPin)))) return;
+
+        for (int i = sheets_->Count - 1; i >= 0; --i) {
+            if (sheets_[i]->path == nullptr) continue;
+            if (!String::Equals(sheets_[i]->path, target, StringComparison::OrdinalIgnoreCase))
+                continue;
+            Sheet^ sheet = sheets_[i];
+            sheets_->Remove(sheet);
+            files_->TabPages->Remove(sheet->page);
+        }
+        if (sheets_->Count == 0) MakeSheet(nullptr, "");
+        OnSheetChanged(nullptr, nullptr);
+        FillTree();
+    }
+
+    void OnMoveToGroup(Object^, EventArgs^) {
+        String^ target = TargetFile();
+        if (target == nullptr) { what_->Text = "no file to move"; return; }
+
+        String^ group = Ask("Move to group", GroupUnderCursor());
+        if (group == nullptr || group->Length == 0) return;
+
+        array<Byte>^ path = Utf8Of(target);
+        pin_ptr<Byte> pathPin = &path[0];
+        array<Byte>^ into = Utf8Of(group);
+        pin_ptr<Byte> intoPin = &into[0];
+
+        if (Did(ed1_move_to_group(project_, reinterpret_cast<const char*>(pathPin),
+                                  reinterpret_cast<const char*>(intoPin))))
+            FillTree();
+    }
+
+    void OnAddThisFile(Object^, EventArgs^) {
+        if (path_ == nullptr) { what_->Text = "save the file first, so it has a name"; return; }
+
+        String^ group = Ask("Add to group", "Sources");
+        if (group == nullptr || group->Length == 0) return;
+
+        array<Byte>^ path = Utf8Of(path_);
+        pin_ptr<Byte> pathPin = &path[0];
+        array<Byte>^ into = Utf8Of(group);
+        pin_ptr<Byte> intoPin = &into[0];
+
+        if (Did(ed1_add_existing(project_, reinterpret_cast<const char*>(pathPin),
+                                 reinterpret_cast<const char*>(intoPin))))
+            FillTree();
+    }
+
+    void OnNewProject(Object^, EventArgs^) {
+        String^ name = Ask("Project name", "Project");
+        if (name == nullptr || name->Length == 0) return;
+
+        array<Byte>^ where = Utf8Of(projectDirectory_ == nullptr ? "." : projectDirectory_);
+        pin_ptr<Byte> wherePin = &where[0];
+        array<Byte>^ called = Utf8Of(name);
+        pin_ptr<Byte> calledPin = &called[0];
+        array<Byte>^ first = Utf8Of(path_ == nullptr ? "" : path_);
+        pin_ptr<Byte> firstPin = &first[0];
+
+        if (Did(ed1_begin_project(project_, reinterpret_cast<const char*>(wherePin),
+                                  reinterpret_cast<const char*>(calledPin),
+                                  reinterpret_cast<const char*>(firstPin))))
+            FillTree();
+    }
+
+    void OnSaveProject(Object^, EventArgs^) { Did(ed1_save_project(project_)); }
 
     void OnTreeOpen(Object^, TreeNodeMouseClickEventArgs^ e) {
         if (e->Node == nullptr || e->Node->Tag == nullptr) return;

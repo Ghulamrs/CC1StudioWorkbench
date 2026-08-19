@@ -22,6 +22,7 @@
 		6410E52E91F8ACBD30BFE040 /* toolchain.cpp in Sources */ = {isa = PBXBuildFile; fileRef = D75524B350E8986FAA6ED6D1 /* toolchain.cpp */; };
 		673CDE5E5F49F757A9214A13 /* tree.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 544680C5FCE2C2070C29BA8A /* tree.cpp */; };
 		D358CC8952F6C5CB77A70FD8 /* utf8.cpp in Sources */ = {isa = PBXBuildFile; fileRef = DA789B51A86F5854DC449180 /* utf8.cpp */; };
+		480E9F47B0B6151E71AA2D00 /* workspace.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 1CDA1752326293E42B72D67E /* workspace.cpp */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -40,6 +41,7 @@
 		D75524B350E8986FAA6ED6D1 /* toolchain.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = toolchain.cpp; sourceTree = "<group>"; };
 		544680C5FCE2C2070C29BA8A /* tree.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = tree.cpp; sourceTree = "<group>"; };
 		DA789B51A86F5854DC449180 /* utf8.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = utf8.cpp; sourceTree = "<group>"; };
+		1CDA1752326293E42B72D67E /* workspace.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = workspace.cpp; sourceTree = "<group>"; };
 		9370A46CF3574634173A4840 /* buffer.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = buffer.h; sourceTree = "<group>"; };
 		611C3ADC5BD4043EAE5239DA /* compile.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = compile.h; sourceTree = "<group>"; };
 		60536C0204B8353ED4C07845 /* editor.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = editor.h; sourceTree = "<group>"; };
@@ -53,6 +55,7 @@
 		743F8C4585EAAE081CCDCA41 /* toolchain.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = toolchain.h; sourceTree = "<group>"; };
 		830E706F780A45D04FF19F77 /* tree.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = tree.h; sourceTree = "<group>"; };
 		0B01C8D45C18A0992F3598AB /* utf8.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = utf8.h; sourceTree = "<group>"; };
+		9D68A41D67FBD2D8C05BBDCB /* workspace.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = workspace.h; sourceTree = "<group>"; };
 		38A007151ABE87CC01A5B6E9 /* ed1 */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o-executable"; includeInIndex = 0; path = ed1; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -93,6 +96,7 @@
 				D75524B350E8986FAA6ED6D1 /* toolchain.cpp */,
 				544680C5FCE2C2070C29BA8A /* tree.cpp */,
 				DA789B51A86F5854DC449180 /* utf8.cpp */,
+				1CDA1752326293E42B72D67E /* workspace.cpp */,
 				9370A46CF3574634173A4840 /* buffer.h */,
 				611C3ADC5BD4043EAE5239DA /* compile.h */,
 				60536C0204B8353ED4C07845 /* editor.h */,
@@ -106,6 +110,7 @@
 				743F8C4585EAAE081CCDCA41 /* toolchain.h */,
 				830E706F780A45D04FF19F77 /* tree.h */,
 				0B01C8D45C18A0992F3598AB /* utf8.h */,
+				9D68A41D67FBD2D8C05BBDCB /* workspace.h */,
 			);
 			path = src;
 			sourceTree = "<group>";
@@ -183,6 +188,7 @@
 				6410E52E91F8ACBD30BFE040 /* toolchain.cpp in Sources */,
 				673CDE5E5F49F757A9214A13 /* tree.cpp in Sources */,
 				D358CC8952F6C5CB77A70FD8 /* utf8.cpp in Sources */,
+				480E9F47B0B6151E71AA2D00 /* workspace.cpp in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

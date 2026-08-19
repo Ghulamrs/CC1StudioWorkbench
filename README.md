@@ -248,6 +248,14 @@ project.cpp and compile.cpp the terminal editor uses, compiled into the same
 binary as native code. Nothing is duplicated: laying a file out, colouring it,
 reading ed1.json and choosing between cc1 and cl are all the same code running.
 
+**The project operations** are on the Project menu: new project, save project,
+add this file, new file, rename, move to group and delete. None of them is
+written twice - `src/workspace.cpp` holds what changing a project actually
+involves (check the rule, do the disk work, keep the list in step, write the
+project back), and both front ends call it. The terminal asks its questions on
+the message line and the window asks them in a dialog; what happens after the
+answer is the same code. Deleting asks plainly, with No already chosen.
+
 **Tabs for the files you have open**, one text box each, so every tab keeps its
 own caret, scroll position and undo history. Opening a file already open brings
 its tab forward rather than opening it twice, and an untouched unnamed tab is
@@ -353,7 +361,7 @@ house bug, and this is the one place it was easy to prevent.
 
 `buffer`, `indent`, `menu` and `tree` touch no screen and no OS. `indent`, `syntax`, `json`, `project` and
 the diagnostic parser are the pieces with a contract, and `tests/test.cpp`
-checks them - 224 cases, including that a Windows path's drive letter is not
+checks them - 251 cases, including that a Windows path's drive letter is not
 mistaken for a `line:col` separator, that a brace inside a string is not
 counted, and that `class` is a keyword in C++ and nothing in particular in C,
 and that cl's `bad.c(3,13)` is read as well as cc1's `bad.c:3:13`. They run on

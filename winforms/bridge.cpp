@@ -25,6 +25,7 @@
 #include "project.h"
 #include "syntax.h"
 #include "toolchain.h"
+#include "workspace.h"
 
 namespace {
 
@@ -169,6 +170,7 @@ LONG CALLBACK onFault(EXCEPTION_POINTERS* info) {
 struct Ed1Project {
     editor::Project project;
     std::string answer;
+    editor::Outcome last;   // what the most recent change had to say
 };
 
 struct Ed1Build {
@@ -334,6 +336,82 @@ int ed1_project_config(Ed1Project* project) {
 const char* ed1_project_arch(Ed1Project* project) {
     project->answer = project->project.arch();
     return project->answer.c_str();
+}
+
+int ed1_project_allows(const char* relative, char* why, int whySize) {
+    std::string reason;
+    bool fine = editor::Project::allows(relative ? relative : "", reason);
+    if (why && whySize > 0) {
+        std::strncpy(why, reason.c_str(), static_cast<size_t>(whySize) - 1);
+        why[whySize - 1] = '\0';
+    }
+    return fine ? 1 : 0;
+}
+
+int ed1_project_loaded(Ed1Project* project) { return project->project.loaded() ? 1 : 0; }
+
+const char* ed1_project_root(Ed1Project* project) {
+    project->answer = project->project.root();
+    return project->answer.c_str();
+}
+
+void ed1_project_set_root(Ed1Project* project, const char* path) {
+    project->project.setRoot(path ? path : ".");
+}
+
+const char* ed1_project_relative(Ed1Project* project, const char* path) {
+    project->answer = project->project.relative(path ? path : "");
+    return project->answer.c_str();
+}
+
+const char* ed1_project_file_name(void) { return editor::Project::fileName(); }
+
+const char* ed1_outcome_message(Ed1Project* project) {
+    return project->last.message.c_str();
+}
+
+const char* ed1_outcome_path(Ed1Project* project) { return project->last.path.c_str(); }
+
+int ed1_create_file(Ed1Project* project, const char* relative, const char* group) {
+    project->last = editor::createFile(project->project, relative ? relative : "",
+                                       group ? group : "");
+    return project->last.ok ? 1 : 0;
+}
+
+int ed1_rename_file(Ed1Project* project, const char* fromAbsolute, const char* toRelative) {
+    project->last = editor::renameFile(project->project, fromAbsolute ? fromAbsolute : "",
+                                       toRelative ? toRelative : "");
+    return project->last.ok ? 1 : 0;
+}
+
+int ed1_delete_file(Ed1Project* project, const char* absolute) {
+    project->last = editor::deleteFile(project->project, absolute ? absolute : "");
+    return project->last.ok ? 1 : 0;
+}
+
+int ed1_move_to_group(Ed1Project* project, const char* absolute, const char* group) {
+    project->last = editor::moveToGroup(project->project, absolute ? absolute : "",
+                                        group ? group : "");
+    return project->last.ok ? 1 : 0;
+}
+
+int ed1_add_existing(Ed1Project* project, const char* absolute, const char* group) {
+    project->last = editor::addExisting(project->project, absolute ? absolute : "",
+                                        group ? group : "");
+    return project->last.ok ? 1 : 0;
+}
+
+int ed1_begin_project(Ed1Project* project, const char* directory, const char* name,
+                      const char* firstFile) {
+    project->last = editor::beginProject(project->project, directory ? directory : ".",
+                                         name ? name : "Project",
+                                         firstFile ? firstFile : "");
+    return project->last.ok ? 1 : 0;
+}
+
+int ed1_save_project(Ed1Project* project) {
+    project->last = editor::saveProject(project->project);
+    return project->last.ok ? 1 : 0;
 }
 
 const char* ed1_arch(int index) {

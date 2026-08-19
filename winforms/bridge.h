@@ -104,6 +104,35 @@ int ed1_project_toolchain(Ed1Project* project);
 int ed1_project_config(Ed1Project* project);
 const char* ed1_project_arch(Ed1Project* project);
 
+/* ---- changing the project ------------------------------------------------ */
+
+/* The shape a path may have: the root, or one directory under it, and no
+   deeper. It comes from the core so that both front ends keep one rule; the
+   reason goes into `why` when the answer is no. */
+int ed1_project_allows(const char* relative, char* why, int whySize);
+
+int ed1_project_loaded(Ed1Project* project);
+const char* ed1_project_root(Ed1Project* project);
+void ed1_project_set_root(Ed1Project* project, const char* path);
+const char* ed1_project_relative(Ed1Project* project, const char* path);
+const char* ed1_project_file_name(void);
+
+/* Each of these does the disk work, keeps the project's list in step and
+   writes the project back out - all of it in the core, so the window and the
+   terminal do the same thing rather than two similar things. 1 when it worked;
+   the message and the path say what happened and stay good until the next one. */
+int ed1_create_file(Ed1Project* project, const char* relative, const char* group);
+int ed1_rename_file(Ed1Project* project, const char* fromAbsolute, const char* toRelative);
+int ed1_delete_file(Ed1Project* project, const char* absolute);
+int ed1_move_to_group(Ed1Project* project, const char* absolute, const char* group);
+int ed1_add_existing(Ed1Project* project, const char* absolute, const char* group);
+int ed1_begin_project(Ed1Project* project, const char* directory, const char* name,
+                      const char* firstFile);
+int ed1_save_project(Ed1Project* project);
+
+const char* ed1_outcome_message(Ed1Project* project);
+const char* ed1_outcome_path(Ed1Project* project);
+
 /* ---- compilers ---------------------------------------------------------- */
 
 const char* ed1_arch(int index);              /* 0, 1, 2 */

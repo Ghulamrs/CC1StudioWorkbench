@@ -17,6 +17,7 @@
 #include "json.h"
 #include "project.h"
 #include "toolchain.h"
+#include "workspace.h"
 #include "utf8.h"
 
 namespace {
@@ -774,6 +775,80 @@ void projects() {
     std::filesystem::remove_all(dir);
 }
 
+void operations() {
+    std::printf("changing what the project holds\n");
+
+    std::filesystem::path dir = std::filesystem::temp_directory_path() / "ed1-workspace-test";
+    std::filesystem::remove_all(dir);
+    std::filesystem::create_directories(dir);
+
+    editor::Project project;
+    project.begin(dir.string(), "Work");
+
+    // Making a file: on disk, in the project, and the project written back.
+    editor::Outcome made = editor::createFile(project, "src/one.c", "Sources");
+    check(made.ok, "a file is made");
+    check(std::filesystem::exists(dir / "src" / "one.c"), "and it is there on disk");
+    check(project.groupOf("src/one.c") < project.groups().size(), "and in the project");
+    check(std::filesystem::exists(dir / "ed1.json"), "and the project was written");
+    check(!made.path.empty(), "and it says where the file went");
+
+    check(!editor::createFile(project, "src/one.c", "Sources").ok, "twice is refused");
+    editor::Outcome deep = editor::createFile(project, "a/b/c.c", "Sources");
+    check(!deep.ok, "and so is anything two directories down");
+    check(deep.message.find("two levels") != std::string::npos, "with the rule as the reason");
+    check(!std::filesystem::exists(dir / "a"), "and nothing was written for it");
+
+    // Renaming follows on disk and in the list.
+    editor::Outcome moved =
+        editor::renameFile(project, (dir / "src" / "one.c").string(), "src/two.c");
+    check(moved.ok, "renaming works");
+    check(!std::filesystem::exists(dir / "src" / "one.c"), "the old name is gone");
+    check(std::filesystem::exists(dir / "src" / "two.c"), "the new one is there");
+    check(project.groupOf("src/two.c") < project.groups().size(), "and the project followed");
+
+    // Regrouping changes the lists and nothing else.
+    editor::Outcome grouped =
+        editor::moveToGroup(project, (dir / "src" / "two.c").string(), "Extras");
+    check(grouped.ok, "regrouping works");
+    checkEqual(project.groups()[project.groupOf("src/two.c")].name, "Extras",
+               "into the group asked for");
+    check(std::filesystem::exists(dir / "src" / "two.c"), "and the file has not moved");
+
+    // Adding something that already exists.
+    { std::ofstream f((dir / "src" / "three.c").string().c_str()); f << "int three;\n"; }
+    check(editor::addExisting(project, (dir / "src" / "three.c").string(), "Sources").ok,
+          "a file already on disk can be added");
+    check(!editor::addExisting(project, (dir / "src" / "three.c").string(), "Sources").ok,
+          "but not twice");
+
+    // Deleting.
+    editor::Outcome gone = editor::deleteFile(project, (dir / "src" / "two.c").string());
+    check(gone.ok, "deleting works");
+    check(!std::filesystem::exists(dir / "src" / "two.c"), "the file is gone");
+    check(project.groupOf("src/two.c") == project.groups().size(), "and so is the entry");
+
+    // And what was written survives being read again.
+    editor::Project again;
+    std::string error;
+    check(again.load(dir.string(), error), "the project reads back");
+    check(again.groupOf("src/three.c") < again.groups().size(), "with what was added to it");
+    check(again.groupOf("src/two.c") == again.groups().size(), "and without what was deleted");
+
+    // With no project file there is nothing to write, and the disk work still
+    // stands - which is what lets these run before anyone has made a project.
+    std::filesystem::path bare = dir / "bare";
+    std::filesystem::create_directories(bare);
+    editor::Project none;
+    none.setRoot(bare.string());
+    editor::Outcome loose = editor::createFile(none, "loose.c", "Sources");
+    check(loose.ok, "a file can be made without a project");
+    check(std::filesystem::exists(bare / "loose.c"), "and it is really there");
+    check(!std::filesystem::exists(bare / "ed1.json"), "and no project file was invented");
+
+    std::filesystem::remove_all(dir);
+}
+
 }  // namespace
 
 int main() {
@@ -789,6 +864,7 @@ int main() {
     searching();
     jsonReading();
     projects();
+    operations();
 
     std::printf("\n%d checks, %d failed\n", checks, failures);
     return failures == 0 ? 0 : 1;

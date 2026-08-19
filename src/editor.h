@@ -111,6 +111,7 @@ private:
     void refreshTree();
     void applyProject();
     std::string targetFile() const;
+    std::string groupUnderCursor() const;
     void createFile();
     void renameFile();
     void deleteFile();

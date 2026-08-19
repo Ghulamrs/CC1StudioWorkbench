@@ -11,6 +11,8 @@
 #include "buffer.h"
 #include "path.h"
 #include "process.h"
+#include "settings.h"
+#include "workspace.h"
 #include "debugger.h"
 
 // The seam the window is built on. It is tested from here because the window
@@ -1683,14 +1685,95 @@ void aProjectMadeFromWhatIsThere() {
     std::string why;
     check(again.load(dir, why), "and what was written can be read again");
     check(why.empty(), "without complaint");
-    check(again.groups().size() == 1, "into the one group it was given");
+    check(again.groups().size() == 2, "into the two groups it was given");
+
+    // Headers and sources are different things to look at, so they are in
+    // different groups even when nobody said so.
+    bool headersHoldTheHeader = false, sourcesHoldTheSource = false, headersHoldNoSource = true;
+    for (size_t i = 0; i < again.groups().size(); ++i) {
+        const editor::Group& group = again.groups()[i];
+        for (size_t j = 0; j < group.files.size(); ++j) {
+            if (group.name == "Headers" && group.files[j] == "src/two.h") headersHoldTheHeader = true;
+            if (group.name == "Headers" && group.files[j] == "one.c") headersHoldNoSource = false;
+            if (group.name == "Sources" && group.files[j] == "one.c") sourcesHoldTheSource = true;
+        }
+    }
+    check(headersHoldTheHeader, "the header is in Headers");
+    check(sourcesHoldTheSource, "the source is in Sources");
+    check(headersHoldNoSource, "and neither is in the other");
 
     pth::removeTree(dir);
+}
+
+// What the editor remembers between sessions, and what it opens when there is
+// nothing to remember. Both are about the machine you are on, so both are
+// checked with home pointed somewhere disposable.
+void sayWhereHomeIs(const std::string& where) {
+#ifdef _WIN32
+    _putenv_s("USERPROFILE", where.c_str());
+#else
+    setenv("HOME", where.c_str(), 1);
+#endif
+}
+
+void whatItRemembers() {
+    std::printf("what it remembers, and where a first run opens\n");
+
+    namespace pth = editor::path;
+    std::string realHome = pth::homeDir();
+
+    std::string home = pth::join(pth::tempDir(), "ed1-home-test");
+    pth::removeTree(home);
+    pth::makeDirectories(home);
+    sayWhereHomeIs(home);
+
+    check(pth::homeDir() == home, "home is where the machine says it is");
+    check(editor::settings::fileName().find(".ed1config.json") != std::string::npos,
+          "the editor's own configuration is beside your files");
+    check(editor::settings::lastProject().empty(), "and remembers nothing to begin with");
+
+    // A first run has nothing to go back to, so it is given something to open.
+    std::string demo = editor::demoDirectory();
+    check(!demo.empty(), "a first run is given a project of its own");
+    check(pth::exists(pth::join(demo, "src/first.c")), "with one program in it");
+
+    // Two groups, and Headers empty until there is a header - the place to put
+    // one exists before the first one does.
+    editor::Project made;
+    check(editor::beginFromWhatIsThere(made, demo).ok, "and a project over it");
+    check(made.groups().size() == 2, "with two groups");
+    for (size_t i = 0; i < made.groups().size(); ++i)
+        if (made.groups()[i].name == "Headers")
+            check(made.groups()[i].files.empty(), "Headers empty until there is a header");
+
+    std::string was = readWholeFile(pth::join(demo, "src/first.c"));
+    check(was.find("twice") != std::string::npos, "which has a call worth stepping into");
+
+    // Made once: asking again must not write over what you have done to it.
+    writeSource(pth::join(demo, "src/first.c"), "int mine(void) { return 1; }\n");
+    check(editor::demoDirectory() == demo, "asking again gives the same directory");
+    check(readWholeFile(pth::join(demo, "src/first.c")).find("mine") != std::string::npos,
+          "and leaves what you have done to it alone");
+
+    // Remembering, and forgetting what has gone away.
+    check(editor::settings::rememberProject(demo), "a project can be remembered");
+    check(editor::settings::lastProject() == pth::absolute(demo), "and is given back");
+
+    std::string gone = pth::join(home, "taken-away");
+    pth::makeDirectories(gone);
+    check(editor::settings::rememberProject(gone), "another can be remembered over it");
+    pth::removeTree(gone);
+    check(editor::settings::lastProject().empty(),
+          "one that has since been deleted is not offered");
+
+    sayWhereHomeIs(realHome);
+    pth::removeTree(home);
 }
 
 int main() {
     paths();
     aProjectMadeFromWhatIsThere();
+    whatItRemembers();
     talkingToAChild();
     whatADebuggerSays();
     debuggingForReal();

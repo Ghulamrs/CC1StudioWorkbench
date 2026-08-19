@@ -1,9 +1,11 @@
 #include "editor.h"
 
+#include "about.h"
 #include "utf8.h"
 #include "symbols.h"
 #include "workspace.h"
 #include "path.h"
+#include "settings.h"
 
 #include <cstdio>
 #include <cstdlib>
@@ -283,6 +285,26 @@ void Editor::applyProject() {
         if (project_.arch() == kArches[i]) arch_ = i;
 }
 
+void Editor::openFirstFile() {
+    if (!buf_.path().empty()) return;   // something was named, and it wins
+
+    const std::vector<Group>& groups = project_.groups();
+    for (size_t i = 0; i < groups.size(); ++i)
+        for (size_t j = 0; j < groups[i].files.size(); ++j) {
+            std::string where = project_.absolute(groups[i].files[j]);
+            if (!path::exists(where)) continue;   // listed but not there any more
+
+            // Whatever opening the project had to say is the news on a first
+            // run - that one was made, or which one it is. Which file happens
+            // to be in front of you is on the status bar either way, so it
+            // does not need the line as well.
+            std::string already = message_;
+            open(where);
+            if (!already.empty()) say(already);
+            return;
+        }
+}
+
 void Editor::refreshTree() {
     if (project_.loaded()) {
         tree_.showProject(project_);
@@ -299,7 +321,16 @@ void Editor::openProject(const std::string& path) {
     if (project_.load(path, error)) {
         applyProject();
         refreshTree();
-        say(project_.name() + " - " + number(project_.groups().size()) + " groups");
+        // Remembered so that the next run opens here without being told. It is
+        // the editor's own configuration and not the project's - see
+        // settings.h for why it cannot live in an ed1.json.
+        settings::rememberProject(project_.root());
+        // "ready" rather than a bare count: it is the first thing on the line
+        // when the editor comes up on a project it was told about or one it
+        // remembered, and what it means is that there is nothing to do first.
+        size_t howMany = project_.groups().size();
+        say("ready - " + project_.name() + ", " + number(howMany) +
+            (howMany == 1 ? " group" : " groups"));
     } else if (error.empty()) {
         // Nothing to read, so one is written from what is in the directory
         // rather than opening without a project at all. An editor that needs a
@@ -309,6 +340,7 @@ void Editor::openProject(const std::string& path) {
         if (made.ok) {
             applyProject();
             refreshTree();
+            settings::rememberProject(project_.root());
             say(made.message);
         } else {
             tree_.setRoot(path);
@@ -1600,6 +1632,18 @@ void Editor::debugStop() {
     locals_.clear();
 }
 
+void Editor::showAbout() {
+    panelOpen_ = true;
+    tab_ = TabConsole;
+    console_.clear();
+
+    std::vector<std::string> said = about::lines();
+    for (size_t i = 0; i < said.size(); ++i) console_.push_back(said[i]);
+
+    panelOff_ = 0;
+    say(std::string(about::name()) + " " + about::version());
+}
+
 void Editor::showKeys() {
     panelOpen_ = true;
     tab_ = TabConsole;
@@ -1720,6 +1764,7 @@ void Editor::perform(Action action) {
             say("compiler: cl, for every file");
             break;
         case ActionKeys:         showKeys(); break;
+        case ActionAbout:        showAbout(); break;
         case ActionNone:         break;
     }
 }

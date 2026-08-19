@@ -44,6 +44,11 @@ public:
     void switchTo(size_t index);
     void nextDocument(int by);
     void openProject(const std::string& path);
+
+    // The first file the project lists, opened when nothing was named on the
+    // command line - so the editor comes up with something in it rather than
+    // with an empty sheet.
+    void openFirstFile();
     void setCc1(const std::string& path) { tool_.cc1 = path; }
     void setCl(const std::string& path) { tool_.cl = path; }
     void setToolchain(ToolchainKind kind) { tool_.kind = kind; }
@@ -135,6 +140,7 @@ private:
     void saveProject();
     void resetDebug();
     void showKeys();
+    void showAbout();
 
     void stash();
     void restore();

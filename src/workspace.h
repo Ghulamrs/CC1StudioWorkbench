@@ -55,6 +55,18 @@ Outcome saveProject(Project& project);
 // would be the editor destroying work to save itself an error message.
 Outcome beginFromWhatIsThere(Project& project, const std::string& directory);
 
+// Where a first run opens. There is nothing to remember the first time and an
+// empty window teaches nothing, so a small project is made in your own files -
+// one C program with a loop and a function in it, which is enough to build,
+// run, and stop inside with a breakpoint.
+//
+// Made once. Afterwards it is an ordinary project like any other, and anything
+// you do to it stays done.
+//
+// Gives back the directory to open, or empty when it could not be made - on a
+// machine that will not say where home is, which is not worth stopping for.
+std::string demoDirectory();
+
 }  // namespace editor
 
 #endif

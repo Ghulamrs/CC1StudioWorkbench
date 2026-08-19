@@ -963,6 +963,15 @@ void aDirectoryWithNoProject(const std::string& ed1) {
     Screen again = drive(ed1, "--project \"" + dir.string() + "\"", ctrl('q'), dir);
     check(!wasShown(again, "so one was made"), "opening it again makes nothing");
     check(onScreen(again, "one.c"), "and reads back what was written");
+    check(wasShown(again, "ready"), "and says it is ready, having nothing to do first");
+
+    // Help is the last column, and About is under it. Checked from here as
+    // well as in the window, since the two show the same lines from the core.
+    Screen about = drive(ed1, "--project \"" + dir.string() + "\"",
+                         kF10 + times(kRight, 7) + kDown + kEnter + ctrl('q'), dir);
+    check(onScreen(about, "CC1 Studio Workbench 1.1"), "About names the product and version");
+    check(onScreen(about, "G. R. Akhtar"), "and who it belongs to");
+    check(onScreen(about, "Islamabad"), "and where they are, which the last line must not lose");
 
     // A project file that will not parse is somebody's work and is left alone.
     writeFile(dir / "ed1.json", "{ this is not json\n");

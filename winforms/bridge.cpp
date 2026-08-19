@@ -19,6 +19,7 @@
 #pragma comment(lib, "dbghelp.lib")
 #endif
 
+#include "about.h"
 #include "compile.h"
 #include "debugger.h"
 #include "find.h"
@@ -238,6 +239,8 @@ char* ed1_indent_for(const char* text, int row, int width, int tabs, int caseInd
 }
 
 void ed1_free(char* what) { std::free(what); }
+
+char* ed1_about(void) { return give(join(editor::about::lines())); }
 
 char* ed1_describe_build(const char* assembly) {
     return give(join(editor::describe(editor::symbolsIn(split(assembly)))));

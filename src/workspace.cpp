@@ -1,6 +1,7 @@
 #include "workspace.h"
 
 #include <cstdio>
+#include <cstring>
 #include <vector>
 
 #include "path.h"
@@ -80,17 +81,25 @@ Outcome renameFile(Project& project, const std::string& fromAbsolute,
 
 namespace {
 
+bool endsWith(const std::string& name, const std::string& suffix) {
+    if (name.size() < suffix.size()) return false;
+    return name.compare(name.size() - suffix.size(), suffix.size(), suffix) == 0;
+}
+
 // The suffixes worth putting in a project made without being told. Anything
 // else in the directory is left out rather than guessed at.
 bool worthAdding(const std::string& name) {
     const char* const kinds[6] = {".c", ".h", ".cpp", ".hpp", ".cc", ".s"};
-    for (size_t i = 0; i < 6; ++i) {
-        size_t at = name.size();
-        std::string suffix = kinds[i];
-        if (at < suffix.size()) continue;
-        if (name.compare(at - suffix.size(), suffix.size(), suffix) == 0) return true;
-    }
+    for (size_t i = 0; i < 6; ++i)
+        if (endsWith(name, kinds[i])) return true;
     return false;
+}
+
+// Which of the two groups it belongs in. What you declare and what you write
+// are different things to look at, and a project made without being told
+// should still put them in different places.
+bool isHeader(const std::string& name) {
+    return endsWith(name, ".h") || endsWith(name, ".hpp");
 }
 
 // The same directories the pane on the left refuses to show: build output and
@@ -107,6 +116,11 @@ Outcome beginFromWhatIsThere(Project& project, const std::string& directory) {
     std::string root = path::absolute(directory);
     project.begin(root, path::filename(root));
 
+    // Both groups exist before anything is found, so a project with no headers
+    // yet has the place to put the first one rather than needing the group made
+    // at the same moment as the file.
+    project.addGroup("Headers");
+
     // Here, and one level down. Two levels is what a project path is allowed
     // anyway, so there would be nowhere to put anything deeper.
     size_t found = 0;
@@ -114,7 +128,7 @@ Outcome beginFromWhatIsThere(Project& project, const std::string& directory) {
     for (size_t i = 0; i < here.size(); ++i) {
         if (!here[i].directory) {
             if (!worthAdding(here[i].name)) continue;
-            project.addFile(here[i].name, "Sources");
+            project.addFile(here[i].name, isHeader(here[i].name) ? "Headers" : "Sources");
             ++found;
             continue;
         }
@@ -123,7 +137,8 @@ Outcome beginFromWhatIsThere(Project& project, const std::string& directory) {
         std::vector<path::Entry> under = path::entries(path::join(root, here[i].name));
         for (size_t j = 0; j < under.size(); ++j) {
             if (under[j].directory || !worthAdding(under[j].name)) continue;
-            project.addFile(here[i].name + "/" + under[j].name, "Sources");
+            project.addFile(here[i].name + "/" + under[j].name,
+                            isHeader(under[j].name) ? "Headers" : "Sources");
             ++found;
         }
     }
@@ -138,6 +153,54 @@ Outcome beginFromWhatIsThere(Project& project, const std::string& directory) {
         done.message += std::string(" with ") + many + " file" + (found == 1 ? "" : "s");
     }
     return done;
+}
+
+// Small on purpose: every line of it is doing something you can watch. The
+// loop is what makes a breakpoint worth setting, and the call is what makes
+// stepping into something worth doing.
+const char* const kDemoProgram =
+    "#include <stdio.h>\n"
+    "\n"
+    "/* A first program, and something to try the debugger on.\n"
+    "\n"
+    "   F5 builds and runs it. F9 on the line below puts a breakpoint there,\n"
+    "   F8 starts it and stops on that line, and F6 steps into twice(). The\n"
+    "   Debug tab shows what total and i are while you are standing there. */\n"
+    "\n"
+    "static int twice(int n)\n"
+    "{\n"
+    "    int doubled = n * 2;\n"
+    "    return doubled;\n"
+    "}\n"
+    "\n"
+    "int main(void)\n"
+    "{\n"
+    "    int total = 0;\n"
+    "    for (int i = 1; i <= 3; ++i) {\n"
+    "        total = total + twice(i);\n"
+    "    }\n"
+    "    printf(\"total %d\\n\", total);\n"
+    "    return 0;\n"
+    "}\n";
+
+std::string demoDirectory() {
+    std::string home = path::homeDir();
+    if (home.empty()) return std::string();
+
+    std::string dir = path::join(home, "cc1-demo");
+    std::string file = path::join(dir, "src/first.c");
+
+    // Made once. If it is already there it is yours now, and whatever you have
+    // done to it is what opens.
+    if (path::exists(file)) return dir;
+
+    if (!path::makeDirectories(path::join(dir, "src"))) return std::string();
+
+    FILE* out = std::fopen(file.c_str(), "wb");
+    if (!out) return std::string();
+    std::fwrite(kDemoProgram, 1, std::strlen(kDemoProgram), out);
+    std::fclose(out);
+    return dir;
 }
 
 Outcome deleteFile(Project& project, const std::string& absolute) {

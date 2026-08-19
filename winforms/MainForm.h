@@ -303,6 +303,11 @@ private:
                                   gcnew EventHandler(this, &MainForm::OnToolCl));
         bar->Items->Add(tools);
 
+        ToolStripMenuItem^ help = gcnew ToolStripMenuItem("&Help");
+        help->DropDownItems->Add("About " + ProductName(), nullptr,
+                                 gcnew EventHandler(this, &MainForm::OnAbout));
+        bar->Items->Add(help);
+
         MainMenuStrip = bar;
         Controls->Add(bar);
 
@@ -977,7 +982,7 @@ private:
         config_ = ed1_project_config(project_);
         arch_ = FromUtf8(ed1_project_arch(project_));
 
-        what_->Text = String::Format("{0} - {1} groups",
+        what_->Text = String::Format("ready - {0}, {1} groups",
                                      FromUtf8(ed1_project_name(project_)),
                                      ed1_project_groups(project_));
     }
@@ -1012,7 +1017,7 @@ private:
         config_ = ed1_project_config(project_);
         arch_ = FromUtf8(ed1_project_arch(project_));
 
-        what_->Text = String::Format("{0} - {1} groups",
+        what_->Text = String::Format("ready - {0}, {1} groups",
                                      FromUtf8(ed1_project_name(project_)), groups);
     }
 
@@ -1253,6 +1258,12 @@ private:
     }
 
     void OnExit(Object^, EventArgs^) { Close(); }
+
+    void OnAbout(Object^, EventArgs^) {
+        MessageBox::Show(this, TakeUtf8(ed1_about())->Replace("\n", "\r\n"),
+                         "About " + ProductName(),
+                         MessageBoxButtons::OK, MessageBoxIcon::Information);
+    }
 
     // ---- building ----------------------------------------------------------
 

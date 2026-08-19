@@ -205,6 +205,10 @@ const char* ed1_shown_run_command(const char* cc1, const char* cl, int kind,
                                   const char* source, int language, const char* arch,
                                   int config);
 
+/* Who this is and whose it is, a line at a time joined with \n. The window puts
+   it in a box and the terminal prints it in its panel; neither writes it. */
+char* ed1_about(void);
+
 /* ---- stopping on a line ------------------------------------------------- */
 
 /* A program built and left where it is, which is what a debugger attaches to.

@@ -61,7 +61,8 @@ enum Action {
     ActionToolAuto,
     ActionToolCc1,
     ActionToolMsvc,
-    ActionKeys
+    ActionKeys,
+    ActionAbout
 };
 
 struct MenuItem {

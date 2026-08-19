@@ -267,6 +267,20 @@ std::string tempDir() {
     return out;
 }
 
+std::string homeDir() {
+#ifdef _WIN32
+    const char* named = std::getenv("USERPROFILE");
+    if (!named) named = std::getenv("HOMEPATH");
+#else
+    const char* named = std::getenv("HOME");
+#endif
+    if (!named || !*named) return std::string();
+
+    std::string out = withSlashes(named);
+    while (out.size() > 1 && out[out.size() - 1] == '/') out.resize(out.size() - 1);
+    return out;
+}
+
 std::vector<Entry> entries(const std::string& directory, bool* ok) {
     std::vector<Entry> found;
     if (ok) *ok = false;

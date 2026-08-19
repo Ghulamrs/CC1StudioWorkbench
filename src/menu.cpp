@@ -96,6 +96,7 @@ Menu::Menu() : active_(false), dropped_(false), column_(0), item_(0) {
     MenuColumn help;
     help.title = "Help";
     help.items.push_back({"Keys", "", ActionKeys});
+    help.items.push_back({"About", "", ActionAbout});
     columns_.push_back(help);
 }
 

@@ -62,6 +62,11 @@ bool removeTree(const std::string& path);
 
 std::string tempDir();
 
+// Where this person's own files live, which is where anything the editor
+// remembers between sessions belongs - it is about them and not about any one
+// project. Empty when the machine will not say.
+std::string homeDir();
+
 struct Entry {
     std::string name;
     bool directory;

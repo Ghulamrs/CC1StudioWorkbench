@@ -39,7 +39,8 @@ SRC := src/main.cpp src/editor.cpp src/buffer.cpp src/compile.cpp \
        src/indent.cpp src/menu.cpp src/tree.cpp src/syntax.cpp \
        src/toolchain.cpp src/json.cpp src/project.cpp src/find.cpp \
        src/utf8.cpp src/workspace.cpp src/symbols.cpp src/demangle_win.cpp \
-       src/path.cpp src/process.cpp src/debugger.cpp src/terminal_common.cpp \
+       src/path.cpp src/process.cpp src/debugger.cpp src/settings.cpp src/about.cpp \
+       src/terminal_common.cpp \
        $(TERM_SRC)
 
 # The objects go under src/obj rather than beside the sources they came from,
@@ -74,14 +75,16 @@ test: tests/test
 tests/test: tests/test.cpp src/compile.cpp src/indent.cpp src/syntax.cpp \
             src/toolchain.cpp src/json.cpp src/project.cpp src/find.cpp \
        src/utf8.cpp src/workspace.cpp src/symbols.cpp src/demangle_win.cpp \
-            src/path.cpp src/process.cpp src/debugger.cpp src/buffer.cpp \
+            src/path.cpp src/process.cpp src/debugger.cpp src/settings.cpp src/about.cpp \
+            src/buffer.cpp \
             winforms/bridge.cpp winforms/bridge.h src/compile.h src/indent.h src/syntax.h \
             src/json.h src/project.h src/path.h src/buffer.h
 	$(CXX) $(CXXFLAGS) -Isrc -Iwinforms -o $@ tests/test.cpp winforms/bridge.cpp \
 	    src/compile.cpp src/indent.cpp \
 	    src/syntax.cpp src/toolchain.cpp src/json.cpp src/project.cpp src/find.cpp \
        src/utf8.cpp src/workspace.cpp src/symbols.cpp src/demangle_win.cpp \
-	    src/path.cpp src/process.cpp src/debugger.cpp src/buffer.cpp
+	    src/path.cpp src/process.cpp src/debugger.cpp src/settings.cpp src/about.cpp \
+	    src/buffer.cpp
 
 # The other half of the checking: the editor itself, driven by keystrokes.
 # CC1 names a compiler for the build cases; without one they are skipped.

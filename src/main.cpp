@@ -4,7 +4,9 @@
 #include <string>
 
 #include "editor.h"
+#include "settings.h"
 #include "symbols.h"
+#include "workspace.h"
 
 int main(int argc, char** argv) {
     std::string file;
@@ -84,11 +86,21 @@ int main(int argc, char** argv) {
 
     editor::Editor ed;
 
-    // The project pane opens on the file's own directory unless told otherwise,
-    // which is nearly always the directory someone wants to see.
-    if (project.empty()) {
+    // The project pane opens on the file's own directory unless told
+    // otherwise, which is nearly always the directory someone wants to see.
+    if (project.empty() && !file.empty()) {
         size_t at = file.find_last_of("/\\");
         project = (at == std::string::npos) ? std::string(".") : file.substr(0, at);
+    }
+
+    // Nothing named at all: the project you were last in, and failing that a
+    // small one made for the purpose. Opening on "." was what this did before,
+    // and it meant a first run showed whatever directory you happened to be
+    // standing in, which is rarely a project and never a welcome.
+    if (project.empty()) {
+        project = editor::settings::lastProject();
+        if (project.empty()) project = editor::demoDirectory();
+        if (project.empty()) project = ".";
     }
 
     // Read first, so that anything named on the command line below overrides
@@ -115,6 +127,7 @@ int main(int argc, char** argv) {
     if (!cl.empty()) ed.setCl(cl);
 
     if (!file.empty()) ed.open(file);
+    else ed.openFirstFile();   // something in it, rather than an empty sheet
     ed.run();
     return 0;
 }

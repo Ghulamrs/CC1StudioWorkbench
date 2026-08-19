@@ -63,6 +63,13 @@ param(
     # How long to wait for the build, in seconds.
     [int]$BuildSeconds = 10,
 
+    # Grab the screen where the window is, rather than asking the window to
+    # draw itself. PrintWindow renders one window and nothing on top of it,
+    # which is right nearly always and wrong for a dialog: an About box is its
+    # own window, so a picture of the editor with one in front of it has to
+    # come off the screen.
+    [switch]$WithDialogs,
+
     # Which of the panel's tabs to leave showing: Console, Debug or Assembly.
     [ValidateSet("", "Console", "Debug", "Assembly")]
     [string]$Panel = ""
@@ -151,6 +158,20 @@ if ($Panel -ne "") {
 
 $box = New-Object Ed1Window+RECT
 [void][Ed1Window]::GetWindowRect($script:handle, [ref]$box)
+
+if ($WithDialogs) {
+    $wide = $box.R - $box.L
+    $tall = $box.B - $box.T
+    $shot = New-Object System.Drawing.Bitmap($wide, $tall)
+    $onto = [System.Drawing.Graphics]::FromImage($shot)
+    $onto.CopyFromScreen($box.L, $box.T, 0, 0, (New-Object System.Drawing.Size($wide, $tall)))
+    $shot.Save($Out, [System.Drawing.Imaging.ImageFormat]::Png)
+    $onto.Dispose()
+    $shot.Dispose()
+    Write-Output "saved $Out"
+    if ($editorProcess -ne $null -and -not $editorProcess.HasExited) { $editorProcess.Kill() }
+    exit 0
+}
 $picture = New-Object System.Drawing.Bitmap ($box.R - $box.L), ($box.B - $box.T)
 $canvas = New-Object System.Drawing.Graphics
 $canvas = [System.Drawing.Graphics]::FromImage($picture)

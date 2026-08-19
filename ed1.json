@@ -60,7 +60,8 @@
       "winforms/Program.cpp",
       "winforms/bridge.cpp",
       "winforms/bridge.h",
-      "winforms/ed1gui.vcxproj"
+      "winforms/ed1gui.vcxproj",
+      "winforms/show.ps1"
     ]
   }
 }

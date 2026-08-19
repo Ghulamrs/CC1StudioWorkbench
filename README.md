@@ -273,6 +273,21 @@ typing went into, and there is no sense in keeping a second one beside it.
 Typed flat into the window, `int twice(int n) {` and four lines after it come
 back laid out, with the closing brace snapping to column 0 as it is typed.
 
+`winforms/show.ps1` starts it, optionally builds, and saves a picture of the
+window - which is how this front end has been looked at throughout, since it is
+written on a Mac and only runs on Windows:
+
+```
+.\show.ps1 -Project C:\Users\me\Editor -Files examples\smart.cpp -Build
+```
+
+It photographs the editor's own window with `PrintWindow` rather than grabbing
+the screen, so it gets the window even when something is in front of it and
+captures nothing else that happens to be on the desktop. A window needs a
+desktop and an ssh session has none, so from a remote shell it must be run in
+the logged-on session - the script's own header gives the `schtasks /it`
+incantation for that.
+
 The managed form talks to it through `winforms/bridge.h`, which names no C++
 type at all - opaque handles and char pointers, nothing else. That is not
 fastidiousness; three separate things about mixed native/managed binaries have

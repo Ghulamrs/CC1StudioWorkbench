@@ -1275,12 +1275,39 @@ const char* const kLldbStop =
     "   12  \tfor (int i = 1; i <= 3; ++i) {\n"
     "-> 13  \t    total = total + twice(i);\n";
 
+// A function with two arguments, which is where the name used to be lost: the
+// comma inside the argument list was the last one on the line, and the reader
+// cut there. Every function in every other recording here takes one argument
+// or none, so nothing noticed until a project with a two-argument function was
+// stepped into.
+const char* const kLldbStopTwoArgs =
+    "Process 41207 stopped\n"
+    "* thread #1, queue = 'com.apple.main-thread', stop reason = breakpoint 1.1\n"
+    "    frame #0: 0x0000000100000440 sums`addUp(a=2, b=40) at sum.c:3:27\n"
+    "   2   \t\n"
+    "-> 3   \tint addUp(int a, int b) { return a + b; }\n";
+
+// The same shape from gdb, which writes the address and " in " when it did not
+// stop at the start of a line.
+const char* const kGdbStopTwoArgs =
+    "Breakpoint 1, addUp (a=2, b=40) at sum.c:3\n"
+    "3\tint addUp(int a, int b) { return a + b; }\n";
+
 const char* const kGdbStop =
     "Breakpoint 1, main () at dbg.c:13\n"
     "13\t        total = total + twice(i);\n";
 
 void whatADebuggerSays() {
     std::printf("where a debugger says it stopped\n");
+
+    editor::Stop twoArgs = editor::dbg_readStop(editor::DebuggerLldb, kLldbStopTwoArgs);
+    checkEqual(twoArgs.function, "addUp", "lldb: a two-argument function keeps its name");
+    checkEqual(twoArgs.file, "sum.c", "lldb: and the file it is in");
+    check(twoArgs.line == 3, "lldb: on the line it stopped at");
+
+    editor::Stop twoArgsGdb = editor::dbg_readStop(editor::DebuggerGdb, kGdbStopTwoArgs);
+    checkEqual(twoArgsGdb.function, "addUp", "gdb: the same, past its own preamble");
+    check(twoArgsGdb.line == 3, "gdb: and the line");
 
     editor::Stop lldb = editor::dbg_readStop(editor::DebuggerLldb, kLldbStop);
     check(lldb.stopped, "lldb's stop is read as a stop");

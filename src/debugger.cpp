@@ -47,6 +47,14 @@ std::vector<std::string> preamble(DebuggerKind kind) {
         // Without this gdb stops every screenful to ask, and the answer it is
         // waiting for never comes down a pipe.
         said.push_back("set pagination off");
+        // And without this it folds a long line, which is not cosmetic here:
+        // where it stopped is read from "function (args) at file:line", and a
+        // long enough path makes gdb put the "at file:line" half on a line of
+        // its own. What is then read is a stop with no function in it - and
+        // only for projects whose path is long, which is why every suite here
+        // was green while the editor showed a blank function name on the box
+        // and not on the Mac.
+        said.push_back("set width unlimited");
         said.push_back("set breakpoint pending on");
     } else if (kind == DebuggerCdb) {
         // Line information is not loaded unless it is asked for, and without
@@ -360,18 +368,28 @@ Stop dbg_readStop(DebuggerKind kind, const std::string& said) {
         std::string front = line.substr(0, at);
         size_t tick = front.find_last_of('`');
         if (tick != std::string::npos) front = front.substr(tick + 1);
-        size_t comma = front.find_last_of(',');
-        if (comma != std::string::npos) front = front.substr(comma + 1);
 
-        // gdb names the address before the function when it did not stop at
-        // the start of a line: "0x00000000004011b3 in main ()".
-        size_t in = front.rfind(" in ");
-        if (in != std::string::npos) front = front.substr(in + 4);
         // gdb writes "main ()" and lldb writes "twice(n=1)": the name is what
         // is before the bracket either way, and the arguments are not part of
         // it - they are in the variables, spelled properly.
+        //
+        // This has to come before the comma below, and did not, which cost the
+        // name of every function taking more than one argument: lldb prints
+        // "sums`addUp(a=2, b=40)", the comma inside the arguments was the last
+        // one on the line, and what came back was "b=40)". One argument or
+        // none has no comma, so every test here had passed.
         size_t bracket = front.find('(');
         if (bracket != std::string::npos) front = front.substr(0, bracket);
+
+        // gdb puts what it was doing before the name: "Breakpoint 1, main ()".
+        size_t comma = front.find_last_of(',');
+        if (comma != std::string::npos) front = front.substr(comma + 1);
+
+        // and names the address before it when it did not stop at the start of
+        // a line: "0x00000000004011b3 in main ()".
+        size_t in = front.rfind(" in ");
+        if (in != std::string::npos) front = front.substr(in + 4);
+
         stop.function = trimmed(front);
     }
 

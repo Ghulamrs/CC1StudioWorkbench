@@ -68,6 +68,7 @@ Menu::Menu() : active_(false), dropped_(false), column_(0), item_(0) {
     MenuColumn debug;
     debug.title = "Debug";
     debug.items.push_back({"Start / continue", "F8", ActionDebug});
+    debug.items.push_back({"Debug project", "", ActionDebugProject});
     debug.items.push_back({"Toggle breakpoint", "F9", ActionToggleBreak});
     debug.items.push_back({"Step over", "F7", ActionStepOver});
     debug.items.push_back({"Step into", "F6", ActionStepInto});

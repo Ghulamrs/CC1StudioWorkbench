@@ -215,7 +215,7 @@ Editor::Editor()
       cx_(0), cy_(0), rx_(0), rowoff_(0), coloff_(0),
       treeSel_(0), treeOff_(0), treeOpen_(true),
       panelOff_(0), panelOpen_(true), tab_(TabConsole),
-      focus_(FocusText), lang_(LangPlain), config_(ConfigDebug), arch_(0), numbers_(true), needsDraw_(true),
+      focus_(FocusText), lang_(LangPlain), config_(ConfigDebug), arch_(0), numbers_(true), needsDraw_(true), debugTemporary_(true),
       stopLine_(0),
       marked_(false), markRow_(0), markCol_(0),
       quitConfirm_(0), running_(true),
@@ -1928,11 +1928,34 @@ void Editor::showStop(const Stop& where) {
         (where.function.empty() ? std::string() : " in " + where.function));
 }
 
-void Editor::debug() {
+void Editor::debug(bool project) {
     if (debugger_.running()) { showStop(debugger_.resume()); return; }
 
-    ToolchainKind kind = resolve(tool_, lang_);
-    if (!canCompile(kind, lang_)) { say(refusal(kind, lang_)); return; }
+    // What is going under the debugger, and in what language. For the project
+    // that is settled before anything else is asked, because the refusals -
+    // no build entry, both languages at once - are about the project rather
+    // than about debugging, and they read better said first.
+    std::vector<std::string> sources;
+    Language lang = lang_;
+    if (project) {
+        std::string why, detail;
+        if (!project_.targetSources(sources, lang, why, &detail)) {
+            say(why);
+            if (!detail.empty()) {
+                panelOpen_ = true;
+                tab_ = TabConsole;
+                console_.clear();
+                console_.push_back(why);
+                console_.push_back("");
+                wrapInto(console_, detail, static_cast<size_t>(screenCols_ - 4));
+                panelOff_ = 0;
+            }
+            return;
+        }
+    }
+
+    ToolchainKind kind = resolve(tool_, lang);
+    if (!canCompile(kind, lang)) { say(refusal(kind, lang)); return; }
     if (!runsHere(kind, kArches[arch_])) { say(whyNotRun(kind, kArches[arch_])); return; }
 
     if (dbg_for(kind, kArches[arch_]) == DebuggerNone) {
@@ -1943,23 +1966,40 @@ void Editor::debug() {
         say("release is built without -g - Ctrl-D for debug, then F8");
         return;
     }
-    if (buf_.dirty() || buf_.path().empty()) {
+    if (project) {
+        if (!saveEveryDirty()) return;
+    } else if (buf_.dirty() || buf_.path().empty()) {
         if (!save()) return;
     }
 
     panelOpen_ = true;
     tab_ = TabConsole;
     console_.clear();
-    console_.push_back("$ building for the debugger");
+    console_.push_back(project ? "$ building the project for the debugger"
+                               : "$ building for the debugger");
+    if (project)
+        for (size_t i = 0; i < sources.size(); ++i)
+            console_.push_back("    " + project_.relative(sources[i]));
     panelOff_ = 0;
     say("building for the debugger ...");
     refresh();
 
-    debugBuilt_ = buildProgram(tool_, kind, buf_.path(), lang_, kArches[arch_], config_,
-                               consoleSink, this);
+    // The project's program is built where the project keeps it and is not the
+    // editor's to remove afterwards; a single file's is a temporary thing made
+    // to be stepped through and cleared away.
+    debugTemporary_ = !project;
+    if (project)
+        debugBuilt_ = buildTarget(tool_, kind, sources, lang, kArches[arch_], config_,
+                                  project_.targetProgram(), consoleSink, this);
+    else
+        debugBuilt_ = buildProgram(tool_, kind, buf_.path(), lang, kArches[arch_], config_,
+                                   consoleSink, this);
     lastDiag_ = debugBuilt_.diag;
     if (!debugBuilt_.ok) {
         if (debugBuilt_.diag.present) {
+            std::string where = debugBuilt_.diag.file;
+            if (!where.empty() && !path::exists(where)) where = project_.absolute(where);
+            if (!where.empty() && path::exists(where) && where != buf_.path()) open(where);
             cy_ = debugBuilt_.diag.line - 1;
             if (cy_ >= buf_.lineCount()) cy_ = buf_.lineCount() - 1;
             cx_ = debugBuilt_.diag.col - 1;
@@ -1970,7 +2010,7 @@ void Editor::debug() {
         } else {
             say(std::string(toolchainName(kind)) + " built no program - see the console");
         }
-        removeProgram(debugBuilt_);
+        if (debugTemporary_) removeProgram(debugBuilt_);
         debugBuilt_ = Built();
         return;
     }
@@ -1979,7 +2019,7 @@ void Editor::debug() {
         const char* named = dbg_name(dbg_for(kind, kArches[arch_]));
         console_.push_back(std::string(named) + " could not be started");
         say(std::string(named) + " could not be started - is it installed?");
-        removeProgram(debugBuilt_);
+        if (debugTemporary_) removeProgram(debugBuilt_);
         debugBuilt_ = Built();
         return;
     }
@@ -2006,7 +2046,7 @@ void Editor::debugStep(Action how) {
 
 void Editor::debugStop() {
     if (debugger_.running()) debugger_.stop();
-    removeProgram(debugBuilt_);
+    if (debugTemporary_) removeProgram(debugBuilt_);
     debugBuilt_ = Built();
     stopFile_.clear();
     stopLine_ = 0;
@@ -2033,6 +2073,8 @@ void Editor::showKeys() {
     console_.push_back("F5           run this file        F4       build the project");
     console_.push_back("F1           these keys");
     console_.push_back("F9 / F8      breakpoint / debug   F7 / F6  step over / into");
+    console_.push_back("             Debug menu: Debug project puts the project's own");
+    console_.push_back("             program under the debugger instead of this file");
     console_.push_back("F2 / F3      previous / next file Ctrl-L   line numbers");
     console_.push_back("Ctrl-K       automatic, cc1, cl   Ctrl-T   next target");
     console_.push_back("Ctrl-D       debug or release");
@@ -2095,7 +2137,8 @@ void Editor::perform(Action action) {
         case ActionBuildProject: buildProject(false); break;
         case ActionRunProject:   buildProject(true); break;
         case ActionToggleBreak:  toggleBreak(); break;
-        case ActionDebug:        debug(); break;
+        case ActionDebug:        debug(false); break;
+        case ActionDebugProject: debug(true); break;
         case ActionStepOver:
         case ActionStepInto:
         case ActionStepOut:      debugStep(action); break;

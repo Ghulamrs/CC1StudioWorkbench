@@ -680,6 +680,29 @@ void buildingTheProject(const std::string& ed1, const std::string& cc1) {
     check(onScreen(ran, "answer 42"), "running the project runs the linked program");
     check(onScreen(ran, "returned 0"), "and reports what it returned");
 
+#ifdef _WIN32
+    // Nothing to stop inside here: cc1 writes MASM for this target and MASM
+    // carries no line table. The single-file case above already checks that
+    // the editor says so rather than failing quietly.
+    std::printf("  (x86_64-windows carries no line table, so the project's debugger is not tried)\n");
+#else
+    // Open sum.c, put the caret on the line that adds, break there, and ask
+    // the Debug menu for the project rather than F8 for the file. The
+    // breakpoint is in the file that has no main in it, which is the point:
+    // one program, two sources, and the line has to be found in the right one.
+    Screen stopped = drive(ed1, "\"" + (dir / "src" / "sum.c").string() + "\" " + arguments,
+                           times(kDown, 2) + kF9 +
+                               kF10 + times(kRight, 4) + kDown + kEnter + ctrl('q'),
+                           dir);
+    // "sum.c:3 in addUp" rather than "addUp" anywhere: the word is in the
+    // source on the screen as well, and a check that the source is on the
+    // screen is not a check that the debugger read the frame.
+    check(onScreen(stopped, "sum.c:3 in addUp"),
+          "the project's debugger stops in the file and function asked for");
+    check(onScreen(stopped, "a = 2"), "with the argument it was called with");
+    check(onScreen(stopped, "b = 40"), "and the other one");
+#endif
+
     // An error in a file that is not open opens it first. Nothing is opened at
     // startup here, so the caret arriving in main.c is the whole check.
     writeFile(dir / "src" / "main.c",
@@ -706,6 +729,14 @@ void buildingTheProject(const std::string& ed1, const std::string& cc1) {
     check(onScreen(mixed, "cc1 compiles the C"), "with the reason in the console");
     check(!onScreen(mixed, "error:"), "and no compiler is run to find that out");
 
+    // Debugging the project is the same choice again: the program under the
+    // debugger is the one the project builds, not the file in front of you.
+    // The breakpoint goes in a file that has no main in it, which is the whole
+    // point - one program, three sources, and the debugger has to find the
+    // line in the right one.
+    writeFile(dir / "src" / "main.c",
+              "#include <stdio.h>\n\n#include \"sum.h\"\n\n"
+              "int main(void)\n{\n    printf(\"answer %d\\n\", addUp(2, 40));\n    return 0;\n}\n");
     // And a project that says nothing about building is not an error, just
     // nothing to build - the file in front of you is still Ctrl-B's business.
     file::path plain = freshProject("noTarget");

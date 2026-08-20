@@ -138,7 +138,11 @@ private:
     // process that outlives each of these calls, which is what makes this a
     // session rather than a command.
     void toggleBreak();
-    void debug();          // starts it, or carries on from where it stopped
+    // Starts it, or carries on from where it stopped. `project` chooses what
+    // is put under the debugger: the file in front of you, or the program the
+    // project says it builds - the same two things Ctrl-B and F4 choose
+    // between, asked the same way and never guessed.
+    void debug(bool project);
     void debugStep(Action how);
     void debugStop();
     void showStop(const Stop& where);
@@ -212,6 +216,10 @@ private:
     Debugger debugger_;
     std::map<std::string, std::set<size_t> > breaks_;
     Built debugBuilt_;
+    // Whether that program is the editor's own temporary one, and so the
+    // editor's to remove when the debugger stops. The project's program is the
+    // project's, and stays where it was built.
+    bool debugTemporary_;
     std::string stopFile_;
     size_t stopLine_;            // 0 when the program is not standing still
     std::vector<Variable> locals_;

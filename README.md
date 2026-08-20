@@ -358,6 +358,18 @@ and in a build of six files it is usually not the file you were looking at, so
 the editor opens the one it named before putting the caret on the line and
 column.
 
+**And the debugger takes the project too.** `F8` puts the file in front of you
+under a debugger, as it always has; **Debug ▸ Debug project** puts the program
+the project builds under one, compiled from all its sources with `-g`. After
+that the two are the same thing: F9 sets a breakpoint in whichever file you are
+looking at, F7 and F6 step, and the panel shows where it stopped and what is in
+scope. A breakpoint in a file that has no `main` in it is the case worth trying
+- one program, several sources, and the line has to be found in the right one.
+
+The project's program stays where it was built when the debugger stops, because
+it is the project's; a single file's is a temporary thing the editor made and
+clears away.
+
 **One flat list cannot say "these files on Linux, those on Windows".** This
 project's own sources are the example - `terminal.cpp` and `terminal_win.cpp`
 are never built together - so a project that differs by platform wants a group

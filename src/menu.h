@@ -51,6 +51,7 @@ enum Action {
     ActionRunProject,
     ActionToggleBreak,
     ActionDebug,
+    ActionDebugProject,
     ActionStepOver,
     ActionStepInto,
     ActionStepOut,

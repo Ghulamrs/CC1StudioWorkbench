@@ -508,6 +508,14 @@ that asks for the name, and the directory the project is in stays on the status
 line. A new project asks for that directory rather than using whichever one the
 editor happened to be started in - which is not a thing anybody can see.
 
+**Nothing unsaved is thrown away without being asked about.** Closing a tab
+whose file has changes in it, and closing the window with any such tab open,
+both ask - Save, Don't save, Cancel - and Cancel leaves everything where it
+was. A tab wears a `*` while it has changes, so the question names something
+you can already see. The terminal half refuses instead of asking, because its
+whole answer has to fit on the message line; the window has room to ask
+properly.
+
 **Tabs for the files you have open**, one text box each, so every tab keeps its
 own caret, scroll position and undo history. Opening a file already open brings
 its tab forward rather than opening it twice, and an untouched unnamed tab is

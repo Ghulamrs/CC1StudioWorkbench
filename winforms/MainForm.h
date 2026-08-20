@@ -53,6 +53,19 @@ protected:
     // The text is what a person came to type in, so that is what has the
     // keyboard - but only once the window exists. Asked for in the constructor
     // it does nothing at all, because there is nothing yet to give it to.
+    // Every sheet with unsaved work is asked about before the window goes,
+    // and any Cancel stops it. File > Exit and the close button both arrive
+    // here. Protected because what it overrides is: a managed override may not
+    // be less accessible than the method it replaces.
+    virtual void OnFormClosing(System::Windows::Forms::FormClosingEventArgs^ e) override {
+        for (int i = 0; i < sheets_->Count; ++i)
+            if (!MayDiscard(sheets_[i])) {
+                e->Cancel = true;
+                return;
+            }
+        Form::OnFormClosing(e);
+    }
+
     virtual void OnShown(EventArgs^ e) override {
         Form::OnShown(e);
         Arrange();
@@ -238,6 +251,8 @@ private:
             "Save", nullptr, gcnew EventHandler(this, &MainForm::OnSave));
         save->ShortcutKeys = static_cast<Keys>(Keys::Control | Keys::S);
         file->DropDownItems->Add(save);
+        file->DropDownItems->Add("Save as...", nullptr,
+                                 gcnew EventHandler(this, &MainForm::OnSaveAs));
         file->DropDownItems->Add(
             Item("Close", Keys::Control | Keys::W, gcnew EventHandler(this, &MainForm::OnCloseFile)));
         file->DropDownItems->Add("Exit", nullptr, gcnew EventHandler(this, &MainForm::OnExit));
@@ -752,7 +767,10 @@ private:
         // what a screenful costs. The box a file is being read into is not the
         // box in front yet, and colouring it would use the language of
         // whatever is - so only the one in front is coloured here.
-        if (sender == text_) Recolour();
+        if (sender == text_) {
+            Recolour();
+            MarkTab(sheet);
+        }
     }
 
     void OnScrolled(Object^, EventArgs^) {
@@ -1557,6 +1575,7 @@ private:
     void OnCloseFile(Object^, EventArgs^) {
         Sheet^ sheet = Current();
         if (sheet == nullptr) return;
+        if (!MayDiscard(sheet)) return;
 
         sheets_->Remove(sheet);
         files_->TabPages->Remove(sheet->page);
@@ -1568,12 +1587,92 @@ private:
     }
 
     void OnSave(Object^, EventArgs^) {
-        if (path_ == nullptr) return;
-        System::IO::File::WriteAllText(path_, text_->Text);
+        if (path_ == nullptr) {
+            OnSaveAs(nullptr, nullptr);
+            return;
+        }
+        try {
+            // Newlines, not carriage returns: the box keeps CRLF and every
+            // other part of this project - the core, the terminal half, the
+            // save that happens before a project build - writes LF.
+            System::IO::File::WriteAllText(path_, text_->Text->Replace("\r\n", "\n"));
+        } catch (Exception^ problem) {
+            what_->Text = problem->Message;
+            return;
+        }
+        // Cleared, or nothing can tell afterwards that it was saved - which is
+        // what a question about unsaved changes has to ask.
+        text_->Modified = false;
+        MarkTab(Current());
         what_->Text = System::IO::Path::GetFileName(path_) + " written";
     }
 
+    // A file that has never been saved has to be given a name before it can
+    // be. Reached from Save when there is no name yet, and from the File menu.
+    void OnSaveAs(Object^, EventArgs^) {
+        Sheet^ sheet = Current();
+        if (sheet == nullptr) return;
+
+        SaveFileDialog^ pick = gcnew SaveFileDialog();
+        pick->Filter = "C and C++|*.c;*.h;*.cpp;*.hpp|All files|*.*";
+        if (sheet->path != nullptr) {
+            pick->InitialDirectory = System::IO::Path::GetDirectoryName(sheet->path);
+            pick->FileName = System::IO::Path::GetFileName(sheet->path);
+        } else if (projectDirectory_ != nullptr) {
+            pick->InitialDirectory = projectDirectory_;
+        }
+        if (pick->ShowDialog(this) != System::Windows::Forms::DialogResult::OK) return;
+
+        sheet->path = pick->FileName;
+        path_ = pick->FileName;
+        Text = String::Format("{0} - {1}", ProductName(),
+                              System::IO::Path::GetFileName(path_));
+        OnSave(nullptr, nullptr);
+        FillTree();
+    }
+
+    // A tab wears a star while its file has changes in it, which is how the
+    // terminal half shows it and how anybody knows which tab the question is
+    // about.
+    void MarkTab(Sheet^ sheet) {
+        if (sheet == nullptr || sheet->page == nullptr) return;
+        String^ name = sheet->path == nullptr
+                           ? "[no name]"
+                           : System::IO::Path::GetFileName(sheet->path);
+        sheet->page->Text = sheet->box->Modified ? name + "*" : name;
+    }
+
     void OnExit(Object^, EventArgs^) { Close(); }
+
+    // Whether a sheet with unsaved work in it may go. Save writes it, Don't
+    // save throws it away, Cancel leaves everything where it is - which is
+    // what the window had none of: closing a tab discarded the changes without
+    // a word, and closing the window discarded every tab's.
+    //
+    // The terminal half refuses instead of asking, because its answer has to
+    // fit on the message line. Here there is room to ask properly.
+    bool MayDiscard(Sheet^ sheet) {
+        if (sheet == nullptr || !sheet->box->Modified) return true;
+
+        String^ named = sheet->path == nullptr
+                            ? "This file has never been saved."
+                            : System::IO::Path::GetFileName(sheet->path) + " has changes.";
+        System::Windows::Forms::DialogResult answer =
+            MessageBox::Show(this, named + "\r\n\r\nSave it before closing?",
+                             ProductName(), MessageBoxButtons::YesNoCancel,
+                             MessageBoxIcon::Warning);
+
+        if (answer == System::Windows::Forms::DialogResult::Cancel) return false;
+        if (answer == System::Windows::Forms::DialogResult::No) return true;
+
+        // Yes: the one being closed is not necessarily the one in front, so it
+        // is brought forward and saved through the ordinary path.
+        files_->SelectedTab = sheet->page;
+        OnSheetChanged(nullptr, nullptr);
+        OnSave(nullptr, nullptr);
+        return !sheet->box->Modified;
+    }
+
 
     void OnAbout(Object^, EventArgs^) {
         MessageBox::Show(this, TakeUtf8(ed1_about())->Replace("\n", "\r\n"),

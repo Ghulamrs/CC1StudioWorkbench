@@ -18,6 +18,18 @@ struct Group {
     std::vector<std::string> files;   // relative to the root, written with '/'
 };
 
+// What the project builds, when it says so at all. A program has a name and is
+// made of the sources in some of the groups - not all of them, since a project
+// that holds its own tests and examples would otherwise link them into itself.
+//
+// A project that says nothing about this is not broken and is not unusual: the
+// file in front of you is still compiled and run on its own, which is what the
+// editor did before any of this existed.
+struct Target {
+    std::string name;                  // the program, without .exe
+    std::vector<std::string> groups;   // whose sources make it
+};
+
 // ed1.json, and what it says. Six keys, flat except for the groups, and every
 // one of them has a default - so the smallest project file that works is `{}`,
 // and the editor works with no file at all:
@@ -60,6 +72,31 @@ public:
     void setName(const std::string& name) { name_ = name; }
 
     const std::vector<Group>& groups() const { return groups_; }
+
+    // What this project builds, and whether it says.
+    const Target& target() const { return target_; }
+    bool builds() const { return !target_.groups.empty(); }
+    void setTarget(const Target& target) { target_ = target; }
+
+    // The sources the program is made of, absolute and in the order the groups
+    // name them, with the language they are all in.
+    //
+    // It refuses rather than guesses, and `why` is what to tell whoever asked:
+    // a group that is not in the project, a target with no source in it, and -
+    // the one worth having - a target holding both C and C++. cc1 compiles the
+    // C and cl compiles the C++, and there is no one compiler here that a
+    // program halfway between them could be given to.
+    // `why` is one short line, because the message line is one short line;
+    // `detail` is the rest of the explanation for the console, which has room
+    // for it. A refusal nobody can read to the end is a refusal that looks
+    // like a bug.
+    bool targetSources(std::vector<std::string>& sources, Language& lang,
+                       std::string& why, std::string* detail = 0) const;
+
+    // Where the program goes: beside the project file, named by the target,
+    // with .exe on Windows. A build you can find afterwards, unlike the
+    // temporary one a single file is run from.
+    std::string targetProgram() const;
     const IndentStyle& indent() const { return indent_; }
     ToolchainKind toolchain() const { return toolchain_; }
     Configuration config() const { return config_; }
@@ -107,6 +144,7 @@ private:
     std::string file_;
     std::string name_;
     std::vector<Group> groups_;
+    Target target_;
     IndentStyle indent_;
     ToolchainKind toolchain_;
     Configuration config_;

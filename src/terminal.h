@@ -27,6 +27,7 @@ enum Key {
     KEY_F1,
     KEY_F2,
     KEY_F3,
+    KEY_F4,
     KEY_F5,
     KEY_F6,
     KEY_F7,

@@ -1,5 +1,7 @@
 #include "toolchain.h"
 
+#include "path.h"
+
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -255,6 +257,51 @@ std::string programPath() {
     return path;
 }
 }  // namespace
+
+// A program from several sources, left where it was asked for.
+Recipe targetRecipe(const Toolchain& tool, ToolchainKind kind,
+                    const std::vector<std::string>& sources, Language lang,
+                    const std::string& arch, Configuration config,
+                    const std::string& program) {
+    Recipe recipe;
+    recipe.assemblyPath = program;
+
+    std::string named;
+    for (size_t i = 0; i < sources.size(); ++i) named += " " + quote(sources[i]);
+
+    if (kind == ToolMsvc) {
+        // /Fo has to name a directory when there is more than one input, since
+        // one object comes out per source. The objects are named after the
+        // sources, so what to remove afterwards is known without looking.
+        std::string objects = mine("ed1-objs");
+        path::makeDirectories(objects);
+        std::string forLanguage = (lang == LangCpp) ? " /TP /EHsc /std:c++14" : " /TC";
+        std::string pdb = path::join(objects, "ed1-target.pdb");
+
+        recipe.command = quote(programOf(tool, kind)) + " /nologo /diagnostics:column" +
+                         forLanguage + configFlags(kind, config, arch) +
+                         (config == ConfigDebug ? " /Fd" + quote(pdb) : std::string()) +
+                         " /Fe" + quote(program) +
+                         " /Fo" + quote(objects + kSep) + named +
+                         (config == ConfigDebug ? " /link /DEBUG" : std::string());
+
+        for (size_t i = 0; i < sources.size(); ++i) {
+            std::string leaf = path::filename(sources[i]);
+            size_t dot = leaf.find_last_of('.');
+            if (dot != std::string::npos) leaf.resize(dot);
+            recipe.leftovers.push_back(path::join(objects, leaf + ".obj"));
+        }
+        if (config == ConfigDebug) recipe.leftovers.push_back(pdb);
+        recipe.leftovers.push_back(objects);
+        return recipe;
+    }
+
+    // cc1 compiles, assembles and links the lot when it is given neither -S
+    // nor -c, and -arch is left off for the same reason as below.
+    recipe.command = quote(programOf(tool, kind)) + named + " -o " + quote(program) +
+                     configFlags(kind, config, arch);
+    return recipe;
+}
 
 Recipe programRecipe(const Toolchain& tool, ToolchainKind kind,
                      const std::string& source, Language lang,

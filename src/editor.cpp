@@ -44,6 +44,29 @@ std::string repeated(const char* one, int times) {
     return out;
 }
 
+// Puts a paragraph into the console a line at a time. The console holds lines
+// and a refusal is a sentence or three; without this the end of it is off the
+// side of the screen, which reads as the editor having nothing more to say.
+void wrapInto(std::vector<std::string>& lines, const std::string& text, size_t width) {
+    if (width < 20) width = 20;
+    std::string line;
+    size_t at = 0;
+    while (at <= text.size()) {
+        size_t space = text.find(' ', at);
+        std::string word = text.substr(at, space == std::string::npos ? std::string::npos
+                                                                      : space - at);
+        if (!line.empty() && line.size() + 1 + word.size() > width) {
+            lines.push_back(line);
+            line.clear();
+        }
+        if (!line.empty()) line += ' ';
+        line += word;
+        if (space == std::string::npos) break;
+        at = space + 1;
+    }
+    if (!line.empty()) lines.push_back(line);
+}
+
 // Takes `width` columns of `s` starting at `from`, padded with spaces if the
 // line runs out first. Every region is padded to its full width, so the one
 // beside it starts in the same column on every row.
@@ -1700,6 +1723,118 @@ void Editor::buildAndRun() {
         panelOff_ = console_.size() - static_cast<size_t>(panelRows_);
 }
 
+// Everything with a name and an unsaved change, written out. A project build
+// reads several files off the disk, so "save the one in front of you" - which
+// is all a single-file build ever needed - would build yesterday's copy of
+// every other one.
+bool Editor::saveEveryDirty() {
+    stash();
+    for (size_t i = 0; i < docs_.size(); ++i) {
+        if (!docs_[i].buf.dirty() || docs_[i].buf.path().empty()) continue;
+        std::string error;
+        if (!docs_[i].buf.save(error)) {
+            say(error);
+            restore();
+            return false;
+        }
+        docs_[i].buf.breakRun();
+    }
+    restore();
+    return true;
+}
+
+// The project's program: the sources its build entry names, compiled and
+// linked into one thing, left beside the project file where it can be found
+// afterwards.
+//
+// This never asks what is in the edit view, and Ctrl-B never asks what the
+// project says. Which one you meant is said by which one you pressed - there
+// is nothing here that has to be guessed, and nothing that has to be closed
+// before the other will work.
+void Editor::buildProject(bool andRun) {
+    std::vector<std::string> sources;
+    Language lang = LangPlain;
+    std::string why, detail;
+    if (!project_.targetSources(sources, lang, why, &detail)) {
+        // The line says what is wrong and the console says what to do about
+        // it: the message line is one line wide and clips what will not fit.
+        say(why);
+        if (!detail.empty()) {
+            panelOpen_ = true;
+            tab_ = TabConsole;
+            console_.clear();
+            console_.push_back(why);
+            console_.push_back("");
+            wrapInto(console_, detail, static_cast<size_t>(screenCols_ - 4));
+            panelOff_ = 0;
+        }
+        return;
+    }
+
+    ToolchainKind kind = resolve(tool_, lang);
+    if (!canCompile(kind, lang)) { say(refusal(kind, lang)); return; }
+    if (andRun && !runsHere(kind, kArches[arch_])) {
+        say(whyNotRun(kind, kArches[arch_]));
+        return;
+    }
+
+    if (!saveEveryDirty()) return;
+
+    panelOpen_ = true;
+    tab_ = TabConsole;
+    console_.clear();
+
+    std::string program = project_.targetProgram();
+    console_.push_back("$ " + std::string(toolchainName(kind)) + " " +
+                       number(sources.size()) +
+                       (sources.size() == 1 ? " source -o " : " sources -o ") +
+                       project_.relative(program));
+    for (size_t i = 0; i < sources.size(); ++i)
+        console_.push_back("    " + project_.relative(sources[i]));
+    panelOff_ = 0;
+    say("building " + baseName(program) + " with " + toolchainName(kind) + " ...");
+    refresh();
+
+    Built made = buildTarget(tool_, kind, sources, lang, kArches[arch_], config_,
+                             program, consoleSink, this);
+
+    lastDiag_ = made.diag;
+
+    if (made.diag.present) {
+        // The error is as likely as not in a file that is not open, so it is
+        // opened before the caret is put on the line. A build of several files
+        // that lands you on the wrong one is worse than one that lands you
+        // nowhere.
+        std::string where = made.diag.file;
+        if (!where.empty() && !path::exists(where)) where = project_.absolute(where);
+        if (!where.empty() && path::exists(where) && where != buf_.path()) open(where);
+
+        cy_ = made.diag.line > 0 ? made.diag.line - 1 : 0;
+        if (cy_ >= buf_.lineCount()) cy_ = buf_.lineCount() - 1;
+        cx_ = made.diag.col > 0 ? made.diag.col - 1 : 0;
+        clampCursor();
+        focus_ = FocusText;
+        say(baseName(made.diag.file) + ":" + number(made.diag.line) + ":" +
+            number(made.diag.col) + ": error: " + made.diag.message);
+    } else if (!made.ok) {
+        say(std::string(toolchainName(kind)) + " did not build it - see the console");
+    } else if (!andRun) {
+        console_.push_back("");
+        console_.push_back("[built " + program + "]");
+        say("built " + project_.relative(program) + " from " + number(sources.size()) +
+            (sources.size() == 1 ? " source" : " sources"));
+    } else {
+        console_.push_back("");
+        Ran result = runBuilt(program, consoleSink, this);
+        console_.push_back("[program returned " + number(static_cast<size_t>(result.status)) + "]");
+        say("ran " + project_.relative(program) + " - it returned " +
+            number(static_cast<size_t>(result.status)));
+    }
+
+    if (console_.size() > static_cast<size_t>(panelRows_))
+        panelOff_ = console_.size() - static_cast<size_t>(panelRows_);
+}
+
 bool Editor::breakpointOn(size_t line) const {
     std::map<std::string, std::set<size_t> >::const_iterator found =
         breaks_.find(buf_.path());
@@ -1894,8 +2029,9 @@ void Editor::showKeys() {
     panelOpen_ = true;
     tab_ = TabConsole;
     console_.clear();
-    console_.push_back("F10          the menu             Ctrl-B   build with cc1");
-    console_.push_back("F5           build it and run it  F1       these keys");
+    console_.push_back("F10          the menu             Ctrl-B   build this file");
+    console_.push_back("F5           run this file        F4       build the project");
+    console_.push_back("F1           these keys");
     console_.push_back("F9 / F8      breakpoint / debug   F7 / F6  step over / into");
     console_.push_back("F2 / F3      previous / next file Ctrl-L   line numbers");
     console_.push_back("Ctrl-K       automatic, cc1, cl   Ctrl-T   next target");
@@ -1956,6 +2092,8 @@ void Editor::perform(Action action) {
             break;
         case ActionBuild:        compile(); break;
         case ActionRun:          buildAndRun(); break;
+        case ActionBuildProject: buildProject(false); break;
+        case ActionRunProject:   buildProject(true); break;
         case ActionToggleBreak:  toggleBreak(); break;
         case ActionDebug:        debug(); break;
         case ActionStepOver:
@@ -2073,6 +2211,7 @@ void Editor::processKey(int key) {
         case KEY_F1:  showKeys(); return;
         case KEY_F2:  nextDocument(-1); return;
         case KEY_F3:  nextDocument(1); return;
+        case KEY_F4:  perform(ActionBuildProject); return;
         case KEY_F5:  perform(ActionRun); return;
         case KEY_F6:  perform(ActionStepInto); return;
         case KEY_F7:  perform(ActionStepOver); return;

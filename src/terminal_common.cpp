@@ -63,6 +63,7 @@ int fromLetter(char letter) {
         case 'P': return KEY_F1;
         case 'Q': return KEY_F2;
         case 'R': return KEY_F3;
+        case 'S': return KEY_F4;
         default:  return '\x1b';
     }
 }
@@ -79,6 +80,7 @@ int fromNumber(int number) {
         case 11: return KEY_F1;
         case 12: return KEY_F2;
         case 13: return KEY_F3;
+        case 14: return KEY_F4;
         case 15: return KEY_F5;
         case 17: return KEY_F6;
         case 18: return KEY_F7;

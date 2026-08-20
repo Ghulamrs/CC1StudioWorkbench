@@ -171,6 +171,29 @@ typedef struct Ed1Build Ed1Build;
 
 Ed1Build* ed1_build(const char* cc1, const char* cl, int kind, const char* source,
                     int language, const char* arch, int config);
+
+/* The project's own program, as against the file in front of you. Which of the
+   two you meant is said by which one you asked for; neither needs the other to
+   be unavailable, and compiling one file never needs a project at all.
+
+   ed1_project_target_ready works out the sources and answers 1 when there is
+   something to build. When it answers 0, ed1_project_target_why is one line
+   for a status bar and ed1_project_target_detail is the rest of it for a box
+   with room - the refusal that matters being a project holding both C and C++,
+   which cc1 and cl cannot be asked to build between them. */
+int ed1_project_builds(Ed1Project* project);
+int ed1_project_target_ready(Ed1Project* project);
+const char* ed1_project_target_why(Ed1Project* project);
+const char* ed1_project_target_detail(Ed1Project* project);
+int ed1_project_target_language(Ed1Project* project);
+int ed1_project_target_sources(Ed1Project* project);
+const char* ed1_project_target_source(Ed1Project* project, int index);
+const char* ed1_project_target_program(Ed1Project* project);
+
+/* Builds it. Ask ed1_project_target_ready first: this answers null when there
+   is nothing to build, and the reason is where that call left it. */
+Ed1Build* ed1_build_target(Ed1Project* project, const char* cc1, const char* cl,
+                           int kind, const char* arch, int config);
 void ed1_build_free(Ed1Build* built);
 
 int ed1_build_ok(Ed1Build* built);
@@ -178,6 +201,10 @@ const char* ed1_build_output(Ed1Build* built);
 const char* ed1_build_assembly(Ed1Build* built);   /* joined with \n */
 int ed1_build_assembly_lines(Ed1Build* built);
 int ed1_build_has_error(Ed1Build* built);
+/* Which file the error is in. It used to go without saying - a build was one
+   file and that was the one you were looking at - and a project build is
+   several, so it has to be asked. */
+const char* ed1_build_error_file(Ed1Build* built);
 int ed1_build_error_line(Ed1Build* built);
 int ed1_build_error_column(Ed1Build* built);
 const char* ed1_build_error_message(Ed1Build* built);
@@ -190,6 +217,9 @@ typedef struct Ed1Ran Ed1Ran;
 
 Ed1Ran* ed1_run(const char* cc1, const char* cl, int kind, const char* source,
                 int language, const char* arch, int config);
+
+/* Runs a program that is already built - the project's, once it has been. */
+Ed1Ran* ed1_run_built(const char* program);
 void ed1_run_free(Ed1Ran* ran);
 
 int ed1_ran_built(Ed1Ran* ran);

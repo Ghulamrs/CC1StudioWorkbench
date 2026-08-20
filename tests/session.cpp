@@ -73,6 +73,7 @@ const std::string kF6 = "\x1b[17~";
 const std::string kF7 = "\x1b[18~";
 const std::string kF8 = "\x1b[19~";
 const std::string kF9 = "\x1b[20~";
+const std::string kF4 = "\x1bOS";
 const std::string kF10 = "\x1b[21~";
 const std::string kDown = "\x1b[B";
 const std::string kRight = "\x1b[C";
@@ -640,6 +641,84 @@ void compiling(const std::string& ed1, const std::string& cc1) {
     file::remove_all(dir);
 }
 
+// The project's own build, as against the file in front of you. Two sources
+// that only work together, so that a program coming out at all is proof they
+// were linked and not merely compiled one at a time.
+void buildingTheProject(const std::string& ed1, const std::string& cc1) {
+    std::printf("building the project, not just the file\n");
+
+    if (cc1.empty()) {
+        std::printf("  (no cc1 named, so those cases are not tried)\n");
+        return;
+    }
+
+    file::path dir = freshProject("target");
+    writeFile(dir / "src" / "sum.c", "#include \"sum.h\"\n\nint addUp(int a, int b) { return a + b; }\n");
+    writeFile(dir / "src" / "sum.h", "int addUp(int a, int b);\n");
+    writeFile(dir / "src" / "main.c",
+              "#include <stdio.h>\n\n#include \"sum.h\"\n\n"
+              "int main(void)\n{\n    printf(\"answer %d\\n\", addUp(2, 40));\n    return 0;\n}\n");
+    writeFile(dir / "ed1.json",
+              "{\n  \"name\": \"sums\",\n  \"indent\": 4,\n"
+              "  \"groups\": {\n"
+              "    \"Sources\": [\"src/sum.c\", \"src/main.c\"],\n"
+              "    \"Headers\": [\"src/sum.h\"]\n  },\n"
+              "  \"build\": { \"target\": \"sums\", \"groups\": [\"Sources\"] }\n}\n");
+
+    std::string arguments = "--project \"" + dir.string() + "\" --cc1 \"" + cc1 + "\"";
+
+    Screen built = drive(ed1, arguments, kF4 + ctrl('q'), dir);
+    check(onScreen(built, "2 sources"), "F4 builds the project's sources, not the open file");
+    check(onScreen(built, "built sums"), "and says what it built");
+    check(file::exists(dir / "sums") || file::exists(dir / "sums.exe"),
+          "the program is beside the project, where it can be found again");
+
+    // Run project is on the Build menu under the two that build a file: F10,
+    // three columns right to Build, three items down, enter.
+    Screen ran = drive(ed1, arguments,
+                       kF10 + times(kRight, 3) + times(kDown, 3) + kEnter + ctrl('q'), dir);
+    check(onScreen(ran, "answer 42"), "running the project runs the linked program");
+    check(onScreen(ran, "returned 0"), "and reports what it returned");
+
+    // An error in a file that is not open opens it first. Nothing is opened at
+    // startup here, so the caret arriving in main.c is the whole check.
+    writeFile(dir / "src" / "main.c",
+              "#include <stdio.h>\n\n#include \"sum.h\"\n\n"
+              "int main(void)\n{\n    int total = addUp(2, 40)\n"
+              "    printf(\"answer %d\\n\", total);\n    return 0;\n}\n");
+    Screen broken = drive(ed1, arguments, kF4 + ctrl('q'), dir);
+    check(onScreen(broken, "error"), "an error in the project build is reported");
+    check(onScreen(broken, "main.c"), "naming the file it is in");
+    // Line 8, not 7: a missing semicolon is reported where the next thing was
+    // found, which is the line after the one that is missing it.
+    check(onScreen(broken, "8/10"), "and the caret goes there, in a file nothing had opened");
+
+    // Both languages in one target is refused before a compiler is run, on the
+    // message line and in the console, which has room for the reason.
+    writeFile(dir / "src" / "extra.cpp", "int twice(int n) { return n * 2; }\n");
+    writeFile(dir / "ed1.json",
+              "{\n  \"name\": \"sums\",\n  \"indent\": 4,\n"
+              "  \"groups\": {\n"
+              "    \"Sources\": [\"src/sum.c\", \"src/main.c\", \"src/extra.cpp\"]\n  },\n"
+              "  \"build\": { \"target\": \"sums\", \"groups\": [\"Sources\"] }\n}\n");
+    Screen mixed = drive(ed1, arguments, kF4 + ctrl('q'), dir);
+    check(onScreen(mixed, "both C and C++"), "a project of both languages is refused");
+    check(onScreen(mixed, "cc1 compiles the C"), "with the reason in the console");
+    check(!onScreen(mixed, "error:"), "and no compiler is run to find that out");
+
+    // And a project that says nothing about building is not an error, just
+    // nothing to build - the file in front of you is still Ctrl-B's business.
+    file::path plain = freshProject("noTarget");
+    writeFile(plain / "src" / "one.c", "int main(void) { return 0; }\n");
+    Screen quiet = drive(ed1, "--project \"" + plain.string() + "\" --cc1 \"" + cc1 + "\"",
+                         kF4 + ctrl('q'), plain);
+    check(onScreen(quiet, "does not say what it builds"),
+          "a project with no build entry says so plainly");
+
+    file::remove_all(dir);
+    file::remove_all(plain);
+}
+
 // A file that compiles to different code depending on NDEBUG, so that the two
 // configurations can be told apart by what came out rather than by what the
 // command line claimed.
@@ -740,7 +819,9 @@ void debugPanelPerTarget(const std::string& ed1) {
     // Debug sits between them.
     const int kBuildColumn = 3;
     const int kTargetColumn = 5;
-    const int kDebugPanelItem = 5;
+    // Seventh in Build now: Build project and Run project went in above it,
+    // beneath the two that compile the file in front of you.
+    const int kDebugPanelItem = 7;
     const std::string showDebugTab =
         kF10 + times(kRight, kBuildColumn) + times(kDown, kDebugPanelItem) + kEnter;
     const std::string toTarget = kF10 + times(kRight, kTargetColumn - kBuildColumn);
@@ -1026,6 +1107,7 @@ int main(int argc, char** argv) {
     selectingAndPasting(ed1);
     multiByteText(ed1);
     compiling(ed1, cc1);
+    buildingTheProject(ed1, cc1);
     buildingWithCl(ed1);
     configurations(ed1, cc1);
     debugPanelPerTarget(ed1);

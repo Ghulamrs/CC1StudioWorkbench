@@ -318,6 +318,53 @@ read at a glance.
 Settings in the project are what this project always does; anything named on
 the command line is applied after it and wins, which is what today needs.
 
+### Building the file, and building the project
+
+These are two commands and neither guesses which you meant.
+
+**`Ctrl-B` compiles the file in the edit view, and `F5` runs it.** Neither asks
+the project anything. A project does not have to be open, does not have to be
+shut, and does not have to hold the file - open something from anywhere with
+`File > Open` and `Ctrl-B` compiles that. This is the fix-one, build-again
+rhythm the editor is built around, and nothing below changes it.
+
+**`F4` builds the project, and `Run project` on the Build menu builds and runs
+it.** These read the file list and never the edit view. What they build is what
+the project says it builds:
+
+```json
+"build": { "target": "sums", "groups": ["Sources"] }
+```
+
+The program is named by `target` and made from every `.c` or `.cpp` in the
+groups named - headers and anything else are passed over, and groups that are
+not named are not built, which is what keeps a project's own tests and examples
+out of its program. Say nothing and nothing is built: that is not an error and
+it is what every project written before this says. The program is left beside
+`ed1.json`, so it is still there when the editor is not.
+
+cc1 does the linking itself - `cc1 a.c b.c -o prog`, since several inputs link
+together - and cl does the same when it is not given `/c`.
+
+**A project holding both C and C++ is refused before a compiler is run.** cc1
+compiles the C and cl compiles the C++, and there is no third thing here to
+give a program halfway between them to. The message line says which two
+languages and the console says what to do about it: two projects, or `Ctrl-B` a
+file at a time. Guessing per file and linking the results would mean two
+compilers' runtimes in one program, which is a worse day than this message.
+
+**An error in a file nothing has opened opens it.** cc1 stops at the first one,
+and in a build of six files it is usually not the file you were looking at, so
+the editor opens the one it named before putting the caret on the line and
+column.
+
+**One flat list cannot say "these files on Linux, those on Windows".** This
+project's own sources are the example - `terminal.cpp` and `terminal_win.cpp`
+are never built together - so a project that differs by platform wants a group
+per platform and a `build` entry naming the one you are on. That is a real
+limit of a list of names, and it is why this repository does not have a `build`
+entry of its own.
+
 ## The panel
 
 Three tabs:
@@ -624,8 +671,9 @@ because that is what cc1's own sources use, and they contain no tab at all.
 | key | |
 |---|---|
 | `F10` | the menu |
-| `Ctrl-B` | build |
-| `F5` | build it and run it |
+| `Ctrl-B` | build the file in the edit view |
+| `F5` | build that file and run it |
+| `F4` | build the project's program |
 | `F9` | breakpoint on this line |
 | `F8` | start debugging, or carry on |
 | `F7` / `F6` | step over / step into |

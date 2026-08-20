@@ -259,6 +259,68 @@ Built buildProgram(const Toolchain& tool, ToolchainKind kind, const std::string&
     return result;
 }
 
+Built buildTarget(const Toolchain& tool, ToolchainKind kind,
+                  const std::vector<std::string>& sources, Language lang,
+                  const std::string& arch, Configuration config,
+                  const std::string& program, LineSink sink, void* context) {
+    Built result;
+
+    if (sources.empty()) {
+        result.output = "nothing to build\n";
+        return result;
+    }
+
+    if (!prepareFor(kind)) {
+        result.output = "no Visual Studio 2022 found - cl cannot be run\n";
+        if (sink) sink(context, "no Visual Studio 2022 found - cl cannot be run");
+        return result;
+    }
+
+    Recipe recipe = targetRecipe(tool, kind, sources, lang, arch, config, program);
+    result.program = recipe.assemblyPath;
+    result.leftovers = recipe.leftovers;
+
+    int made = runCaptured(recipe.command, result.output, sink, context);
+    if (made < 0) {
+        result.output = std::string("could not run ") + programOf(tool, kind);
+        return result;
+    }
+
+    result.diag = parseDiagnostic(result.output);
+    result.ok = (made == 0);
+
+    if (!result.ok && !result.diag.present && looksLikeMissingProgram(result.output)) {
+        std::string hint = std::string(programOf(tool, kind)) +
+                           " could not be run - name it with --cc1 or --cl, or put it on PATH";
+        result.output += hint + "\n";
+        if (sink) sink(context, hint);
+    }
+
+    // The objects and the directory they went in are the editor's mess; the
+    // program is the point and stays where it was asked for.
+    for (size_t i = 0; i < result.leftovers.size(); ++i)
+        std::remove(result.leftovers[i].c_str());
+    result.leftovers.clear();
+    return result;
+}
+
+Ran runBuilt(const std::string& program, LineSink sink, void* context) {
+    Ran result;
+    if (program.empty()) return result;
+
+    // Its input is emptied for the same reason as above: a program that reads
+    // would otherwise eat the editor's own keys.
+#ifdef _WIN32
+    const char* noInput = " < NUL";
+#else
+    const char* noInput = " < /dev/null";
+#endif
+    result.built = true;
+    result.ran = true;
+    result.status = runCaptured("\"" + program + "\"" + noInput, result.output, sink, context);
+    return result;
+}
+
 void removeProgram(const Built& built) {
     if (!built.program.empty()) std::remove(built.program.c_str());
     for (size_t i = 0; i < built.leftovers.size(); ++i)

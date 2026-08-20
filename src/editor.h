@@ -127,6 +127,13 @@ private:
     void compile();
     void buildAndRun();
 
+    // The project's own build: the program it says it is, out of the sources
+    // it says make it. Separate from everything above on purpose - compiling
+    // the file in front of you never needed a project open, and a project
+    // being open does not take that away.
+    void buildProject(bool andRun);
+    bool saveEveryDirty();
+
     // Stopping the program and walking through it. The debugger is a child
     // process that outlives each of these calls, which is what makes this a
     // session rather than a command.

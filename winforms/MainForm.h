@@ -291,6 +291,16 @@ private:
             "Run", nullptr, gcnew EventHandler(this, &MainForm::OnRun));
         runIt->ShortcutKeys = Keys::F5;
         build->DropDownItems->Add(runIt);
+
+        // The project's program, as against the file in front of you. Two
+        // commands and no guessing: which one you meant is the one you pick,
+        // and compiling a single file never needs the project shut.
+        build->DropDownItems->Add(gcnew ToolStripSeparator());
+        build->DropDownItems->Add(
+            Item("Build project", Keys::F4,
+                 gcnew EventHandler(this, &MainForm::OnBuildProject)));
+        build->DropDownItems->Add("Run project", nullptr,
+                                  gcnew EventHandler(this, &MainForm::OnRunProject));
         build->DropDownItems->Add("Debug build", nullptr,
                                   gcnew EventHandler(this, &MainForm::OnDebugConfig));
         build->DropDownItems->Add("Release build", nullptr,
@@ -1664,6 +1674,141 @@ private:
         console_->Text += String::Format("\r\n[program returned {0}]\r\n", status);
         what_->Text = String::Format("{0} ran - it returned {1}",
                                      System::IO::Path::GetFileName(path_), status);
+    }
+
+    void OnBuildProject(Object^, EventArgs^) { BuildProject(false); }
+    void OnRunProject(Object^, EventArgs^) { BuildProject(true); }
+
+    // The project's program: the sources its build entry names, compiled and
+    // linked into one thing beside the project file. It reads nothing from the
+    // window - not the file in front of you, not what is selected - so it says
+    // the same thing here as F4 says in the terminal.
+    void BuildProject(bool andRun) {
+        if (busy_) { what_->Text = "still working - give it a moment"; return; }
+
+        if (ed1_project_target_ready(project_) == 0) {
+            String^ why = FromUtf8(ed1_project_target_why(project_));
+            String^ detail = FromUtf8(ed1_project_target_detail(project_));
+            what_->Text = why;
+            console_->Text = detail->Length > 0 ? why + "\r\n\r\n" + detail : why;
+            panel_->SelectedIndex = 0;
+            return;
+        }
+
+        SaveEveryDirty();
+
+        int language = ed1_project_target_language(project_);
+        int kind = ed1_resolve(toolKind_, language);
+        if (ed1_can_compile(kind, language) == 0) {
+            what_->Text = FromUtf8(ed1_refusal(kind, language));
+            return;
+        }
+
+        array<Byte>^ archBytes = Utf8Of(arch_);
+        pin_ptr<Byte> arch = &archBytes[0];
+        if (andRun && ed1_runs_here(kind, reinterpret_cast<const char*>(arch)) == 0) {
+            what_->Text = FromUtf8(ed1_why_not_run(kind, reinterpret_cast<const char*>(arch)));
+            return;
+        }
+
+        String^ program = FromUtf8(ed1_project_target_program(project_));
+        int howMany = ed1_project_target_sources(project_);
+
+        System::Text::StringBuilder^ said = gcnew System::Text::StringBuilder();
+        said->Append("$ " + FromUtf8(ed1_toolchain_name(kind)) + " " + howMany +
+                     (howMany == 1 ? " source -o " : " sources -o ") + program + "\r\n");
+        for (int i = 0; i < howMany; ++i)
+            said->Append("    " + FromUtf8(ed1_project_target_source(project_, i)) + "\r\n");
+        console_->Text = said->ToString();
+        panel_->SelectedIndex = 0;
+        what_->Text = "building " + System::IO::Path::GetFileName(program) + " ...";
+        Application::DoEvents();
+
+        array<Byte>^ cc1Bytes = Utf8Of(cc1_);
+        pin_ptr<Byte> cc1 = &cc1Bytes[0];
+        array<Byte>^ clBytes = Utf8Of(cl_);
+        pin_ptr<Byte> cl = &clBytes[0];
+
+        Ed1Build* made = ed1_build_target(project_, reinterpret_cast<const char*>(cc1),
+                                          reinterpret_cast<const char*>(cl), kind,
+                                          reinterpret_cast<const char*>(arch), config_);
+        if (made == nullptr) {
+            what_->Text = FromUtf8(ed1_project_target_why(project_));
+            return;
+        }
+
+        console_->Text += FromUtf8(ed1_build_output(made))->Replace("\n", "\r\n");
+
+        if (ed1_build_has_error(made) != 0) {
+            int line = ed1_build_error_line(made);
+            int column = ed1_build_error_column(made);
+            String^ message = FromUtf8(ed1_build_error_message(made));
+            String^ where = FromUtf8(ed1_build_error_file(made));
+            ed1_build_free(made);
+
+            // The error is as likely as not in a file nothing has opened, so
+            // it is opened before the caret is put in it.
+            if (where->Length > 0) {
+                if (!System::IO::Path::IsPathRooted(where)) {
+                    array<Byte>^ relative = Utf8Of(where);
+                    pin_ptr<Byte> relativePin = &relative[0];
+                    where = FromUtf8(ed1_project_absolute(
+                        project_, reinterpret_cast<const char*>(relativePin)));
+                }
+                if (System::IO::File::Exists(where)) OpenPath(where);
+            }
+
+            GoTo(line, column);
+            panel_->SelectedIndex = 0;
+            what_->Text = String::Format("{0}:{1}:{2}: error: {3}",
+                                         System::IO::Path::GetFileName(where), line, column,
+                                         message);
+            return;
+        }
+
+        bool ok = ed1_build_ok(made) != 0;
+        ed1_build_free(made);
+
+        if (!ok) {
+            what_->Text = FromUtf8(ed1_toolchain_name(kind)) + " did not build it - see the console";
+            return;
+        }
+
+        if (!andRun) {
+            console_->Text += "\r\n[built " + program + "]\r\n";
+            what_->Text = "built " + System::IO::Path::GetFileName(program) + " from " +
+                          howMany + (howMany == 1 ? " source" : " sources");
+            return;
+        }
+
+        array<Byte>^ programBytes = Utf8Of(program);
+        pin_ptr<Byte> programPin = &programBytes[0];
+        Ed1Ran* ran = ed1_run_built(reinterpret_cast<const char*>(programPin));
+        console_->Text += FromUtf8(ed1_ran_output(ran))->Replace("\n", "\r\n");
+        int status = ed1_ran_status(ran);
+        ed1_run_free(ran);
+
+        console_->Text += String::Format("\r\n[program returned {0}]\r\n", status);
+        what_->Text = String::Format("ran {0} - it returned {1}",
+                                     System::IO::Path::GetFileName(program), status);
+    }
+
+    // Everything with a name and an unsaved change. A project build reads
+    // several files off the disk, so saving the one in front of you - which is
+    // all a single file's build ever needed - would build yesterday's copy of
+    // every other one.
+    void SaveEveryDirty() {
+        for (int i = 0; i < sheets_->Count; ++i) {
+            Sheet^ sheet = sheets_[i];
+            if (sheet->path == nullptr || !sheet->box->Modified) continue;
+            try {
+                System::IO::File::WriteAllText(sheet->path,
+                                               sheet->box->Text->Replace("\r\n", "\n"));
+                sheet->box->Modified = false;
+            } catch (Exception^ problem) {
+                what_->Text = problem->Message;
+            }
+        }
     }
 
     // ---- keeping the window awake while something slow happens -------------

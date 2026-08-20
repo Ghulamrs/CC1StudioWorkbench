@@ -44,6 +44,11 @@ enum Action {
     ActionFileRegroup,
     ActionBuild,
     ActionRun,
+    // The project's program, as against the file in front of you. Two commands
+    // rather than one that guesses: which of them you meant is said by which
+    // one you press, and neither depends on the other being unavailable.
+    ActionBuildProject,
+    ActionRunProject,
     ActionToggleBreak,
     ActionDebug,
     ActionStepOver,

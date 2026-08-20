@@ -136,6 +136,16 @@ std::string shownProgramCommand(const Toolchain& tool, ToolchainKind kind,
                                 const std::string& source, Language lang,
                                 const std::string& arch, Configuration config);
 
+// The same, for a program made of several sources and put where the caller
+// says rather than in a temporary place. cc1 takes them all at once - "several
+// inputs link together" is its own usage - and cl does too, given a directory
+// to leave the objects in; the objects are named after the sources, so they
+// can be listed as leftovers without going and looking.
+Recipe targetRecipe(const Toolchain& tool, ToolchainKind kind,
+                    const std::vector<std::string>& sources, Language lang,
+                    const std::string& arch, Configuration config,
+                    const std::string& program);
+
 // Puts this process into the environment a Developer Command Prompt would have,
 // once, so that cl can be found when the editor was started from an ordinary
 // console. Does nothing anywhere but Windows, and nothing when already inside

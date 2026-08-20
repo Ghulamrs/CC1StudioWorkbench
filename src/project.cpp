@@ -135,6 +135,20 @@ bool Project::load(const std::string& dir, std::string& error) {
         groups_.push_back(all);
     }
 
+    // What the project builds, if it says. Absent is the ordinary case and
+    // means "nothing beyond the file in front of you", which is what every
+    // project written before this said by saying nothing.
+    target_ = Target();
+    const Json& built = root.get("build");
+    if (built.is(Json::Object)) {
+        target_.name = built.get("target").text(name_);
+        const Json& from = built.get("groups");
+        for (size_t i = 0; i < from.size(); ++i) {
+            std::string group = from.at(i).text();
+            if (!group.empty()) target_.groups.push_back(group);
+        }
+    }
+
     loaded_ = true;
     return true;
 }
@@ -162,6 +176,19 @@ bool Project::save(std::string& error) {
         groups.set(groups_[i].name, files);
     }
     root.set("groups", groups);
+
+    // Written back only when there is one, so that a project which builds
+    // nothing does not grow an empty object saying so every time a file is
+    // added to it.
+    if (builds()) {
+        Json target = Json::object();
+        target.set("target", Json::fromText(target_.name.empty() ? name_ : target_.name));
+        Json from = Json::array();
+        for (size_t i = 0; i < target_.groups.size(); ++i)
+            from.push(Json::fromText(target_.groups[i]));
+        target.set("groups", from);
+        root.set("build", target);
+    }
 
     std::string text = root.write() + "\n";
 
@@ -312,6 +339,89 @@ bool Project::moveToGroup(const std::string& rel, const std::string& group) {
         return true;
     }
     return false;
+}
+
+// The sources a program is made of, and the language they are in. Headers are
+// passed over - they are in the project to be opened, not to be compiled - and
+// so is anything that is neither C nor C++.
+bool Project::targetSources(std::vector<std::string>& sources, Language& lang,
+                            std::string& why, std::string* detail) const {
+    sources.clear();
+    lang = LangPlain;
+    why.clear();
+    if (detail) detail->clear();
+
+    if (!builds()) {
+        why = std::string("this project does not say what it builds");
+        if (detail)
+            *detail = std::string("Add a \"build\" entry to ") + fileName() +
+                      " naming the program and the groups its sources are in, like "
+                      "\"build\": { \"target\": \"" + name_ +
+                      "\", \"groups\": [\"Sources\"] }. Until then, Ctrl-B still "
+                      "compiles the file in front of you, which needs no project at all.";
+        return false;
+    }
+
+    bool sawC = false, sawCpp = false;
+    for (size_t i = 0; i < target_.groups.size(); ++i) {
+        size_t at = groups_.size();
+        for (size_t g = 0; g < groups_.size(); ++g)
+            if (groups_[g].name == target_.groups[i]) { at = g; break; }
+
+        if (at == groups_.size()) {
+            why = "no such group in this project: " + target_.groups[i];
+            if (detail)
+                *detail = std::string("The \"build\" entry in ") + fileName() +
+                          " names a group the project does not have. Groups are the "
+                          "headings in the pane on the left.";
+            sources.clear();
+            return false;
+        }
+
+        for (size_t f = 0; f < groups_[at].files.size(); ++f) {
+            const std::string& relative = groups_[at].files[f];
+            // What decides is the extension, because that is what the
+            // compilers go by. A .h is C by name and is still not a source.
+            size_t dot = relative.find_last_of('.');
+            std::string suffix = (dot == std::string::npos) ? std::string()
+                                                            : relative.substr(dot);
+            if (suffix == ".c") sawC = true;
+            else if (suffix == ".cpp" || suffix == ".cc" || suffix == ".cxx") sawCpp = true;
+            else continue;
+
+            sources.push_back(absolute(relative));
+        }
+    }
+
+    if (sawC && sawCpp) {
+        why = "this project holds both C and C++, which cannot make one program";
+        if (detail)
+            *detail = "cc1 compiles the C and cl compiles the C++, and there is no one "
+                      "compiler here to give a program halfway between them to. Put the "
+                      "two in projects of their own, or build them a file at a time with "
+                      "Ctrl-B, which never asks what the project says.";
+        sources.clear();
+        return false;
+    }
+    if (sources.empty()) {
+        why = "the groups this project builds from hold no C or C++";
+        if (detail)
+            *detail = "A group can hold anything - headers, notes, a Makefile - and none "
+                      "of that is compiled. Name a group with .c or .cpp files in it.";
+        return false;
+    }
+
+    lang = sawCpp ? LangCpp : LangC;
+    return true;
+}
+
+std::string Project::targetProgram() const {
+    std::string name = target_.name.empty() ? name_ : target_.name;
+    if (name.empty()) name = "program";
+#ifdef _WIN32
+    if (name.size() < 4 || name.compare(name.size() - 4, 4, ".exe") != 0) name += ".exe";
+#endif
+    return path::join(root_, name);
 }
 
 }  // namespace editor

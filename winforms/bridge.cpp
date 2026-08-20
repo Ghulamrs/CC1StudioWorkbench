@@ -179,6 +179,16 @@ struct Ed1Project {
     editor::Project project;
     std::string answer;
     editor::Outcome last;   // what the most recent change had to say
+
+    // What the last look at the project's target found: its sources, or the
+    // reason there are none to hand back. Kept here because the managed side
+    // reads them one string at a time and a returned pointer has to outlive
+    // the call that gave it.
+    std::vector<std::string> sources;
+    std::string program;
+    std::string why;
+    std::string detail;
+    int language;
 };
 
 struct Ed1Build {
@@ -671,6 +681,75 @@ const char* ed1_local_value(Ed1Debugger* debugger, int index) {
     return holds(debugger, index) ? debugger->locals[index].value.c_str() : "";
 }
 
+int ed1_project_builds(Ed1Project* project) {
+    return project && project->project.builds() ? 1 : 0;
+}
+
+int ed1_project_target_ready(Ed1Project* project) {
+    if (!project) return 0;
+
+    editor::Language lang = editor::LangPlain;
+    bool ok = project->project.targetSources(project->sources, lang, project->why,
+                                             &project->detail);
+    project->language = static_cast<int>(lang);
+    project->program = ok ? project->project.targetProgram() : std::string();
+    return ok ? 1 : 0;
+}
+
+const char* ed1_project_target_why(Ed1Project* project) {
+    return project ? project->why.c_str() : "";
+}
+
+const char* ed1_project_target_detail(Ed1Project* project) {
+    return project ? project->detail.c_str() : "";
+}
+
+int ed1_project_target_language(Ed1Project* project) {
+    return project ? project->language : 0;
+}
+
+int ed1_project_target_sources(Ed1Project* project) {
+    return project ? static_cast<int>(project->sources.size()) : 0;
+}
+
+const char* ed1_project_target_source(Ed1Project* project, int index) {
+    if (!project || index < 0 || index >= static_cast<int>(project->sources.size())) return "";
+    return project->sources[static_cast<size_t>(index)].c_str();
+}
+
+const char* ed1_project_target_program(Ed1Project* project) {
+    return project ? project->program.c_str() : "";
+}
+
+Ed1Build* ed1_build_target(Ed1Project* project, const char* cc1, const char* cl,
+                           int kind, const char* arch, int config) {
+    if (!ed1_project_target_ready(project)) return 0;
+
+    editor::Toolchain tool;
+    if (cc1 && *cc1) tool.cc1 = cc1;
+    if (cl && *cl) tool.cl = cl;
+
+    Ed1Build* out = new Ed1Build();
+    editor::Built made = editor::buildTarget(
+        tool, static_cast<editor::ToolchainKind>(kind), project->sources,
+        static_cast<editor::Language>(project->language), arch ? arch : "",
+        static_cast<editor::Configuration>(config), project->program);
+
+    // The window reads a Build, and what a target build produces is a program
+    // rather than assembly - so what came of it is carried over and the
+    // assembly is left empty, which is what there is.
+    out->built.ok = made.ok;
+    out->built.diag = made.diag;
+    out->built.output = made.output;
+    return out;
+}
+
+Ed1Ran* ed1_run_built(const char* program) {
+    Ed1Ran* out = new Ed1Ran();
+    out->ran = editor::runBuilt(program ? program : "");
+    return out;
+}
+
 Ed1Build* ed1_build(const char* cc1, const char* cl, int kind, const char* source,
                     int language, const char* arch, int config) {
     editor::Toolchain tool;
@@ -696,6 +775,10 @@ int ed1_build_assembly_lines(Ed1Build* built) {
     return static_cast<int>(built->built.asmLines.size());
 }
 int ed1_build_has_error(Ed1Build* built) { return built->built.diag.present ? 1 : 0; }
+const char* ed1_build_error_file(Ed1Build* built) {
+    return built ? built->built.diag.file.c_str() : "";
+}
+
 int ed1_build_error_line(Ed1Build* built) {
     return static_cast<int>(built->built.diag.line);
 }

@@ -1564,6 +1564,51 @@ void debuggingCppForReal() {
 
 // Everything the Windows front end does to stop a program on a line, done
 // through the same seam it uses, on a machine where a debugger exists.
+// The window asks for the project's build through the same seam, and the
+// checks below are the same questions the terminal's F4 asks - which is the
+// point of there being one core and two front ends rather than two editors.
+void theWindowsProjectBuild() {
+    std::printf("what the window asks about building a project\n");
+
+    file::path dir = file::temp_directory_path() / "ed1-bridge-target";
+    file::remove_all(dir);
+    file::create_directories(dir);
+    writeSource((dir / "add.c").string(), "int add(int a, int b) { return a + b; }\n");
+    writeSource((dir / "main.c").string(), "int add(int, int);\nint main(void) { return add(1, 2); }\n");
+    writeSource((dir / "ed1.json").string(),
+                "{\n  \"name\": \"sums\",\n"
+                "  \"groups\": { \"Sources\": [\"add.c\", \"main.c\"] },\n"
+                "  \"build\": { \"target\": \"sums\", \"groups\": [\"Sources\"] }\n}\n");
+
+    Ed1Project* project = ed1_project_new();
+    char trouble[512] = {0};
+    check(ed1_project_load(project, dir.string().c_str(), trouble, sizeof trouble) != 0,
+          "the window loads a project that says what it builds");
+    check(ed1_project_builds(project) != 0, "and is told that it builds something");
+    check(ed1_project_target_ready(project) != 0, "the sources come back through the seam");
+    check(ed1_project_target_sources(project) == 2, "both of them");
+    check(std::string(ed1_project_target_program(project)).find("sums") != std::string::npos,
+          "with the program named after the target");
+
+    // The refusal reaches the window in the two pieces it needs: a line for
+    // the status bar and the rest for the console.
+    writeSource((dir / "extra.cpp").string(), "int twice(int n) { return n * 2; }\n");
+    writeSource((dir / "ed1.json").string(),
+                "{\n  \"name\": \"sums\",\n"
+                "  \"groups\": { \"Sources\": [\"add.c\", \"main.c\", \"extra.cpp\"] },\n"
+                "  \"build\": { \"target\": \"sums\", \"groups\": [\"Sources\"] }\n}\n");
+    check(ed1_project_load(project, dir.string().c_str(), trouble, sizeof trouble) != 0,
+          "a project of both languages loads");
+    check(ed1_project_target_ready(project) == 0, "and is refused before a compiler is run");
+    check(std::string(ed1_project_target_why(project)).find("C++") != std::string::npos,
+          "with a line saying which two languages");
+    check(std::string(ed1_project_target_detail(project)).find("cc1") != std::string::npos,
+          "and the rest of it for the console");
+
+    ed1_project_free(project);
+    file::remove_all(dir);
+}
+
 void theSeamTheWindowUses() {
     std::printf("what the window asks the core to do\n");
 
@@ -1808,6 +1853,103 @@ void whatItRemembers() {
     pth::removeTree(home);
 }
 
+// What a project says it builds, and the three ways it can say something that
+// cannot be built. The compiling itself is the session suite's job; this is
+// about the reading and the refusing, which is where the rules live.
+void whatTheProjectBuilds() {
+    std::printf("what a project says it builds\n");
+
+    file::path dir = file::temp_directory_path() / "ed1-target-test";
+    file::remove_all(dir);
+    file::create_directories(dir);
+
+    writeSource((dir / "ed1.json").string(),
+              "{\n"
+              "  \"name\": \"sums\",\n"
+              "  \"groups\": {\n"
+              "    \"Sources\": [\"add.c\", \"main.c\"],\n"
+              "    \"Headers\": [\"add.h\"],\n"
+              "    \"Notes\": [\"README.md\"]\n"
+              "  },\n"
+              "  \"build\": { \"target\": \"sums\", \"groups\": [\"Sources\"] }\n"
+              "}\n");
+
+    editor::Project project;
+    std::string error;
+    check(project.load(dir.string(), error), "a project with a build entry loads");
+    check(project.builds(), "and says it builds something");
+    checkEqual(project.target().name, "sums", "under the name it gives");
+
+    std::vector<std::string> sources;
+    editor::Language lang = editor::LangPlain;
+    std::string why, detail;
+    check(project.targetSources(sources, lang, why, &detail), "its sources come back");
+    check(sources.size() == 2, "the two in the group it named");
+    check(lang == editor::LangC, "in the language they are in");
+    check(why.empty(), "with nothing to complain about");
+    check(sources[0].find("add.c") != std::string::npos, "in the order the group has them");
+
+    // The header is in the project to be opened, not to be compiled, and the
+    // group of notes is not source at all.
+    for (size_t i = 0; i < sources.size(); ++i)
+        check(sources[i].find(".h") == std::string::npos, "and no header is handed to a compiler");
+
+    // Both languages at once is the one worth refusing: cc1 compiles the C and
+    // cl compiles the C++, and neither can be given the other's files.
+    editor::Target both;
+    both.name = "mixed";
+    both.groups.push_back("Sources");
+    project.setTarget(both);
+    check(project.addFile("extra.cpp", "Sources"), "a C++ file joins the group");
+    check(!project.targetSources(sources, lang, why, &detail), "and the build is refused");
+    check(why.find("C++") != std::string::npos, "saying which two languages");
+    check(!detail.empty(), "with the rest of it for the console");
+    check(sources.empty(), "and nothing handed back to compile");
+
+    // A group that is not there, and a target with no source in it.
+    editor::Target missing;
+    missing.name = "sums";
+    missing.groups.push_back("Nowhere");
+    project.setTarget(missing);
+    check(!project.targetSources(sources, lang, why, &detail), "an unknown group is refused");
+    check(why.find("Nowhere") != std::string::npos, "and named");
+
+    editor::Target empty;
+    empty.name = "sums";
+    empty.groups.push_back("Notes");
+    project.setTarget(empty);
+    check(!project.targetSources(sources, lang, why, &detail), "a group with no source is refused");
+
+    // Nothing said at all is not an error to report, only nothing to build.
+    editor::Project quiet;
+    file::path bare = file::temp_directory_path() / "ed1-target-bare";
+    file::remove_all(bare);
+    file::create_directories(bare);
+    writeSource((bare / "ed1.json").string(),
+                "{ \"name\": \"quiet\", \"groups\": { \"Sources\": [] } }\n");
+    check(quiet.load(bare.string(), error), "a project with no build entry still loads");
+    check(!quiet.builds(), "and says it builds nothing");
+    check(!quiet.targetSources(sources, lang, why, &detail), "so there is nothing to hand back");
+    check(!why.empty(), "and it says so rather than saying nothing");
+
+    // What it says it builds survives being written and read again.
+    editor::Target kept;
+    kept.name = "sums";
+    kept.groups.push_back("Sources");
+    project.setTarget(kept);
+    check(project.save(error), "the project writes itself back");
+
+    editor::Project again;
+    check(again.load(dir.string(), error), "and reads again");
+    check(again.builds(), "still building");
+    checkEqual(again.target().name, "sums", "the same program");
+    check(again.target().groups.size() == 1 && again.target().groups[0] == "Sources",
+          "out of the same groups");
+
+    file::remove_all(dir);
+    file::remove_all(bare);
+}
+
 int main() {
     paths();
     aProjectMadeFromWhatIsThere();
@@ -1817,6 +1959,7 @@ int main() {
     debuggingForReal();
     debuggingCppForReal();
     theSeamTheWindowUses();
+    theWindowsProjectBuild();
     diagnostics();
     layout();
     typing();
@@ -1831,6 +1974,7 @@ int main() {
     jsonReading();
     projects();
     operations();
+    whatTheProjectBuilds();
 
     std::printf("\n%d checks, %d failed\n", checks, failures);
     return failures == 0 ? 0 : 1;

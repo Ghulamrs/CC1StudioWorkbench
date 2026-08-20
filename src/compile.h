@@ -71,6 +71,20 @@ Built buildProgram(const Toolchain& tool, ToolchainKind kind, const std::string&
                    Language lang, const std::string& arch, Configuration config,
                    LineSink sink = 0, void* context = 0);
 
+// A program from several sources, put where the caller says. The project's
+// build; `buildProgram` above is still what a single file gets, and the two do
+// not know about each other - compiling the file in front of you never depends
+// on a project being open, or on it being shut.
+Built buildTarget(const Toolchain& tool, ToolchainKind kind,
+                  const std::vector<std::string>& sources, Language lang,
+                  const std::string& arch, Configuration config,
+                  const std::string& program, LineSink sink = 0, void* context = 0);
+
+// Runs a program that has already been built, with every line it writes handed
+// to the sink. The project's Run, where the building was its own step and the
+// program is not a temporary file to be cleared away afterwards.
+Ran runBuilt(const std::string& program, LineSink sink = 0, void* context = 0);
+
 // Removes what buildProgram left.
 void removeProgram(const Built& built);
 

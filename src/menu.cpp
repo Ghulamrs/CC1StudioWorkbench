@@ -51,8 +51,10 @@ Menu::Menu() : active_(false), dropped_(false), column_(0), item_(0) {
 
     MenuColumn build;
     build.title = "Build";
-    build.items.push_back({"Compile", "Ctrl-B", ActionBuild});
-    build.items.push_back({"Run", "F5", ActionRun});
+    build.items.push_back({"Compile file", "Ctrl-B", ActionBuild});
+    build.items.push_back({"Run file", "F5", ActionRun});
+    build.items.push_back({"Build project", "F4", ActionBuildProject});
+    build.items.push_back({"Run project", "", ActionRunProject});
     build.items.push_back({"Debug", "Ctrl-D", ActionConfigDebug});
     build.items.push_back({"Release", "Ctrl-D", ActionConfigRelease});
     build.items.push_back({"Console", "", ActionShowConsole});

@@ -58,6 +58,22 @@
     <Link>
       <SubSystem>Windows</SubSystem>
       <EntryPointSymbol>main</EntryPointSymbol>
+      <!-- LNK4248: "unresolved typeref token ... image may not run", once for
+           each of the five handles bridge.h declares and never defines -
+           Ed1Project, Ed1Build, Ed1Ran, Ed1Program, Ed1Debugger. They are
+           opaque on purpose: the window holds pointers to them and passes them
+           back, and never looks inside one, so the managed half of this binary
+           has no definition to put in its metadata and the linker says so.
+
+           It cannot be fixed by letting the managed half see the real
+           definitions. Those hold std::string, std::vector and editor::Project,
+           and a /clr translation unit that instantiates the same templates the
+           native files instantiate corrupts the heap before main runs - which
+           is the whole reason MainForm.h includes bridge.h and nothing else of
+           ours. The warning is the price of that rule, so it is turned off
+           here with its reason beside it rather than left to be rediscovered
+           every time somebody opens the project. -->
+      <AdditionalOptions>/IGNORE:4248 %(AdditionalOptions)</AdditionalOptions>
     </Link>
   </ItemDefinitionGroup>
 

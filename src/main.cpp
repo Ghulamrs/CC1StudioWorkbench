@@ -79,7 +79,8 @@ int main(int argc, char** argv) {
                 "  --case-indent  put case labels one step inside their switch\n"
                 "                 rather than in its own column\n"
                 "\n"
-                "  F10 menu   Ctrl-B build   F5 run    Ctrl-A lay out\n"
+                "  F10 menu   Ctrl-B build this file   F5 run this file\n"
+                "  F4 build the project's program   Ctrl-A lay out\n"
                 "  F9 breakpoint   F8 debug   F7/F6 step over/into\n"
                 "  F1 keys    Ctrl-Q quit\n",
                 me.c_str());

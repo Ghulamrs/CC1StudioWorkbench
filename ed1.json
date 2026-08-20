@@ -40,9 +40,7 @@
       "src/demangle_win.cpp",
       "src/terminal.cpp",
       "src/terminal.h",
-      "src/terminal.o",
       "src/terminal_common.cpp",
-      "src/terminal_common.o",
       "src/terminal_win.cpp"
     ],
     "Tests": [

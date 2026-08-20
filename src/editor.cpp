@@ -1374,9 +1374,48 @@ void Editor::replacePrompt() {
     say(number(count) + (count == 1 ? " change" : " changes") + " - Ctrl-Z puts them back");
 }
 
+// Lay out what is selected, or the whole file when nothing is.
+//
+// Even for a selection the whole file is laid out first, and only the selected
+// lines are taken from the result. Indentation is not a property of a line but
+// of everything above it - how deep the braces are, whether a comment is open -
+// so laying out a fragment on its own would start at column zero and be wrong
+// from the first line. What the selection decides is which lines are written
+// back, not what is measured.
 void Editor::reindentAll() {
+    const std::vector<std::string> laid = reindent(buf_.lines(), style_);
+
+    Range range;
+    bool some = selection(range) && !range.empty();
+
+    // A run that adds or removes lines is not one this can take a slice of, so
+    // the selection is passed over and the whole file is laid out. The
+    // indenter does not do that today; if it ever does, this stays honest.
+    if (some && laid.size() == buf_.lineCount()) {
+        size_t first = range.fromRow, last = range.toRow;
+        if (last >= buf_.lineCount()) last = buf_.lineCount() - 1;
+
+        // The selected lines, laid out; every other line exactly as it was.
+        std::vector<std::string> kept = buf_.lines();
+        size_t moved = 0;
+        for (size_t row = first; row <= last; ++row)
+            if (kept[row] != laid[row]) {
+                kept[row] = laid[row];
+                ++moved;
+            }
+
+        buf_.beginEdit(EditOther, cx_, cy_);
+        buf_.replaceAll(kept);
+        clampCursor();
+        cx_ = leadingSpace(buf_.line(cy_));
+        size_t howMany = last - first + 1;
+        say("laid out " + number(howMany) + (howMany == 1 ? " line" : " lines") +
+            " of the selection - " + number(moved) + " moved");
+        return;
+    }
+
     buf_.beginEdit(EditOther, cx_, cy_);
-    buf_.replaceAll(reindent(buf_.lines(), style_));
+    buf_.replaceAll(laid);
     clampCursor();
     cx_ = leadingSpace(buf_.line(cy_));
     say("laid out - " + lineCountText(buf_.lineCount()));
@@ -2152,7 +2191,7 @@ void Editor::showKeys() {
     console_.push_back("Ctrl-K       automatic, cc1, cl   Ctrl-T   next target");
     console_.push_back("Ctrl-D       debug or release");
     console_.push_back("Ctrl-W       next pane            Ctrl-T   next target");
-    console_.push_back("Ctrl-P       project pane         Ctrl-A   lay the file out");
+    console_.push_back("Ctrl-P       project pane         Ctrl-A   re-indent (selection)");
     console_.push_back("Ctrl-E       bottom panel         Tab      lay this line out");
     console_.push_back("Ctrl-F       find                 Ctrl-G   find the next one");
     console_.push_back("Ctrl-R       replace              Ctrl-Z   undo, Ctrl-Y redo");

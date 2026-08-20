@@ -44,6 +44,14 @@ left margin. Braces inside strings, character constants, `//` and `/* */` are
 text and are not counted. Tab in the leading space puts the line where it
 belongs rather than adding a step; Ctrl-F does the whole file.
 
+**Re-indent takes a selection.** Edit ▸ Re-indent, or `Ctrl-A`, lays out what is
+selected and leaves every other line exactly as it was; with nothing selected it
+lays out the file. Either way the *whole* file is measured first, because how
+far a line is indented is a property of everything above it - how deep the
+braces are, whether a comment is open - so laying out a fragment on its own
+would start at column zero and be wrong from its first line. The selection
+decides which lines are written back, not what is measured.
+
 The rules come from Shalimar's indenter, which had already settled them, with
 four things added that C has and that language did not: escapes inside literals,
 block comments that outlive their line, the preprocessor, and switch labels.
@@ -694,7 +702,7 @@ because that is what cc1's own sources use, and they contain no tab at all.
 | shift + arrows | select |
 | `Ctrl-C` / `Ctrl-X` / `Ctrl-V` | copy / cut / paste |
 | `Ctrl-Z` / `Ctrl-Y` | undo / redo |
-| `Ctrl-A` | lay the whole file out |
+| `Ctrl-A` | re-indent: the selection, or the whole file when nothing is selected |
 | `Tab` | lay this line out, in the leading space |
 | `Ctrl-D` | debug or release |
 | `F2` / `F3` | previous / next open file |

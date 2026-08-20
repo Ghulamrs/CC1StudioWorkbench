@@ -430,6 +430,48 @@ void multiByteText(const std::string& ed1) {
     file::remove_all(dir);
 }
 
+// Re-indenting what is selected, and everything when nothing is.
+void reindenting(const std::string& ed1) {
+    std::printf("re-indenting, all of it or the part that is selected\n");
+
+    file::path dir = freshProject("reindent");
+    file::path file = dir / "src" / "messy.c";
+    const char* crooked =
+        "int main(void)\n{\nint a = 1;\n        int b = 2;\n   if (a < b) {\n"
+        "a = b;\n            }\n    int c = 3;\n  int d = 4;\n    return 0;\n}\n";
+    writeFile(file, crooked);
+
+    std::string common = "\"" + file.string() + "\" --project \"" + dir.string() + "\"";
+
+    // Nothing selected: the whole file, as Ctrl-A has always done.
+    Screen all = drive(ed1, common, ctrl('a') + ctrl('s') + ctrl('q'), dir);
+    // wasShown, not onScreen: saving comes after, and the message line is
+    // one line - what it says at the end is that the file was written.
+    check(wasShown(all, "laid out - 11 lines"), "with nothing selected it lays the file out");
+    // "  int d = 4;" laid out becomes "    int d = 4;", so the crooked spelling
+    // is gone from the file - and looking for its absence has to allow for the
+    // straight one containing it, which is why the whole line is matched.
+    check(readFile(file).find("\n  int d = 4;") == std::string::npos,
+          "and the line nobody selected is laid out too");
+
+    // Selected: only those lines are written back, and the rest are left as
+    // they were - which is the whole difference, and is checked by a line
+    // outside the selection staying crooked.
+    writeFile(file, crooked);
+    Screen part = drive(ed1, common,
+                        times(kDown, 2) + times(kShiftDown, 4) + ctrl('a') +
+                            ctrl('s') + ctrl('q'),
+                        dir);
+    check(wasShown(part, "of the selection"), "a selection is laid out on its own");
+    std::string after = readFile(file);
+    check(after.find("    int a = 1;") != std::string::npos,
+          "the selected lines are laid out");
+    check(after.find("  int d = 4;") != std::string::npos,
+          "and a line below the selection is left exactly as it was");
+
+    file::remove_all(dir);
+}
+
 void undoing(const std::string& ed1) {
     std::printf("undo and redo, in the editor\n");
 
@@ -1145,6 +1187,7 @@ int main(int argc, char** argv) {
     fileCommands(ed1);
     projectPane(ed1);
     findingAndReplacing(ed1);
+    reindenting(ed1);
     undoing(ed1);
     selectingAndPasting(ed1);
     multiByteText(ed1);

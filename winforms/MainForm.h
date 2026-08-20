@@ -261,7 +261,7 @@ private:
             Item("Replace...", Keys::Control | Keys::H, gcnew EventHandler(this, &MainForm::OnReplace)));
         edit->DropDownItems->Add(gcnew ToolStripSeparator());
         edit->DropDownItems->Add(
-            Item("Lay out file", Keys::Control | Keys::L, gcnew EventHandler(this, &MainForm::OnLayOut)));
+            Item("Re-indent", Keys::Control | Keys::L, gcnew EventHandler(this, &MainForm::OnLayOut)));
         bar->Items->Add(edit);
 
         // Everything that changes what the project holds. Each of these asks a
@@ -879,6 +879,11 @@ private:
         return ed1_language_for(reinterpret_cast<const char*>(pinned));
     }
 
+    // Lay out what is selected, or the whole file when nothing is - the same
+    // rule the terminal half follows, and for the same reason: the whole file
+    // is laid out either way, because indentation is a property of everything
+    // above a line and not of the line. What a selection decides is which
+    // lines are written back.
     void OnLayOut(Object^, EventArgs^) {
         array<Byte>^ bytes = Utf8Of(text_->Text->Replace("\r\n", "\n"));
         pin_ptr<Byte> pinned = &bytes[0];
@@ -887,6 +892,31 @@ private:
                                              indentWidth_, indentTabs_, indentCase_));
 
         int caret = text_->SelectionStart;
+        int length = text_->SelectionLength;
+
+        array<String^>^ was = text_->Lines;
+        array<String^>^ now = laid->Split('\n');
+        // Split leaves an empty piece after a trailing newline; Lines does not.
+        int howManyNow = now->Length;
+        if (howManyNow > 0 && now[howManyNow - 1]->Length == 0) --howManyNow;
+
+        if (length > 0 && howManyNow == was->Length) {
+            int first = text_->GetLineFromCharIndex(caret);
+            int last = text_->GetLineFromCharIndex(caret + length - 1);
+            if (last >= was->Length) last = was->Length - 1;
+
+            for (int row = first; row <= last; ++row) was[row] = now[row];
+
+            text_->Text = String::Join("\r\n", was);
+            text_->SelectionStart = Math::Min(caret, text_->TextLength);
+            text_->SelectionLength = 0;
+            Recolour();
+            int howMany = last - first + 1;
+            what_->Text = String::Format("laid out {0} line{1} of the selection",
+                                         howMany, howMany == 1 ? "" : "s");
+            return;
+        }
+
         text_->Text = laid->Replace("\n", "\r\n");
         text_->SelectionStart = Math::Min(caret, text_->TextLength);
         Recolour();

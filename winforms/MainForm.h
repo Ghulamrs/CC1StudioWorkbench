@@ -25,6 +25,23 @@ public:
     TabPage^ page;
 };
 
+// The numbers down the left are repainted on every keystroke, and a plain
+// Panel clears itself to its background before the Paint handler is called -
+// which is the blink. This one draws the strip off screen and puts it down in
+// one go.
+ref class Gutter : public Panel {
+public:
+    Gutter() { DoubleBuffered = true; }
+};
+
+// Where a text box is scrolled to. Windows Forms does not say, and colouring
+// has to put it back: selecting a run scrolls that run into view, and
+// colouring a file selects every run in it.
+value struct Spot {
+    int x;
+    int y;
+};
+
 public ref class MainForm : public Form {
 public:
     MainForm() { Start(nullptr, nullptr); }
@@ -38,8 +55,10 @@ protected:
     // it does nothing at all, because there is nothing yet to give it to.
     virtual void OnShown(EventArgs^ e) override {
         Form::OnShown(e);
+        Arrange();
         text_->Select(0, 0);
         text_->Focus();
+        Recolour();
     }
 
     // What the pair of programs is called. The binaries stay ed1 and ed1gui;
@@ -106,6 +125,11 @@ private:
     String^ needle_;      // what was last searched for
     bool colouring_;
 
+    // Kept as fields because their proportions are set once the window has a
+    // size, not while it is being built - see Arrange.
+    SplitContainer^ outer_;
+    SplitContainer^ upper_;
+
     TreeView^ tree_;
     TabControl^ files_;
     System::Collections::Generic::List<Sheet^>^ sheets_;
@@ -119,6 +143,7 @@ private:
     StatusStrip^ status_;
     ToolStripStatusLabel^ where_;
     ToolStripStatusLabel^ what_;
+    ToolStripStatusLabel^ root_;   // which directory the project is in
 
     // ---- the seam ----------------------------------------------------------
 
@@ -185,11 +210,20 @@ private:
         Text = ProductName();
         Width = 1100;
         Height = 760;
+        MinimumSize = System::Drawing::Size(840, 560);
+        StartPosition = FormStartPosition::CenterScreen;
+        DoubleBuffered = true;
         colouring_ = false;
 
         MenuStrip^ bar = gcnew MenuStrip();
 
         ToolStripMenuItem^ file = gcnew ToolStripMenuItem("&File");
+        file->DropDownItems->Add(
+            Item("New file...", Keys::Control | Keys::N,
+                 gcnew EventHandler(this, &MainForm::OnNewFile)));
+        file->DropDownItems->Add("New project...", nullptr,
+                                 gcnew EventHandler(this, &MainForm::OnNewProject));
+        file->DropDownItems->Add(gcnew ToolStripSeparator());
         file->DropDownItems->Add("Open project...", nullptr,
                                  gcnew EventHandler(this, &MainForm::OnOpenProject));
         file->DropDownItems->Add("Open file...", nullptr,
@@ -236,9 +270,10 @@ private:
         project->DropDownItems->Add("Add this file...", nullptr,
                                     gcnew EventHandler(this, &MainForm::OnAddThisFile));
         project->DropDownItems->Add(gcnew ToolStripSeparator());
-        project->DropDownItems->Add(
-            Item("New file...", Keys::Control | Keys::N,
-                 gcnew EventHandler(this, &MainForm::OnNewFile)));
+        ToolStripMenuItem^ another = gcnew ToolStripMenuItem(
+            "New file...", nullptr, gcnew EventHandler(this, &MainForm::OnNewFile));
+        another->ShortcutKeyDisplayString = "Ctrl+N";
+        project->DropDownItems->Add(another);
         project->DropDownItems->Add(Item("Rename...", Keys::F2,
                                          gcnew EventHandler(this, &MainForm::OnRenameFile)));
         project->DropDownItems->Add("Move to group...", nullptr,
@@ -313,15 +348,34 @@ private:
 
         // The same four regions as the terminal one: project, text, panel and
         // status - by splitters here instead of by counting rows.
-        SplitContainer^ outer = gcnew SplitContainer();
-        outer->Dock = DockStyle::Fill;
-        outer->Orientation = Orientation::Horizontal;
+        // The splitter is the only line drawn between the panes: each control
+        // fills its side completely, so the container's own colour shows in
+        // that gap and nowhere else. Sunken borders around each pane put a
+        // second line beside that one and a sliver of grey outside the tree,
+        // which is what made the left edge look like an accident.
+        outer_ = gcnew SplitContainer();
+        outer_->Dock = DockStyle::Fill;
+        outer_->Orientation = Orientation::Horizontal;
+        outer_->SplitterWidth = 5;
+        outer_->BackColor = System::Drawing::Color::FromArgb(222, 222, 222);
+        SplitContainer^ outer = outer_;
 
-        SplitContainer^ upper = gcnew SplitContainer();
-        upper->Dock = DockStyle::Fill;
+        upper_ = gcnew SplitContainer();
+        upper_->Dock = DockStyle::Fill;
+        upper_->SplitterWidth = 5;
+        upper_->BackColor = System::Drawing::Color::FromArgb(222, 222, 222);
+        SplitContainer^ upper = upper_;
 
         tree_ = gcnew TreeView();
         tree_->Dock = DockStyle::Fill;
+        tree_->BorderStyle = System::Windows::Forms::BorderStyle::None;
+        tree_->BackColor = System::Drawing::Color::FromArgb(250, 250, 250);
+        tree_->ItemHeight = 20;
+        tree_->FullRowSelect = true;
+        tree_->HideSelection = false;
+        tree_->ShowLines = false;
+        tree_->ShowRootLines = false;
+        tree_->Indent = 16;
         tree_->NodeMouseDoubleClick +=
             gcnew TreeNodeMouseClickEventHandler(this, &MainForm::OnTreeOpen);
         upper->Panel1->Controls->Add(tree_);
@@ -341,6 +395,7 @@ private:
         debug_ = ReadOnlyBox();
         assembly_ = gcnew RichTextBox();
         assembly_->Dock = DockStyle::Fill;
+        assembly_->BorderStyle = System::Windows::Forms::BorderStyle::None;
         assembly_->Font = gcnew System::Drawing::Font("Consolas", 10.0f);
         assembly_->ReadOnly = true;
         assembly_->WordWrap = false;
@@ -359,33 +414,36 @@ private:
         Controls->Add(outer);
         outer->BringToFront();
 
+        // The line along the bottom: what happened on the left, then the
+        // directory the project is in - asked for once too often to be left
+        // out - and the caret's line and column at the right.
         status_ = gcnew StatusStrip();
         what_ = gcnew ToolStripStatusLabel("no file");
+        what_->Spring = true;
+        what_->TextAlign = System::Drawing::ContentAlignment::MiddleLeft;
+        root_ = gcnew ToolStripStatusLabel("no project");
+        root_->BorderSides = ToolStripStatusLabelBorderSides::Left;
+        root_->ForeColor = System::Drawing::Color::FromArgb(90, 90, 90);
         where_ = gcnew ToolStripStatusLabel("1:1");
+        where_->BorderSides = ToolStripStatusLabelBorderSides::Left;
         status_->Items->Add(what_);
+        status_->Items->Add(root_);
         status_->Items->Add(where_);
         Controls->Add(status_);
 
-        // Both splitters, on the rule the terminal front end already follows:
-        // the project pane takes 22 columns and the bottom panel takes 7 rows -
+        // FixedPanel is the rule the terminal front end already follows: the
+        // project pane takes 22 columns and the bottom panel takes 7 rows -
         // "the command, and a few lines of what it said" - and the code gets
-        // everything that is left. A SplitContainer left alone gives each side
-        // half, which put a third of the width and half the height into panes
-        // that hold short filenames and a few lines of output.
-        //
-        // FixedPanel is the other half of that rule: growing the window has to
-        // grow the code, since the two panes need what they need and no more.
-        //
-        // Set here rather than where the containers are made: SplitterDistance
-        // is refused while a control has no real size, and it has none until it
-        // is in a form that has one.
+        // everything that is left, including everything the window gains when
+        // it is made larger.
         upper->FixedPanel = FixedPanel::Panel1;
-        upper->SplitterDistance = 210;
-
         outer->FixedPanel = FixedPanel::Panel2;
-        const int forPanel = 200;   // the tab strip and about a dozen lines
-        if (outer->Height > forPanel + 160)
-            outer->SplitterDistance = outer->Height - forPanel;
+
+        // How much each of them takes is settled in Arrange, once the window
+        // has a size. SplitterDistance is refused while a control has none,
+        // and quietly leaves both panes at half - which is a third of the
+        // width for short filenames and half the height for a dozen lines of
+        // output.
 
         // There is always a sheet, even before a file is opened, so nothing
         // below has to ask whether there is somewhere to type.
@@ -394,6 +452,55 @@ private:
 
         console_->Text = "cc1 or cl output appears here.  F7 builds, F5 runs.";
         SayDebugTab(nullptr);
+        SayWhere();
+    }
+
+    // The proportions and the smallest each pane may be dragged to, in one
+    // place and applied once the window has a size to divide.
+    //
+    // Both belong here rather than where the containers are made, and for the
+    // same reason: a minimum is checked against the size the container has at
+    // that moment, and a SplitContainer that is not in a window yet is 150 by
+    // 100. Asking for a 240-pixel minimum there is not refused quietly - it
+    // throws where it stands, and the window never appears at all.
+    void Arrange() {
+        const int forTree = 120;    // the narrowest the project pane may be
+        const int forCode = 240;    // and the narrowest the text beside it
+        const int forUpper = 160;
+        const int forPanel = 80;
+
+        if (upper_ != nullptr && upper_->Width > forTree + forCode) {
+            upper_->Panel1MinSize = forTree;
+            upper_->Panel2MinSize = forCode;
+            upper_->SplitterDistance =
+                Math::Max(forTree, Math::Min(240, upper_->Width - forCode));
+        }
+
+        if (outer_ != nullptr &&
+            outer_->Height > forUpper + forPanel + outer_->SplitterWidth) {
+            outer_->Panel1MinSize = forUpper;
+            outer_->Panel2MinSize = forPanel;
+
+            // A quarter of the window for the output, between about eight
+            // lines and about twenty.
+            int deep = Math::Max(120, Math::Min(220, outer_->Height / 4));
+            int distance = outer_->Height - deep - outer_->SplitterWidth;
+            int most = outer_->Height - forPanel - outer_->SplitterWidth;
+            outer_->SplitterDistance = Math::Max(forUpper, Math::Min(distance, most));
+        }
+    }
+
+    // Which directory the project is in, where it can be read. "Where would a
+    // new file go" is not a question the window should leave anyone asking.
+    String^ RootNow() {
+        String^ root = FromUtf8(ed1_project_root(project_));
+        if (root == nullptr || root->Length == 0) root = projectDirectory_;
+        return root;
+    }
+
+    void SayWhere() {
+        String^ root = RootNow();
+        root_->Text = root == nullptr || root->Length == 0 ? "no project" : root;
     }
 
     // A menu item with its key, since there are a dozen of them now. The
@@ -406,30 +513,46 @@ private:
     }
 
     // There is no input box in Windows Forms, so here is one.
-    String^ Ask(String^ title, String^ initial) {
+    String^ Ask(String^ title, String^ initial) { return Ask(title, nullptr, initial); }
+
+    // The same one, with a line above the entry for what the title has no room
+    // to say - which directory a name will be taken as relative to, most of
+    // the time, since that is the thing nobody can otherwise see.
+    String^ Ask(String^ title, String^ note, String^ initial) {
         Form^ box = gcnew Form();
         box->Text = title;
         box->FormBorderStyle = System::Windows::Forms::FormBorderStyle::FixedDialog;
         box->StartPosition = System::Windows::Forms::FormStartPosition::CenterParent;
         box->MinimizeBox = false;
         box->MaximizeBox = false;
-        box->ClientSize = System::Drawing::Size(440, 96);
+
+        int lift = note == nullptr || note->Length == 0 ? 0 : 24;
+        box->ClientSize = System::Drawing::Size(480, 96 + lift);
+
+        if (lift > 0) {
+            Label^ says = gcnew Label();
+            says->Text = note;
+            says->AutoEllipsis = true;
+            says->ForeColor = System::Drawing::Color::FromArgb(90, 90, 90);
+            says->SetBounds(12, 12, 456, 20);
+            box->Controls->Add(says);
+        }
 
         TextBox^ entry = gcnew TextBox();
         entry->Text = initial == nullptr ? "" : initial;
-        entry->SetBounds(12, 16, 416, 26);
+        entry->SetBounds(12, 16 + lift, 456, 26);
         entry->Font = gcnew System::Drawing::Font("Consolas", 10.0f);
         entry->SelectAll();
 
         Button^ yes = gcnew Button();
         yes->Text = "OK";
         yes->DialogResult = System::Windows::Forms::DialogResult::OK;
-        yes->SetBounds(266, 56, 78, 28);
+        yes->SetBounds(306, 56 + lift, 78, 28);
 
         Button^ no = gcnew Button();
         no->Text = "Cancel";
         no->DialogResult = System::Windows::Forms::DialogResult::Cancel;
-        no->SetBounds(350, 56, 78, 28);
+        no->SetBounds(390, 56 + lift, 78, 28);
 
         box->Controls->Add(entry);
         box->Controls->Add(yes);
@@ -511,7 +634,7 @@ private:
         sheet->box->TextChanged += gcnew EventHandler(this, &MainForm::OnTextChanged);
         sheet->box->VScroll += gcnew EventHandler(this, &MainForm::OnScrolled);
 
-        sheet->gutter = gcnew Panel();
+        sheet->gutter = gcnew Gutter();
         sheet->gutter->Dock = DockStyle::Left;
         sheet->gutter->Width = 52;
         sheet->gutter->BackColor = System::Drawing::Color::FromArgb(245, 245, 245);
@@ -546,11 +669,42 @@ private:
                                 text_->Lines->Length + " lines";
         text_->Focus();
         sheet->gutter->Invalidate();
+
+        // Each tab keeps its own text, so the one coming forward is coloured
+        // for where it is scrolled to.
+        Recolour();
+    }
+
+    // ---- what Windows Forms does not say ----------------------------------
+
+    // Three messages, because there is no other way to say any of them. A box
+    // that is drawing repaints on every one of the hundreds of selections
+    // colouring makes, and it scrolls itself to each of them; frozen, it does
+    // neither, and its scroll position is read before and put back after.
+    literal int kDrawing = 0x000B;        // WM_SETREDRAW
+    literal int kWhereScrolled = 0x04DD;  // EM_GETSCROLLPOS
+    literal int kScrollTo = 0x04DE;       // EM_SETSCROLLPOS
+
+    [System::Runtime::InteropServices::DllImport("user32.dll", EntryPoint = "SendMessageW")]
+    static IntPtr Tell(IntPtr window, int message, IntPtr one, IntPtr two);
+
+    [System::Runtime::InteropServices::DllImport("user32.dll", EntryPoint = "SendMessageW")]
+    static IntPtr Tell(IntPtr window, int message, IntPtr one, Spot% where);
+
+    // Stopping and starting drawing are not symmetrical: nothing that happened
+    // while it was stopped is on the screen, so the box has to be told to paint
+    // itself once it is allowed to again.
+    static void Drawing(Control^ box, bool allowed) {
+        Tell(box->Handle, kDrawing, IntPtr(allowed ? 1 : 0), IntPtr::Zero);
+        if (allowed) {
+            box->Invalidate();
+            box->Update();
+        }
     }
 
     // ---- the numbers down the left ----------------------------------------
 
-    void OnTextChanged(Object^, EventArgs^) {
+    void OnTextChanged(Object^ sender, EventArgs^) {
         Sheet^ sheet = Current();
         if (sheet == nullptr) return;
 
@@ -561,17 +715,32 @@ private:
         int wanted = 22 + 9 * digits;
         if (wanted > sheet->gutter->Width) sheet->gutter->Width = wanted;
         sheet->gutter->Invalidate();
+
+        // What has just been typed is coloured as it is typed, which costs
+        // what a screenful costs. The box a file is being read into is not the
+        // box in front yet, and colouring it would use the language of
+        // whatever is - so only the one in front is coloured here.
+        if (sender == text_) Recolour();
     }
 
     void OnScrolled(Object^, EventArgs^) {
         Sheet^ sheet = Current();
-        if (sheet != nullptr) sheet->gutter->Invalidate();
+        if (sheet == nullptr) return;
+        // What has just come into view is coloured now that it can be seen.
+        Recolour();
+        sheet->gutter->Invalidate();
     }
 
     void OnGutterPaint(Object^ sender, PaintEventArgs^ e) {
         Panel^ panel = safe_cast<Panel^>(sender);
         RichTextBox^ box = safe_cast<RichTextBox^>(panel->Tag);
         if (box == nullptr) return;
+
+        // A hairline where the numbers stop, so the gutter reads as a margin
+        // rather than as a stripe of a different colour.
+        System::Drawing::Pen^ edge =
+            gcnew System::Drawing::Pen(System::Drawing::Color::FromArgb(228, 228, 228));
+        e->Graphics->DrawLine(edge, panel->Width - 1, 0, panel->Width - 1, panel->Height);
 
         int lines = box->Lines->Length;
         if (lines < 1) lines = 1;
@@ -735,17 +904,69 @@ private:
         text_->SelectedText = "\r\n" + lead;
     }
 
+    // Colouring is done to what is on the screen and a screenful either side of
+    // it, not to the whole file. The lexer still runs from the top - it has to,
+    // since a comment opened on line 3 colours line 900 - but that part is
+    // native and costs nothing worth counting. What costs is the box: every
+    // coloured run is a selection, and a file the size of a parser has tens of
+    // thousands of them.
+    //
+    // The box is frozen while it happens and its scroll position is put back
+    // afterwards, because a selection scrolls itself into view. Without that,
+    // opening a long file walks visibly down to its last line - which is what
+    // it used to do.
     void Recolour() {
         if (colouring_) return;
+        if (text_ == nullptr || !text_->IsHandleCreated) return;
         colouring_ = true;
 
-        int caret = text_->SelectionStart;
-        int language = LanguageNow();
-        int state = 0;
-        int at = 0;
-
         array<String^>^ all = text_->Lines;
-        for (int row = 0; row < all->Length; ++row) {
+        int language = LanguageNow();
+
+        // What can be seen now, and as much again above and below it, so that
+        // the wheel has somewhere coloured to travel before this runs again.
+        int top = text_->GetLineFromCharIndex(
+            text_->GetCharIndexFromPosition(System::Drawing::Point(1, 1)));
+        int bottom = text_->GetLineFromCharIndex(text_->GetCharIndexFromPosition(
+            System::Drawing::Point(1, Math::Max(1, text_->ClientSize.Height - 2))));
+        int deep = Math::Max(1, bottom - top + 1);
+        int from = Math::Max(0, top - deep);
+        int to = Math::Min(all->Length - 1, bottom + deep);
+
+        // Formatting sets the box's own modified flag, and a file that has only
+        // been looked at has not been modified.
+        bool touched = text_->Modified;
+        int caret = text_->SelectionStart;
+        int length = text_->SelectionLength;
+
+        Spot scrolled;
+        Tell(text_->Handle, kWhereScrolled, IntPtr::Zero, scrolled);
+        Drawing(text_, false);
+
+        // Above the window: the lexer only, for the state it carries down.
+        int state = 0;
+        for (int row = 0; row < from; ++row) {
+            array<Byte>^ above = Utf8Of(all[row]);
+            pin_ptr<Byte> abovePin = &above[0];
+            array<Byte>^ ignored = gcnew array<Byte>(above->Length);
+            pin_ptr<Byte> ignoredPin = &ignored[0];
+            ed1_highlight(reinterpret_cast<const char*>(abovePin), language, &state,
+                          ignoredPin, ignored->Length);
+        }
+
+        // A run that stops being a keyword has to stop being blue, so the
+        // window goes back to black before it is coloured again.
+        if (from <= to) {
+            int start = text_->GetFirstCharIndexFromLine(from);
+            int end = to + 1 < all->Length ? text_->GetFirstCharIndexFromLine(to + 1)
+                                           : text_->TextLength;
+            if (start >= 0 && end > start) {
+                text_->Select(start, end - start);
+                text_->SelectionColor = System::Drawing::Color::Black;
+            }
+        }
+
+        for (int row = from; row <= to; ++row) {
             array<Byte>^ bytes = Utf8Of(all[row]);
             pin_ptr<Byte> linePin = &bytes[0];
 
@@ -754,6 +975,9 @@ private:
 
             int howMany = ed1_highlight(reinterpret_cast<const char*>(linePin), language,
                                         &state, kindPin, kinds->Length);
+
+            int at = text_->GetFirstCharIndexFromLine(row);
+            if (at < 0) break;
 
             // The kinds are one per byte and the box counts characters, so each
             // run of one kind is measured by decoding just that run.
@@ -773,11 +997,13 @@ private:
                 column += width;
                 byte = end;
             }
-            at += all[row]->Length + 1;
         }
 
-        text_->Select(caret, 0);
+        text_->Select(caret, length);
         text_->SelectionColor = System::Drawing::Color::Black;
+        Tell(text_->Handle, kScrollTo, IntPtr::Zero, scrolled);
+        text_->Modified = touched;
+        Drawing(text_, true);
         colouring_ = false;
     }
 
@@ -850,6 +1076,9 @@ private:
                  CharacterColumn(foundRow, foundColumn);
         text_->Select(at, needle_->Length);
         text_->ScrollToCaret();
+        // A jump of hundreds of lines lands past whatever was coloured last,
+        // and scrolling done in code raises no scroll event to notice it.
+        Recolour();
         text_->Focus();
         what_->Text = String::Format("{0} - line {1}", needle_, foundRow + 1);
     }
@@ -934,6 +1163,10 @@ private:
     }
 
     void OnCaretMoved(Object^, EventArgs^) {
+        // Colouring moves the caret to every run it paints. None of those are
+        // the person's caret, and the line and column below are theirs.
+        if (colouring_) return;
+
         int caret = text_->SelectionStart;
         int row = text_->GetLineFromCharIndex(caret);
         where_->Text =
@@ -970,6 +1203,7 @@ private:
             // No project file still leaves a directory that paths are counted
             // from, so the file commands work either way.
             ed1_project_set_root(project_, reinterpret_cast<const char*>(pinned));
+            SayWhere();
             return;
         }
 
@@ -985,6 +1219,7 @@ private:
         what_->Text = String::Format("ready - {0}, {1} groups",
                                      FromUtf8(ed1_project_name(project_)),
                                      ed1_project_groups(project_));
+        SayWhere();
     }
 
     // Rebuilt from the project as it stands, so a change shows without the
@@ -1046,7 +1281,12 @@ private:
     String^ OutcomePath() { return FromUtf8(ed1_outcome_path(project_)); }
 
     void OnNewFile(Object^, EventArgs^) {
-        String^ name = Ask("New file (name, or one directory and a name)", "");
+        String^ root = RootNow();
+        String^ name = Ask("New file (name, or one directory and a name)",
+                           root == nullptr || root->Length == 0
+                               ? "There is no project, so this goes where the editor was started."
+                               : "It will be made in " + root,
+                           "");
         if (name == nullptr || name->Length == 0) return;
 
         array<Byte>^ relative = Utf8Of(name);
@@ -1165,11 +1405,22 @@ private:
             FillTree();
     }
 
+    // Where a project is made used to be the directory the editor happened to
+    // be started in, which is not a thing anybody can see - so it is asked for,
+    // and the answer is on the status line from then on.
     void OnNewProject(Object^, EventArgs^) {
-        String^ name = Ask("Project name", "Project");
+        FolderBrowserDialog^ pick = gcnew FolderBrowserDialog();
+        pick->Description = "Where to put the project";
+        pick->ShowNewFolderButton = true;
+        String^ start = RootNow();
+        if (start != nullptr && start->Length > 0) pick->SelectedPath = start;
+        if (pick->ShowDialog(this) != System::Windows::Forms::DialogResult::OK) return;
+
+        String^ name = Ask("Project name", "It will be made in " + pick->SelectedPath,
+                           "Project");
         if (name == nullptr || name->Length == 0) return;
 
-        array<Byte>^ where = Utf8Of(projectDirectory_ == nullptr ? "." : projectDirectory_);
+        array<Byte>^ where = Utf8Of(pick->SelectedPath);
         pin_ptr<Byte> wherePin = &where[0];
         array<Byte>^ called = Utf8Of(name);
         pin_ptr<Byte> calledPin = &called[0];
@@ -1178,8 +1429,11 @@ private:
 
         if (Did(ed1_begin_project(project_, reinterpret_cast<const char*>(wherePin),
                                   reinterpret_cast<const char*>(calledPin),
-                                  reinterpret_cast<const char*>(firstPin))))
+                                  reinterpret_cast<const char*>(firstPin)))) {
+            projectDirectory_ = pick->SelectedPath;
             FillTree();
+            SayWhere();
+        }
     }
 
     void OnSaveProject(Object^, EventArgs^) { Did(ed1_save_project(project_)); }
@@ -1738,6 +1992,7 @@ private:
         if (at < 0) at = 0;
         text_->Select(at, 0);
         text_->ScrollToCaret();
+        Recolour();
         text_->Focus();
     }
 

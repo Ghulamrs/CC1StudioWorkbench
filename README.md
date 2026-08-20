@@ -360,19 +360,49 @@ binary as native code. Nothing is duplicated: laying a file out, colouring it,
 reading ed1.json and choosing between cc1 and cl are all the same code running.
 
 **The project operations** are on the Project menu: new project, save project,
-add this file, new file, rename, move to group and delete. None of them is
+add this file, new file, rename, move to group and delete. New file and new
+project are on the File menu as well, because that is where somebody who wants
+to make something new looks first; the Project menu is where they are filed by
+what they change, and both are true. None of them is
 written twice - `src/workspace.cpp` holds what changing a project actually
 involves (check the rule, do the disk work, keep the list in step, write the
 project back), and both front ends call it. The terminal asks its questions on
 the message line and the window asks them in a dialog; what happens after the
 answer is the same code. Deleting asks plainly, with No already chosen.
 
+**Where a new file or project goes is said before it is made**, in the dialog
+that asks for the name, and the directory the project is in stays on the status
+line. A new project asks for that directory rather than using whichever one the
+editor happened to be started in - which is not a thing anybody can see.
+
 **Tabs for the files you have open**, one text box each, so every tab keeps its
 own caret, scroll position and undo history. Opening a file already open brings
 its tab forward rather than opening it twice, and an untouched unnamed tab is
 reused rather than left behind. **Line numbers** are painted down the left, with
 the caret's own line picked out; the gutter widens for the last line and does
-not shrink back as you scroll.
+not shrink back as you scroll. The gutter is double-buffered, since it is
+repainted on every keystroke and a plain panel clears itself first - which is
+seen as a blink.
+
+**Colouring is done to what is on the screen**, and a screenful either side of
+it. The lexer still runs from the top of the file, because a comment opened on
+line 3 colours line 900, but that part is native and costs nothing worth
+counting; what costs is the box, where every coloured run is a selection. While
+it happens the box is frozen with `WM_SETREDRAW` and its scroll position is put
+back with `EM_GETSCROLLPOS` / `EM_SETSCROLLPOS` afterwards - a selection scrolls
+itself into view, so without that, opening a parser walks visibly down to its
+last line. What that buys is colour as you type, on a file of any size.
+
+**The panes are settled once the window has a size**, not while it is being
+built: a `SplitContainer` that is not in a window yet is 150 by 100, and both a
+splitter distance and a panel minimum are checked against the size it has at
+that moment. A distance is refused quietly there, leaving each pane at half -
+a third of the width for short filenames, half the height for a dozen lines of
+output - and a minimum is refused loudly, with an exception that stops the
+window appearing at all. `Arrange` sets both, on the same rule the terminal
+front end follows: the project pane and the output panel take what they need,
+about a quarter of the height for the output, and the code takes everything
+else, including everything the window gains when it is made larger.
 
 It edits the way the terminal one does. A newline takes the indentation its
 place asks for, a typed `}` `#` or `:` puts its own line where it belongs, and

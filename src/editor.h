@@ -107,6 +107,12 @@ private:
     void undoEdit();
     bool selection(Range& range) const;
     bool selectionOn(size_t row, size_t& from, size_t& to) const;
+
+    // How many open files have unsaved changes, and the name of the first of
+    // them; and whether leaving may go ahead, which is the question both ways
+    // out have to ask.
+    size_t unsaved(std::string& named) const;
+    bool mayLeave();
     void extendTo(int key);
     void dropSelection() { marked_ = false; }
     bool eraseSelection();

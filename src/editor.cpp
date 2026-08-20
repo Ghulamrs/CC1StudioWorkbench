@@ -274,6 +274,42 @@ void Editor::nextDocument(int by) {
     say(buf_.path().empty() ? std::string("[no name]") : buf_.path());
 }
 
+// Every open file, not the one in front. The tab you are looking at is rarely
+// the one you forgot to save - which is exactly how this was found: two files
+// open, changes in the one behind, and Ctrl-Q left without a word.
+size_t Editor::unsaved(std::string& named) const {
+    size_t count = 0;
+    named.clear();
+    for (size_t i = 0; i < docs_.size(); ++i) {
+        // The one in front lives in buf_; docs_[doc_] is only written back
+        // when the tab changes, so it is a copy of what it was.
+        const Buffer& b = (i == doc_) ? buf_ : docs_[i].buf;
+        if (!b.dirty()) continue;
+        if (named.empty())
+            named = b.path().empty() ? std::string("[no name]") : baseName(b.path());
+        ++count;
+    }
+    return count;
+}
+
+// Asked by both ways out - Ctrl-Q and the Quit on the File menu, which used to
+// leave outright and check nothing at all. The first press says what would be
+// lost and the second leaves anyway; anything else typed in between clears
+// that, which processKey does.
+bool Editor::mayLeave() {
+    std::string named;
+    size_t count = unsaved(named);
+    if (count == 0 || quitConfirm_ != 0) return true;
+
+    quitConfirm_ = 1;
+    if (count == 1)
+        say("unsaved changes in " + named + " - press Ctrl-Q again to leave them behind");
+    else
+        say(named + " and " + number(count - 1) + " other" + (count == 2 ? "" : "s") +
+            " have unsaved changes - press Ctrl-Q again to leave them behind");
+    return false;
+}
+
 void Editor::closeDocument() {
     if (buf_.dirty()) {
         say("unsaved changes - save it, or Ctrl-Q twice to leave");
@@ -2210,7 +2246,7 @@ void Editor::perform(Action action) {
         case ActionOpen:         openPrompt(); break;
         case ActionSave:         save(); break;
         case ActionSaveAs:       saveAs(); break;
-        case ActionQuit:         running_ = false; break;
+        case ActionQuit:         if (mayLeave()) running_ = false; break;
         case ActionCloseFile:    closeDocument(); break;
         case ActionProjectNew:   newProject(); break;
         case ActionProjectSave:  saveProject(); break;
@@ -2374,11 +2410,7 @@ void Editor::processKey(int key) {
         case KEY_F9:  perform(ActionToggleBreak); return;
 
         case ctrl('q'):
-            if (buf_.dirty() && quitConfirm_ == 0) {
-                quitConfirm_ = 1;
-                say("unsaved changes - press Ctrl-Q again to leave them behind");
-                return;
-            }
+            if (!mayLeave()) return;
             running_ = false;
             return;
 

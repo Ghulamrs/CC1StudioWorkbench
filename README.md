@@ -508,6 +508,12 @@ that asks for the name, and the directory the project is in stays on the status
 line. A new project asks for that directory rather than using whichever one the
 editor happened to be started in - which is not a thing anybody can see.
 
+**Leaving asks about every open file, not the one in front.** `Ctrl-Q` and File
+▸ Quit both name the first file with changes in it and say how many others
+there are; pressing `Ctrl-Q` again leaves anyway, and anything else typed in
+between takes the offer back. The file you are looking at is rarely the one you
+forgot to save, which is what made checking only that one worse than useless.
+
 **Nothing unsaved is thrown away without being asked about.** Closing a tab
 whose file has changes in it, and closing the window with any such tab open,
 both ask - Save, Don't save, Cancel - and Cancel leaves everything where it
@@ -719,5 +725,5 @@ because that is what cc1's own sources use, and they contain no tab at all.
 | `Ctrl-T` | next target (cc1 only) |
 | `Ctrl-W` | next pane |
 | `Ctrl-P` / `Ctrl-E` | project pane / bottom panel |
-| `Ctrl-S` / `Ctrl-Q` | save / leave |
+| `Ctrl-S` / `Ctrl-Q` | save / leave - twice when any open file has changes |
 | `F1` | the keys, in the console |

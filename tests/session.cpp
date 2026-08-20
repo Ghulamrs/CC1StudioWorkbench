@@ -431,6 +431,46 @@ void multiByteText(const std::string& ed1) {
 }
 
 // Re-indenting what is selected, and everything when nothing is.
+// Leaving with work unsaved, in a file that is not the one in front.
+void leavingWithChanges(const std::string& ed1) {
+    std::printf("what leaving does about unsaved work\n");
+
+    file::path dir = freshProject("leaving");
+    file::path one = dir / "src" / "one.c";
+    file::path two = dir / "src" / "two.c";
+    writeFile(one, "int one(void) { return 1; }\n");
+    writeFile(two, "int two(void) { return 2; }\n");
+    writeFile(dir / "ed1.json",
+              "{\n  \"name\": \"leaving\",\n"
+              "  \"groups\": { \"Sources\": [\"src/one.c\", \"src/two.c\"] }\n}\n");
+
+    std::string common = "\"" + one.string() + "\" --project \"" + dir.string() + "\"";
+
+    // Type into one.c, then open two.c from the pane so that the changed file
+    // is the one behind. Ctrl-W moves the focus; Ctrl-P would toggle the pane.
+    const std::string behind = "X" + ctrl('w') + times(kDown, 2) + kEnter;
+
+    Screen left = drive(ed1, common, behind + ctrl('q'), dir);
+    check(wasShown(left, "unsaved changes in one.c"),
+          "leaving names the changed file even when another is in front");
+    checkEqual(readFile(one), "int one(void) { return 1; }\n",
+               "and nothing was written behind your back");
+
+    // The one in front, which is the case that always worked.
+    Screen front = drive(ed1, common, "X" + ctrl('q'), dir);
+    check(wasShown(front, "unsaved changes in one.c"), "and it says so for the one in front");
+
+    // Twice leaves anyway, which is what the message promises. Proved by what
+    // comes after it: keys typed once it has gone are typed at nothing, so a
+    // ZZZZ that never appears is an editor that had already left. Exiting on
+    // its own would prove nothing here - a driven run ends when the keys do.
+    Screen gone = drive(ed1, common, "X" + ctrl('q') + ctrl('q') + "ZZZZ", dir);
+    check(!wasShown(gone, "ZZZZ"), "and pressing it twice leaves, before the next key");
+    checkEqual(readFile(one), "int one(void) { return 1; }\n", "still without saving");
+
+    file::remove_all(dir);
+}
+
 void reindenting(const std::string& ed1) {
     std::printf("re-indenting, all of it or the part that is selected\n");
 
@@ -1187,6 +1227,7 @@ int main(int argc, char** argv) {
     fileCommands(ed1);
     projectPane(ed1);
     findingAndReplacing(ed1);
+    leavingWithChanges(ed1);
     reindenting(ed1);
     undoing(ed1);
     selectingAndPasting(ed1);

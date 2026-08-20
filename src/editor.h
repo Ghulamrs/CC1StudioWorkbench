@@ -145,6 +145,11 @@ private:
     void debug(bool project);
     void debugStep(Action how);
     void debugStop();
+    // Where a file a debugger named can actually be opened from, and how to
+    // put text that has newlines in it into a panel that holds lines.
+    std::string whereThatFileIs(const std::string& named) const;
+    static void sayLines(std::vector<std::string>& into, const std::string& text);
+
     void showStop(const Stop& where);
     bool breakpointOn(size_t line) const;
     void openSelected();

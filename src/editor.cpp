@@ -1866,6 +1866,46 @@ void Editor::toggleBreak() {
     say("breakpoint on line " + number(line));
 }
 
+// A debugger names the file it stopped in the way its own line table spells it
+// - "main.c" from lldb here, an absolute path from gdb - and neither is
+// necessarily something that can be opened from where the editor is standing.
+// So it is looked for: as given, under the project's root, and then among the
+// project's own files by name, which is what finds src/main.c when all that
+// was said is main.c.
+std::string Editor::whereThatFileIs(const std::string& named) const {
+    if (named.empty()) return std::string();
+    if (path::exists(named)) return named;
+
+    std::string underRoot = project_.absolute(named);
+    if (path::exists(underRoot)) return underRoot;
+
+    std::string leaf = path::filename(named);
+    const std::vector<Group>& groups = project_.groups();
+    for (size_t g = 0; g < groups.size(); ++g)
+        for (size_t f = 0; f < groups[g].files.size(); ++f)
+            if (path::filename(groups[g].files[f]) == leaf) {
+                std::string full = project_.absolute(groups[g].files[f]);
+                if (path::exists(full)) return full;
+            }
+    return std::string();
+}
+
+// Whatever a debugger printed, as lines. A string with newlines in it put into
+// the panel writes them to the screen, which walks the cursor out of the box
+// the panel is drawn in and leaves the frame in pieces.
+void Editor::sayLines(std::vector<std::string>& into, const std::string& text) {
+    size_t from = 0;
+    while (from <= text.size()) {
+        size_t end = text.find('\n', from);
+        std::string line = text.substr(from, end == std::string::npos ? std::string::npos
+                                                                      : end - from);
+        while (!line.empty() && line[line.size() - 1] == '\r') line.resize(line.size() - 1);
+        if (!line.empty()) into.push_back(line);
+        if (end == std::string::npos) break;
+        from = end + 1;
+    }
+}
+
 void Editor::showStop(const Stop& where) {
     panelOpen_ = true;
     tab_ = TabDebug;
@@ -1885,10 +1925,31 @@ void Editor::showStop(const Stop& where) {
     }
 
     if (!where.stopped) {
+        // A step off the end of main lands in the loader, which has no source
+        // here - lldb reports "dyld`start + 7000" and gdb something like it.
+        // That is a real place to be standing and not a failure, so it is not
+        // reported as one: the debugger is left running, and F8 or Stop
+        // debugging both do what they say.
+        if (where.said.find("stop reason") != std::string::npos ||
+            where.said.find("frame #0") != std::string::npos ||
+            where.said.find("#0  0x") != std::string::npos) {
+            stopFile_.clear();
+            stopLine_ = 0;
+            locals_.clear();
+            debug_.push_back("stopped where there is no source to show");
+            debug_.push_back("");
+            debug_.push_back("Stepping past the end of main arrives in the code that");
+            debug_.push_back("started it, which was not compiled here. F8 carries on to");
+            debug_.push_back("the end, and Stop debugging leaves it.");
+            debug_.push_back("");
+            sayLines(debug_, where.said);
+            say("stopped where there is no source - F8 carries on");
+            return;
+        }
+
         debug_.push_back("the debugger stopped answering");
         debug_.push_back("");
-        for (size_t i = 0; i < where.said.size() && i < 400; ++i) {}
-        debug_.push_back(where.said);
+        sayLines(debug_, where.said);
         debugStop();
         say("the debugger stopped answering - see the Debug tab");
         return;
@@ -1896,11 +1957,23 @@ void Editor::showStop(const Stop& where) {
 
     stopFile_ = where.file;
     stopLine_ = where.line;
+
+    // The file it stopped in is opened if it is not open already, and then the
+    // caret follows it.
+    //
+    // This used to move the caret only when the file was the one already in
+    // front of you, on the grounds that jumping to a line of a file that is
+    // not open would be a lie about where you are. It would - but the answer
+    // is to open it, not to look away: stepping out of one file of a project
+    // into another said "stopped at main.c:13" while showing circle.c, which
+    // is a stranger lie than the one being avoided.
+    if (!where.file.empty() && path::filename(where.file) != path::filename(buf_.path())) {
+        std::string full = whereThatFileIs(where.file);
+        if (!full.empty()) open(full);
+    }
+
     locals_ = debugger_.locals();
 
-    // The caret follows it, but only into the file it is actually in: jumping
-    // the screen to a line of a file that is not open would be a lie about
-    // where you are.
     if (path::filename(where.file) == path::filename(buf_.path()) && where.line > 0) {
         cy_ = where.line - 1;
         if (cy_ >= buf_.lineCount()) cy_ = buf_.lineCount() - 1;

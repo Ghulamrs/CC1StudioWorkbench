@@ -701,6 +701,17 @@ void buildingTheProject(const std::string& ed1, const std::string& cc1) {
           "the project's debugger stops in the file and function asked for");
     check(onScreen(stopped, "a = 2"), "with the argument it was called with");
     check(onScreen(stopped, "b = 40"), "and the other one");
+
+    // Stepping out of the file it stopped in opens the file it arrives in.
+    // Nothing had main.c open here, so the tab and the status bar naming it
+    // are the whole check - it used to say "stopped at main.c:9" while showing
+    // sum.c, which is a stranger thing to say than saying nothing.
+    Screen stepped = drive(ed1, "\"" + (dir / "src" / "sum.c").string() + "\" " + arguments,
+                           times(kDown, 2) + kF9 +
+                               kF10 + times(kRight, 4) + kDown + kEnter + kF7 + ctrl('q'),
+                           dir);
+    check(onScreen(stepped, "main.c"), "stepping into another file opens it");
+    check(onScreen(stepped, "in main"), "and says it is in main now");
 #endif
 
     // An error in a file that is not open opens it first. Nothing is opened at

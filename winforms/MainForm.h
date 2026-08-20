@@ -519,6 +519,16 @@ private:
         root_->Text = root == nullptr || root->Length == 0 ? "no project" : root;
     }
 
+    // The console holds what a build said and then what the program said, and
+    // the second is the part somebody is waiting for - so the box is left
+    // showing its end rather than its beginning. The terminal front end has
+    // always done this by moving panelOff_; a text box has to be told.
+    void ShowConsoleEnd() {
+        console_->SelectionStart = console_->TextLength;
+        console_->SelectionLength = 0;
+        console_->ScrollToCaret();
+    }
+
     // What the environment says a compiler is, or the bare name to look for.
     static String^ Named(String^ variable, String^ orElse) {
         String^ said = Environment::GetEnvironmentVariable(variable);
@@ -1583,6 +1593,7 @@ private:
                                     reinterpret_cast<const char*>(arch), config_);
 
         console_->Text += FromUtf8(ed1_build_output(built))->Replace("\n", "\r\n");
+        ShowConsoleEnd();
 
         if (ed1_build_has_error(built) != 0) {
             int line = ed1_build_error_line(built);
@@ -1661,6 +1672,7 @@ private:
                               reinterpret_cast<const char*>(arch), config_);
 
         console_->Text += FromUtf8(ed1_ran_output(ran))->Replace("\n", "\r\n");
+        ShowConsoleEnd();
 
         if (ed1_ran_has_error(ran) != 0) {
             int line = ed1_ran_error_line(ran);
@@ -1684,6 +1696,7 @@ private:
         ed1_run_free(ran);
 
         console_->Text += String::Format("\r\n[program returned {0}]\r\n", status);
+        ShowConsoleEnd();
         what_->Text = String::Format("{0} ran - it returned {1}",
                                      System::IO::Path::GetFileName(path_), status);
     }
@@ -1750,6 +1763,7 @@ private:
         }
 
         console_->Text += FromUtf8(ed1_build_output(made))->Replace("\n", "\r\n");
+        ShowConsoleEnd();
 
         if (ed1_build_has_error(made) != 0) {
             int line = ed1_build_error_line(made);
@@ -1788,6 +1802,7 @@ private:
 
         if (!andRun) {
             console_->Text += "\r\n[built " + program + "]\r\n";
+            ShowConsoleEnd();
             what_->Text = "built " + System::IO::Path::GetFileName(program) + " from " +
                           howMany + (howMany == 1 ? " source" : " sources");
             return;
@@ -1801,6 +1816,7 @@ private:
         ed1_run_free(ran);
 
         console_->Text += String::Format("\r\n[program returned {0}]\r\n", status);
+        ShowConsoleEnd();
         what_->Text = String::Format("ran {0} - it returned {1}",
                                      System::IO::Path::GetFileName(program), status);
     }

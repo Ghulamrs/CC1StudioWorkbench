@@ -326,7 +326,11 @@ private:
         ToolStripMenuItem^ build = gcnew ToolStripMenuItem("&Build");
         ToolStripMenuItem^ compile = gcnew ToolStripMenuItem(
             "Compile", nullptr, gcnew EventHandler(this, &MainForm::OnCompile));
-        compile->ShortcutKeys = Keys::F7;
+        // Ctrl-B, not F7: F7 is Step over on the Debug menu, and a shortcut
+        // bound twice goes to whichever menu was built first - so Compile took
+        // it and Step over never saw a key it advertised. Ctrl-B is what the
+        // terminal half compiles with anyway.
+        compile->ShortcutKeys = static_cast<Keys>(Keys::Control | Keys::B);
         build->DropDownItems->Add(compile);
         ToolStripMenuItem^ runIt = gcnew ToolStripMenuItem(
             "Run", nullptr, gcnew EventHandler(this, &MainForm::OnRun));
@@ -512,7 +516,7 @@ private:
         Sheet^ first = MakeSheet(nullptr, "");
         text_ = first->box;
 
-        console_->Text = "cc1 or cl output appears here.  F7 builds, F5 runs.";
+        console_->Text = "cc1 or cl output appears here.  Ctrl-B builds, F5 runs.";
         SayDebugTab(nullptr);
         SayWhere();
     }

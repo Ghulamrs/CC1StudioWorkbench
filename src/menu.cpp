@@ -33,6 +33,7 @@ Menu::Menu() : active_(false), dropped_(false), column_(0), item_(0) {
     edit.items.push_back({"Project pane", "Ctrl-P", ActionToggleTree});
     edit.items.push_back({"Bottom panel", "Ctrl-E", ActionTogglePanel});
     edit.items.push_back({"Line numbers", "Ctrl-L", ActionToggleNumbers});
+    edit.items.push_back({"Plain frame", "", ActionTogglePlain});
     columns_.push_back(edit);
 
     // Everything that changes what the project holds, in one place. The file

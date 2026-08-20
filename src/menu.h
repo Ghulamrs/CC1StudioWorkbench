@@ -35,6 +35,7 @@ enum Action {
     ActionToggleTree,
     ActionTogglePanel,
     ActionToggleNumbers,
+    ActionTogglePlain,
     ActionProjectNew,
     ActionProjectSave,
     ActionProjectAdd,

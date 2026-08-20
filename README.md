@@ -225,6 +225,14 @@ and Console, Debug and Assembly into the line above the panel, with how much
 there is to read at its right-hand end. That is two rows of names in one row of
 line, and rows are what a terminal has least of.
 
+**If your console draws them badly, `--plain` frames it with `-`, `|` and `+`
+instead**, and Edit ▸ Plain frame switches between the two and remembers which
+you chose in `~/.ed1config.json`. That is not a matter of taste: a font that has
+the plain line but not the junctions makes the console fetch `┬` from a second
+face, whose crossbar sits at a different height, and the frame appears to break
+at every join. Nothing in the program can mend that, so this is the way round
+it.
+
 The characters are the box-drawing ones, written as UTF-8 - which is what the
 editor writes anyway, since it has always handled files by the character rather
 than by the byte. On Windows the console is put into UTF-8 for as long as the

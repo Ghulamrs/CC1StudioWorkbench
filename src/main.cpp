@@ -30,6 +30,7 @@ int main(int argc, char** argv) {
     std::string config;
     std::string cl;
     long width = 0;
+    int plain = 0;
     int tabs = -1;
     int caseIndent = -1;
 
@@ -47,6 +48,8 @@ int main(int argc, char** argv) {
         } else if (std::strcmp(argv[i], "--width") == 0 && i + 1 < argc) {
             long w = std::atol(argv[++i]);
             if (w >= 1 && w <= 16) width = w;
+        } else if (std::strcmp(argv[i], "--plain") == 0) {
+            plain = 1;
         } else if (std::strcmp(argv[i], "--tabs") == 0) {
             tabs = 1;
         } else if (std::strcmp(argv[i], "--case-indent") == 0) {
@@ -56,7 +59,7 @@ int main(int argc, char** argv) {
             std::printf(
                 "usage: %s [file.c] [--project dir] [--toolchain auto|cc1|msvc]\n"
                 "           [--config debug|release] [--cc1 path] [--cl path]\n"
-                "           [--width n] [--tabs] [--case-indent]\n"
+                "           [--width n] [--tabs] [--case-indent] [--plain]\n"
                 "  CC1 Studio Workbench - the console half, which is ed1 on Linux\n"
                 "  and macOS and winconsole on Windows. ed1gui is the same editor\n"
                 "  in a window, over the same core.\n"
@@ -76,6 +79,9 @@ int main(int argc, char** argv) {
                 "                 directory by default\n"
                 "  --width n      columns per indent step (4)\n"
                 "  --tabs         indent with tabs instead of spaces\n"
+                "  --plain        frame the screen with - | + instead of the box\n"
+                "                 characters, for a console that draws those from\n"
+                "                 a second font and breaks the lines at every join\n"
                 "  --case-indent  put case labels one step inside their switch\n"
                 "                 rather than in its own column\n"
                 "\n"
@@ -137,6 +143,8 @@ int main(int argc, char** argv) {
     }
 
     if (width > 0) ed.setIndentWidth(static_cast<size_t>(width));
+    // What was chosen last time, unless this run says otherwise.
+    if (plain || editor::settings::plainFrame()) ed.setPlainFrame(true);
     if (tabs >= 0) ed.setTabs(true);
     if (caseIndent >= 0) ed.setCaseIndent(1);
 

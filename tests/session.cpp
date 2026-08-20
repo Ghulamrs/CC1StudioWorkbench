@@ -456,6 +456,16 @@ void leavingWithChanges(const std::string& ed1) {
     checkEqual(readFile(one), "int one(void) { return 1; }\n",
                "and nothing was written behind your back");
 
+    // A file opened twice, spelled two ways, is one file. Opened by the name
+    // given on the command line and then from the pane, which counts paths
+    // from the project's root - the tab strip must hold one of it, and the
+    // changes must still be in it.
+    Screen once = drive(ed1, "\"src/one.c\" --project \"" + dir.string() + "\"",
+                        "X" + ctrl('w') + kEnter + ctrl('q'), dir);
+    check(rowsSaying(once, "one.c") >= 1, "the file is open");
+    check(!onScreen(once, "one.c* - one.c"), "and opening it again from the pane opens no second tab");
+    check(onScreen(once, "one.c*"), "with the changes still in it");
+
     // The one in front, which is the case that always worked.
     Screen front = drive(ed1, common, "X" + ctrl('q'), dir);
     check(wasShown(front, "unsaved changes in one.c"), "and it says so for the one in front");

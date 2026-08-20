@@ -25,6 +25,15 @@ const int kPanelRows = 7;    // the command, and a few lines of what it said
 //
 //   horizontal U+2500, vertical U+2502, then the four corners, the four tees
 //   and the cross.
+// The same frame in characters every font has. A console that draws the plain
+// line from one face and the junctions from another - which is what a missing
+// glyph makes it do - puts their crossbars at different heights, and the line
+// appears to break at every tee. Nothing in the program can mend that; this is
+// the way round it, chosen with --plain.
+const char* const kPlainAcross = "-";
+const char* const kPlainDown   = "|";
+const char* const kPlainJoint  = "+";
+
 const char* const kAcross    = "\xe2\x94\x80";
 const char* const kDown      = "\xe2\x94\x82";
 const char* const kTopLeft   = "\xe2\x94\x8c";
@@ -35,6 +44,19 @@ const char* const kTeeDown   = "\xe2\x94\xac";
 const char* const kTeeUp     = "\xe2\x94\xb4";
 const char* const kTeeRight  = "\xe2\x94\x9c";
 const char* const kTeeLeft   = "\xe2\x94\xa4";
+
+// Which of the two the screen is drawn with. Every line and corner is asked
+// for through one of these, so the choice is made once and nothing below has
+// to know which was made.
+}  // namespace
+
+const Frame kBoxFrame = {kAcross, kDown, kTopLeft, kTopRight, kFootLeft, kFootRight,
+                         kTeeDown, kTeeUp, kTeeRight, kTeeLeft};
+const Frame kPlainFrame = {kPlainAcross, kPlainDown, kPlainJoint, kPlainJoint,
+                           kPlainJoint, kPlainJoint, kPlainJoint, kPlainJoint,
+                           kPlainJoint, kPlainJoint};
+
+namespace {
 
 // One character repeated. The box characters are three bytes each and one
 // column each, which is the whole reason this is not std::string(n, c).
@@ -222,6 +244,7 @@ Editor::Editor()
       screenRows_(24), screenCols_(80),
       bodyRows_(14), panelRows_(kPanelRows),
       treeCols_(kTreeWidth), sourceCols_(80), gutterCols_(4), paintedCols_(0) {
+    frame_ = &kBoxFrame;
     // The host's own architecture first, since that is the one cc1 will carry
     // past -S on this machine - and so the only one Run can do anything with.
     for (size_t i = 0; i < 3; ++i)
@@ -251,10 +274,30 @@ void Editor::restore() {
     lang_ = docs_[doc_].lang;
 }
 
+// One file has more than one spelling, and comparing the text opened it twice:
+// "src/one.c" from the command line and the same file from the project pane,
+// which hands out the path it counts from the root. The second copy is read
+// from the disk, so unsaved changes in the first look as though they have been
+// thrown away - and saving the second would write over them.
+//
+// Compared by what they resolve to, not by how they were written. On Windows
+// the case is not part of the answer either, which path::absolute leaves alone
+// deliberately - the name is shown to people as they wrote it.
 size_t Editor::findDocument(const std::string& path) const {
+    std::string want = path::absolute(path);
+#ifdef _WIN32
+    for (size_t i = 0; i < want.size(); ++i) want[i] = static_cast<char>(::tolower(want[i]));
+#endif
+
     for (size_t i = 0; i < docs_.size(); ++i) {
         const std::string& have = (i == doc_) ? buf_.path() : docs_[i].buf.path();
-        if (!have.empty() && have == path) return i;
+        if (have.empty()) continue;
+
+        std::string mine = path::absolute(have);
+#ifdef _WIN32
+        for (size_t j = 0; j < mine.size(); ++j) mine[j] = static_cast<char>(::tolower(mine[j]));
+#endif
+        if (mine == want) return i;
     }
     return docs_.size();
 }
@@ -589,7 +632,7 @@ std::string Editor::rule(const char* left, const char* right, const char* juncti
     std::string out = left;
     int used = 1;
     if (treeOpen_ && junction != 0) {
-        out += repeated(kAcross, treeCols_);
+        out += repeated(frame_->across, treeCols_);
         out += junction;
         used += treeCols_ + 1;
     }
@@ -600,17 +643,17 @@ std::string Editor::rule(const char* left, const char* right, const char* juncti
     // Never flush against a corner: a space of line either side is what makes
     // a name look set into the line rather than dropped on top of it.
     if (labelColumns > 0 && labelColumns + 1 <= room) {
-        out += kAcross;
+        out += frame_->across;
         out += labels;
         room -= labelColumns + 1;
     }
     if (tailColumns > 0 && tailColumns + 2 <= room) {
-        out += repeated(kAcross, room - tailColumns - 1);
+        out += repeated(frame_->across, room - tailColumns - 1);
         out += tail;
-        out += kAcross;
+        out += frame_->across;
         room = 0;
     }
-    out += repeated(kAcross, room);
+    out += repeated(frame_->across, room);
     out += right;
     return out;
 }
@@ -640,18 +683,18 @@ void Editor::drawFrameTop(std::string& out) const {
             tabs += cell;
             tabs += "\x1b[39m";
         }
-        tabs += kAcross;
+        tabs += frame_->across;
         wide += cellWide + 1;
     }
 
-    out += rule(kTopLeft, kTopRight, kTeeDown, tabs, wide, std::string(), 0);
+    out += rule(frame_->topLeft, frame_->topRight, frame_->teeDown, tabs, wide, std::string(), 0);
     out += "\x1b[K\r\n";
 }
 
 // The line the panes are closed off with. The divider between them runs down to
 // it when the panel is shut, and stops at the panel's own line when it is open.
 void Editor::drawFrameFoot(std::string& out) const {
-    out += rule(kFootLeft, kFootRight, panelOpen_ ? 0 : kTeeUp,
+    out += rule(frame_->footLeft, frame_->footRight, panelOpen_ ? 0 : frame_->teeUp,
                 std::string(), 0, std::string(), 0);
     out += "\x1b[K\r\n";
 }
@@ -665,7 +708,7 @@ void Editor::drawBody(std::string& out) const {
         advanceState(buf_.line(i), lang_, state);
 
     for (int y = 0; y < bodyRows_; ++y) {
-        out += kDown;                       // the left edge of the window
+        out += frame_->down;                       // the left edge of the window
         if (treeOpen_) {
             size_t row = treeOff_ + static_cast<size_t>(y);
             std::string cell;
@@ -680,7 +723,7 @@ void Editor::drawBody(std::string& out) const {
             if (picked) out += (focus_ == FocusTree) ? "\x1b[7m" : "\x1b[4m";
             out += window(cell, 0, static_cast<size_t>(treeCols_));
             if (picked) out += "\x1b[m";
-            out += kDown;                   // and the one between the panes
+            out += frame_->down;                   // and the one between the panes
         }
 
         size_t row = rowoff_ + static_cast<size_t>(y);
@@ -739,7 +782,7 @@ void Editor::drawBody(std::string& out) const {
         }
         // Plainly, whatever the last thing drawn was coloured with.
         out += "\x1b[m";
-        out += kDown;
+        out += frame_->down;
         out += "\x1b[K\r\n";
     }
 }
@@ -766,7 +809,7 @@ void Editor::drawPanel(std::string& out) const {
         // A tick of the line between one tab and the next, so they read as
         // three names on a line rather than as one long one.
         if (i + 1 < TabCount) {
-            header += kAcross;
+            header += frame_->across;
             visible += 1;
         }
     }
@@ -782,7 +825,7 @@ void Editor::drawPanel(std::string& out) const {
     // The line between the text and the panel, carrying the panel's own tabs
     // and, at its far end, how much there is to read. The divider between the
     // panes stops here, which is what the tee pointing up says.
-    out += rule(kTeeRight, kTeeLeft, kTeeUp, header, visible, " " + right + " ",
+    out += rule(frame_->teeRight, frame_->teeLeft, frame_->teeUp, header, visible, " " + right + " ",
                 static_cast<int>(right.size()) + 2);
     out += "\x1b[K\r\n";
 
@@ -791,7 +834,7 @@ void Editor::drawPanel(std::string& out) const {
     size_t panelCols = static_cast<size_t>(screenCols_ > 2 ? screenCols_ - 2 : 1);
     for (int y = 0; y < panelRows_; ++y) {
         size_t row = panelOff_ + static_cast<size_t>(y);
-        out += kDown;
+        out += frame_->down;
         if (row >= lines.size()) {
             out += std::string(panelCols, ' ');
         } else {
@@ -803,7 +846,7 @@ void Editor::drawPanel(std::string& out) const {
             out += colouredWindow(text, spread, 0, panelCols, 0, 0);
         }
         out += "\x1b[m";
-        out += kDown;
+        out += frame_->down;
         out += "\x1b[K\r\n";
     }
 }
@@ -882,14 +925,14 @@ void Editor::drawDropdown(std::string& out, std::vector<size_t>& covered) const 
     // A box of its own, hanging from the title it belongs to. Drawn last and
     // placed by hand, so it lies over the text rather than pushing it aside.
     out += "\x1b[2;" + number(at + 1) + "H\x1b[m";
-    out += kTopLeft;
-    out += repeated(kAcross, static_cast<int>(width));
-    out += kTopRight;
+    out += frame_->topLeft;
+    out += repeated(frame_->across, static_cast<int>(width));
+    out += frame_->topRight;
     covered.push_back(1);
 
     for (size_t i = 0; i < col.items.size(); ++i) {
         out += "\x1b[" + number(i + 3) + ";" + number(at + 1) + "H\x1b[m";
-        out += kDown;
+        out += frame_->down;
 
         std::string row = " " + col.items[i].label;
         row.resize(width - col.items[i].key.size() - 1, ' ');
@@ -898,14 +941,14 @@ void Editor::drawDropdown(std::string& out, std::vector<size_t>& covered) const 
         if (i == menu_.item()) out += "\x1b[7m";
         out += row;
         out += "\x1b[m";
-        out += kDown;
+        out += frame_->down;
         covered.push_back(i + 2);
     }
 
     out += "\x1b[" + number(col.items.size() + 3) + ";" + number(at + 1) + "H\x1b[m";
-    out += kFootLeft;
-    out += repeated(kAcross, static_cast<int>(width));
-    out += kFootRight;
+    out += frame_->footLeft;
+    out += repeated(frame_->across, static_cast<int>(width));
+    out += frame_->footRight;
     covered.push_back(col.items.size() + 2);
 }
 
@@ -937,24 +980,24 @@ void Editor::drawDialog(std::string& out, std::vector<size_t>& covered) const {
         titleWide = 1;
     }
 
-    std::string head = kTopLeft;
-    head += kAcross;
+    std::string head = frame_->topLeft;
+    head += frame_->across;
     head += title;
-    head += repeated(kAcross, wide - titleWide - 1);
-    head += kTopRight;
+    head += repeated(frame_->across, wide - titleWide - 1);
+    head += frame_->topRight;
 
     std::string shown = askAnswer_;
     while (static_cast<int>(utf8::columns(shown, shown.size())) > wide - 2)
         shown.erase(0, utf8::next(shown, 0));
-    std::string middle = kDown;
+    std::string middle = frame_->down;
     middle += " " + shown;
     middle += std::string(
         static_cast<size_t>(wide - 1 - static_cast<int>(utf8::columns(shown, shown.size()))), ' ');
-    middle += kDown;
+    middle += frame_->down;
 
-    std::string foot = kFootLeft;
-    foot += repeated(kAcross, wide);
-    foot += kFootRight;
+    std::string foot = frame_->footLeft;
+    foot += repeated(frame_->across, wide);
+    foot += frame_->footRight;
 
     const std::string* rows[3] = {&head, &middle, &foot};
     for (int i = 0; i < 3; ++i) {
@@ -2228,6 +2271,8 @@ void Editor::showKeys() {
     console_.push_back("Ctrl-D       debug or release");
     console_.push_back("Ctrl-W       next pane            Ctrl-T   next target");
     console_.push_back("Ctrl-P       project pane         Ctrl-A   re-indent (selection)");
+    console_.push_back("             Edit menu: Plain frame draws it with - | + instead,");
+    console_.push_back("             for a console whose font breaks the box characters");
     console_.push_back("Ctrl-E       bottom panel         Tab      lay this line out");
     console_.push_back("Ctrl-F       find                 Ctrl-G   find the next one");
     console_.push_back("Ctrl-R       replace              Ctrl-Z   undo, Ctrl-Y redo");
@@ -2272,6 +2317,16 @@ void Editor::perform(Action action) {
             treeOpen_ = !treeOpen_;
             if (!treeOpen_ && focus_ == FocusTree) focus_ = FocusText;
             break;
+        case ActionTogglePlain: {
+            bool plain = frame_ != &kBoxFrame;
+            setPlainFrame(!plain);
+            settings::rememberPlainFrame(!plain);
+            // Everything moves, so nothing on the screen is where it was.
+            painted_.clear();
+            say(plain ? "the frame is drawn with the box characters again"
+                      : "the frame is drawn with - | + now, and will be next time");
+            break;
+        }
         case ActionToggleNumbers:
             numbers_ = !numbers_;
             say(numbers_ ? "line numbers on" : "line numbers off");

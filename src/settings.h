@@ -33,6 +33,13 @@ std::string lastProject();
 // stopping for - the editor still works, it just forgets.
 bool rememberProject(const std::string& directory);
 
+// Whether the screen is framed in plain ASCII rather than the box-drawing
+// characters. A property of the console you are sitting at - its font may draw
+// the junctions from a second face, which breaks the lines at every join - so
+// it belongs here beside the project and not in any ed1.json.
+bool plainFrame();
+bool rememberPlainFrame(bool plain);
+
 }  // namespace settings
 }  // namespace editor
 

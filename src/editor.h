@@ -29,6 +29,26 @@ const size_t kTabStop = 8;
 // One open file: its text, and where the caret and the view were when you last
 // looked at it. Switching tabs has to put all of that back, not just the text -
 // a tab that forgot where you were reading would be worse than no tabs.
+// The characters the screen is framed with. Two sets: the box-drawing ones,
+// and plain ASCII for a console whose font draws the junctions from a
+// different face than the lines - where the frame appears to break at every
+// tee, and no amount of care here can mend it.
+struct Frame {
+    const char* across;
+    const char* down;
+    const char* topLeft;
+    const char* topRight;
+    const char* footLeft;
+    const char* footRight;
+    const char* teeDown;
+    const char* teeUp;
+    const char* teeRight;
+    const char* teeLeft;
+};
+
+extern const Frame kBoxFrame;
+extern const Frame kPlainFrame;
+
 struct Document {
     Buffer buf;
     size_t cx = 0, cy = 0, rowoff = 0, coloff = 0;
@@ -58,6 +78,9 @@ public:
     // overrides the project without wiping the settings it did not mention.
     void setIndentWidth(size_t width) { style_.width = width; }
     void setTabs(bool tabs) { style_.tabs = tabs; }
+    // Plain ASCII for the frame, for a console that draws the box characters
+    // from more than one font.
+    void setPlainFrame(bool plain) { frame_ = plain ? &kPlainFrame : &kBoxFrame; }
     void setCaseIndent(size_t levels) { style_.caseIndent = levels; }
     void run();
 
@@ -243,6 +266,8 @@ private:
     std::string message_;
     int quitConfirm_;
     bool running_;
+
+    const Frame* frame_;
 
     int screenRows_, screenCols_;
     int bodyRows_, panelRows_;

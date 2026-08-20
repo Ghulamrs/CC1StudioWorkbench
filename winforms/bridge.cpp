@@ -28,6 +28,7 @@
 #include "symbols.h"
 #include "syntax.h"
 #include "toolchain.h"
+#include "settings.h"
 #include "workspace.h"
 
 namespace {
@@ -679,6 +680,31 @@ const char* ed1_local_type(Ed1Debugger* debugger, int index) {
 }
 const char* ed1_local_value(Ed1Debugger* debugger, int index) {
     return holds(debugger, index) ? debugger->locals[index].value.c_str() : "";
+}
+
+int ed1_begin_from_what_is_there(Ed1Project* project, const char* directory) {
+    if (!project) return 0;
+    project->last = editor::beginFromWhatIsThere(project->project, directory ? directory : "");
+    project->answer = project->last.message;
+    return project->last.ok ? 1 : 0;
+}
+
+const char* ed1_last_project(void) {
+    // scratch(), not a static string of its own: a function-local static with
+    // a destructor registers an atexit handler, and in a mixed binary that
+    // corrupts the heap - which it did, on the first call, with the fault log
+    // naming atexit under ed1_last_project. The note is on scratch() itself.
+    scratch() = editor::settings::lastProject();
+    return scratch().c_str();
+}
+
+int ed1_remember_project(const char* directory) {
+    return editor::settings::rememberProject(directory ? directory : "") ? 1 : 0;
+}
+
+const char* ed1_demo_directory(void) {
+    scratch() = editor::demoDirectory();
+    return scratch().c_str();
 }
 
 int ed1_project_builds(Ed1Project* project) {

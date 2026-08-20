@@ -72,6 +72,15 @@ protected:
         text_->Select(0, 0);
         text_->Focus();
         Recolour();
+
+        // The window has a handle now. Anything opened before it had one - the
+        // project's first file, or a file named on the command line - settled
+        // its modified flag only at this moment, and nothing has been typed
+        // yet, so none of it has changes.
+        for (int i = 0; i < sheets_->Count; ++i) {
+            sheets_[i]->box->Modified = false;
+            MarkTab(sheets_[i]);
+        }
     }
 
     // What the pair of programs is called. The binaries stay ed1 and ed1gui;
@@ -232,10 +241,31 @@ private:
 
         Lay();
 
+        // Told nothing, this used to open on an empty pane. The terminal half
+        // opens on the project it was last in, and failing that makes a small
+        // one in your own files - both of which the core does; only the asking
+        // was missing here.
+        if (projectDirectory == nullptr) {
+            String^ last = FromUtf8(ed1_last_project());
+            if (last->Length == 0) last = FromUtf8(ed1_demo_directory());
+            if (last->Length > 0 && System::IO::Directory::Exists(last))
+                projectDirectory = last;
+        }
+
         if (projectDirectory != nullptr) LoadProject(projectDirectory);
+
+        bool anyNamed = false;
         if (files != nullptr)
             for (int i = 0; i < files->Length; ++i)
-                if (files[i] != nullptr) OpenPath(files[i]);
+                if (files[i] != nullptr) {
+                    OpenPath(files[i]);
+                    anyNamed = true;
+                }
+
+        // Nothing named on the command line: the project's own first file,
+        // which is what the terminal half opens. A window on an empty untitled
+        // sheet, with the project listed beside it, is an odd place to start.
+        if (!anyNamed) OpenFirstOfProject();
     }
 
     void Lay() {
@@ -556,6 +586,22 @@ private:
         }
     }
 
+    // The first file the project lists, if it lists one.
+    void OpenFirstOfProject() {
+        int groups = ed1_project_groups(project_);
+        for (int group = 0; group < groups; ++group) {
+            if (ed1_project_files(project_, group) < 1) continue;
+
+            String^ relative = FromUtf8(ed1_project_file(project_, group, 0));
+            array<Byte>^ bytes = Utf8Of(relative);
+            pin_ptr<Byte> pinned = &bytes[0];
+            String^ full = FromUtf8(
+                ed1_project_absolute(project_, reinterpret_cast<const char*>(pinned)));
+            if (full->Length > 0 && System::IO::File::Exists(full)) OpenPath(full);
+            return;
+        }
+    }
+
     // Which directory the project is in, where it can be read. "Where would a
     // new file go" is not a question the window should leave anyone asking.
     String^ RootNow() {
@@ -807,6 +853,13 @@ private:
     // ---- the numbers down the left ----------------------------------------
 
     void OnTextChanged(Object^ sender, EventArgs^) {
+        // Colouring raises this. A RichTextBox reports a formatting change as
+        // a text change, so every pass that paints a keyword blue came through
+        // here and marked the file modified - which is why a file just opened
+        // and coloured wore a star that nobody had earned. Nothing about the
+        // text has changed while this flag is up.
+        if (colouring_) return;
+
         Sheet^ sheet = Current();
         if (sheet == nullptr) return;
 
@@ -1418,6 +1471,32 @@ private:
                                       reinterpret_cast<char*>(errorPin), error->Length);
         if (loaded == 0) {
             String^ why = FromUtf8(reinterpret_cast<const char*>(errorPin));
+
+            // Nothing to read is not the same as something that will not read.
+            // A directory with no ed1.json gets one written from what is in it,
+            // as the terminal half has always done - the window used to show an
+            // empty pane and say so, which is a worse answer to "open this
+            // folder" than the one the core was already able to give.
+            //
+            // A project file that will not *parse* is somebody's work and is
+            // never written over; then the pane shows the directory and the
+            // message says what is wrong with it.
+            if (why->Length == 0 &&
+                ed1_begin_from_what_is_there(project_,
+                                             reinterpret_cast<const char*>(pinned)) != 0) {
+                FillTree();
+                indentWidth_ = ed1_project_indent_width(project_);
+                indentTabs_ = ed1_project_indent_tabs(project_);
+                indentCase_ = ed1_project_case_indent(project_);
+                toolKind_ = ed1_project_toolchain(project_);
+                config_ = ed1_project_config(project_);
+                arch_ = FromUtf8(ed1_project_arch(project_));
+                ed1_remember_project(reinterpret_cast<const char*>(pinned));
+                what_->Text = FromUtf8(ed1_outcome_message(project_));
+                SayWhere();
+                return;
+            }
+
             what_->Text = why->Length > 0 ? why : "no ed1.json in that directory";
 
             // No project file still leaves a directory that paths are counted
@@ -1435,6 +1514,12 @@ private:
         toolKind_ = ed1_project_toolchain(project_);
         config_ = ed1_project_config(project_);
         arch_ = FromUtf8(ed1_project_arch(project_));
+
+        // Remembered, so that starting the window with nothing opens here -
+        // which the terminal half has always done and this never did.
+        array<Byte>^ opened = Utf8Of(directory);
+        pin_ptr<Byte> openedPin = &opened[0];
+        ed1_remember_project(reinterpret_cast<const char*>(openedPin));
 
         what_->Text = String::Format("ready - {0}, {1} groups",
                                      FromUtf8(ed1_project_name(project_)),
@@ -1726,9 +1811,10 @@ private:
             !spare->box->Modified) {
             spare->path = path;
             spare->box->Text = contents;
+            // TextChanged fired while the flag was still set, which put a
+            // star on the tab; it comes off with the flag.
             spare->box->Modified = false;
             sheet = spare;
-            MarkTab(sheet);
         } else {
             sheet = MakeSheet(path, contents);
         }
@@ -1737,6 +1823,11 @@ private:
         Text = String::Format("{0} - {1}", ProductName(), System::IO::Path::GetFileName(path));
         Recolour();
         OnTextChanged(nullptr, nullptr);
+
+        // A file just read off the disk has no changes in it, whatever the box
+        // made of being filled and coloured.
+        sheet->box->Modified = false;
+        MarkTab(sheet);
         text_->Select(0, 0);
         text_->Focus();
         what_->Text = System::IO::Path::GetFileName(path) + "  " + text_->Lines->Length + " lines";
@@ -2132,6 +2223,7 @@ private:
                 System::IO::File::WriteAllText(sheet->path,
                                                sheet->box->Text->Replace("\r\n", "\n"));
                 sheet->box->Modified = false;
+                MarkTab(sheet);
             } catch (Exception^ problem) {
                 what_->Text = problem->Message;
             }

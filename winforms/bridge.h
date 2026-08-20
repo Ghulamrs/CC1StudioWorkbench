@@ -139,6 +139,19 @@ int ed1_rename_file(Ed1Project* project, const char* fromAbsolute, const char* t
 int ed1_delete_file(Ed1Project* project, const char* absolute);
 int ed1_move_to_group(Ed1Project* project, const char* absolute, const char* group);
 int ed1_add_existing(Ed1Project* project, const char* absolute, const char* group);
+/* A project made out of what is already in a directory, for when there is no
+   ed1.json to read - and the two things that decide where the editor opens
+   when it is given nothing: the project it was last in, and the small one made
+   in your own files the first time there is no answer to that.
+
+   All three have been in the core since the terminal half used them; the
+   window simply never asked, so it opened on an empty pane where the terminal
+   opened on your work. */
+int ed1_begin_from_what_is_there(Ed1Project* project, const char* directory);
+const char* ed1_last_project(void);
+int ed1_remember_project(const char* directory);
+const char* ed1_demo_directory(void);
+
 int ed1_begin_project(Ed1Project* project, const char* directory, const char* name,
                       const char* firstFile);
 int ed1_save_project(Ed1Project* project);

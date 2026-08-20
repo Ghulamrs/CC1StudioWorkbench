@@ -97,6 +97,7 @@ private:
     void* out_;
     unsigned long inMode_;
     unsigned long outMode_;
+    unsigned int codePage_;   // the one the console was on before this started
 #else
     struct termios original_;
 #endif

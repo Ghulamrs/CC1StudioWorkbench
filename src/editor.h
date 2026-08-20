@@ -72,13 +72,25 @@ private:
     void scroll();
     void refresh();
     void drawMenuBar(std::string& out) const;
-    void drawTabs(std::string& out) const;
+    void drawFrameTop(std::string& out) const;
     void drawBody(std::string& out) const;
     void drawPanel(std::string& out) const;
+    void drawFrameFoot(std::string& out) const;
     void drawStatus(std::string& out) const;
     void drawMessage(std::string& out) const;
-    void drawDropdown(std::string& out) const;
+    void drawDropdown(std::string& out, std::vector<size_t>& covered) const;
+    void drawDialog(std::string& out, std::vector<size_t>& covered) const;
     void placeCursor(std::string& out) const;
+
+    // A line across the screen with the ends and the junctions named, and
+    // room in it for the labels that belong on that line.
+    std::string rule(const char* left, const char* right, const char* junction,
+                     const std::string& labels, int labelColumns,
+                     const std::string& tail, int tailColumns) const;
+
+    // The screen as rows, and the rows put on it. Only the rows that differ
+    // from the last time are written, which is what stops it flickering.
+    void present(const std::vector<std::string>& rows);
 
     void processKey(int key);
     void perform(Action action);
@@ -209,6 +221,16 @@ private:
     int screenRows_, screenCols_;
     int bodyRows_, panelRows_;
     int treeCols_, sourceCols_, gutterCols_;
+
+    // The last screen written, row by row, and the width it was written at.
+    // A row that has not changed is not written again.
+    std::vector<std::string> painted_;
+    int paintedCols_;
+
+    // A question being asked in a box of its own, rather than on the message
+    // line where it used to be. Empty title means nothing is being asked.
+    std::string askTitle_;
+    std::string askAnswer_;
 };
 
 }  // namespace editor

@@ -15,7 +15,15 @@
 namespace editor {
 
 Terminal::Terminal()
-    : in_(0), out_(0), inMode_(0), outMode_(0), raw_(false), eof_(false) {
+    : in_(0), out_(0), inMode_(0), outMode_(0), codePage_(0), raw_(false), eof_(false) {
+    // The screen is written in UTF-8 - the lines the panes are drawn with are
+    // three bytes each, and so is anything in a file that is not ASCII. A
+    // console left on the machine's own code page shows those bytes as
+    // whatever that page has in those places, which is how a box turns into
+    // Latin-1 rubbish. The page it was on is put back on the way out.
+    codePage_ = GetConsoleOutputCP();
+    SetConsoleOutputCP(CP_UTF8);
+
     HANDLE hIn = GetStdHandle(STD_INPUT_HANDLE);
     HANDLE hOut = GetStdHandle(STD_OUTPUT_HANDLE);
     if (hIn == INVALID_HANDLE_VALUE || hOut == INVALID_HANDLE_VALUE) return;
@@ -48,6 +56,7 @@ Terminal::Terminal()
 }
 
 Terminal::~Terminal() {
+    if (codePage_ != 0) SetConsoleOutputCP(codePage_);
     if (!raw_) return;
     SetConsoleMode((HANDLE)in_, inMode_);
     SetConsoleMode((HANDLE)out_, outMode_);

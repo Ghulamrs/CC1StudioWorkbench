@@ -18,6 +18,32 @@ namespace {
 const int kTreeWidth = 22;   // enough for a name and two levels of nesting
 const int kPanelRows = 7;    // the command, and a few lines of what it said
 
+// The lines the screen is partitioned by, from the box-drawing block. Written
+// as their bytes rather than as characters, so that no compiler has to be told
+// what encoding this file is in and no source file has to carry a mark saying
+// so - MSVC reads a plain file in the machine's own code page.
+//
+//   horizontal U+2500, vertical U+2502, then the four corners, the four tees
+//   and the cross.
+const char* const kAcross    = "\xe2\x94\x80";
+const char* const kDown      = "\xe2\x94\x82";
+const char* const kTopLeft   = "\xe2\x94\x8c";
+const char* const kTopRight  = "\xe2\x94\x90";
+const char* const kFootLeft  = "\xe2\x94\x94";
+const char* const kFootRight = "\xe2\x94\x98";
+const char* const kTeeDown   = "\xe2\x94\xac";
+const char* const kTeeUp     = "\xe2\x94\xb4";
+const char* const kTeeRight  = "\xe2\x94\x9c";
+const char* const kTeeLeft   = "\xe2\x94\xa4";
+
+// One character repeated. The box characters are three bytes each and one
+// column each, which is the whole reason this is not std::string(n, c).
+std::string repeated(const char* one, int times) {
+    std::string out;
+    for (int i = 0; i < times; ++i) out += one;
+    return out;
+}
+
 // Takes `width` columns of `s` starting at `from`, padded with spaces if the
 // line runs out first. Every region is padded to its full width, so the one
 // beside it starts in the same column on every row.
@@ -172,7 +198,7 @@ Editor::Editor()
       quitConfirm_(0), running_(true),
       screenRows_(24), screenCols_(80),
       bodyRows_(14), panelRows_(kPanelRows),
-      treeCols_(kTreeWidth), sourceCols_(80), gutterCols_(4) {
+      treeCols_(kTreeWidth), sourceCols_(80), gutterCols_(4), paintedCols_(0) {
     // The host's own architecture first, since that is the one cc1 will carry
     // past -S on this machine - and so the only one Run can do anything with.
     for (size_t i = 0; i < 3; ++i)
@@ -380,9 +406,11 @@ void Editor::layout() {
     if (screenRows_ < 8) screenRows_ = 8;
     if (screenCols_ < 40) screenCols_ = 40;
 
-    // One row each for the menu, the file tabs, the status bar and the message
-    // line; the panel takes a header row plus its own.
-    int taken = 4;
+    // One row each for the menu, the line the panes are drawn under, the line
+    // they are closed off with, the status bar and the message line. The panel
+    // takes the line above it - which carries its tabs, so the line and the
+    // names are one row and not two - plus its own.
+    int taken = 5;
     panelRows_ = kPanelRows;
     if (panelOpen_) {
         // On a short window the panel gives ground rather than squeezing the
@@ -393,15 +421,25 @@ void Editor::layout() {
         taken += panelRows_ + 1;
     }
     bodyRows_ = screenRows_ - taken;
+    // On a window short enough for the arithmetic to run out, the panel gives
+    // up its last rows rather than the frame giving up a line: a screen drawn
+    // one row taller than the terminal scrolls, and then none of the lines
+    // meet anything.
+    while (bodyRows_ < 1 && panelOpen_ && panelRows_ > 1) {
+        --panelRows_;
+        ++bodyRows_;
+    }
     if (bodyRows_ < 1) bodyRows_ = 1;
 
+    // Three columns of the width are lines when the project pane is open - the
+    // two edges and the one between the panes - and two when it is closed.
     if (treeOpen_) {
         treeCols_ = kTreeWidth;
         if (treeCols_ > screenCols_ / 3) treeCols_ = screenCols_ / 3;
         sourceCols_ = screenCols_ - treeCols_ - 3;
     } else {
         treeCols_ = 0;
-        sourceCols_ = screenCols_;
+        sourceCols_ = screenCols_ - 2;
     }
 
     // Wide enough for the last line in the file, and it does not shrink back
@@ -481,34 +519,82 @@ void Editor::drawMenuBar(std::string& out) const {
     out += "\x1b[m\r\n";
 }
 
-void Editor::drawTabs(std::string& out) const {
-    std::string bar;
-    size_t visible = 0;
+// A line across the whole screen. The junction is where the pane divider meets
+// it, when there is one; the labels are laid into the line after it and the
+// tail is put at its right-hand end. A line with the names in it is one row
+// where a line and a row of names would be two, and rows are what a terminal
+// has least of.
+std::string Editor::rule(const char* left, const char* right, const char* junction,
+                         const std::string& labels, int labelColumns,
+                         const std::string& tail, int tailColumns) const {
+    std::string out = left;
+    int used = 1;
+    if (treeOpen_ && junction != 0) {
+        out += repeated(kAcross, treeCols_);
+        out += junction;
+        used += treeCols_ + 1;
+    }
+
+    int room = screenCols_ - used - 1;   // what is left, less the right-hand end
+    if (room < 0) room = 0;
+
+    // Never flush against a corner: a space of line either side is what makes
+    // a name look set into the line rather than dropped on top of it.
+    if (labelColumns > 0 && labelColumns + 1 <= room) {
+        out += kAcross;
+        out += labels;
+        room -= labelColumns + 1;
+    }
+    if (tailColumns > 0 && tailColumns + 2 <= room) {
+        out += repeated(kAcross, room - tailColumns - 1);
+        out += tail;
+        out += kAcross;
+        room = 0;
+    }
+    out += repeated(kAcross, room);
+    out += right;
+    return out;
+}
+
+void Editor::drawFrameTop(std::string& out) const {
+    // The files that are open are the top edge of the pane they are shown in,
+    // which is where a tab belongs: the one in front is the one lit up.
+    int room = screenCols_ - 2 - (treeOpen_ ? treeCols_ + 1 : 0);
+    std::string tabs;
+    int wide = 0;
 
     for (size_t i = 0; i < docs_.size(); ++i) {
         const Buffer& b = (i == doc_) ? buf_ : docs_[i].buf;
         std::string name = b.path().empty() ? std::string("[no name]") : baseName(b.path());
         if (b.dirty()) name += "*";
         std::string cell = " " + name + " ";
+        int cellWide = static_cast<int>(utf8::columns(cell, cell.size()));
 
-        if (visible + cell.size() > static_cast<size_t>(screenCols_)) break;
+        // One column for the line that closes this tab off from the next.
+        if (wide + cellWide + 2 > room) break;
         if (i == doc_) {
-            bar += "\x1b[7m";
-            bar += cell;
-            bar += "\x1b[m";
+            tabs += "\x1b[7m";
+            tabs += cell;
+            tabs += "\x1b[m";
         } else {
-            bar += "\x1b[90m";
-            bar += cell;
-            bar += "\x1b[39m";
+            tabs += "\x1b[90m";
+            tabs += cell;
+            tabs += "\x1b[39m";
         }
-        visible += cell.size();
+        tabs += kAcross;
+        wide += cellWide + 1;
     }
 
-    out += bar;
-    out += "\x1b[4m";
-    if (visible < static_cast<size_t>(screenCols_))
-        out += std::string(static_cast<size_t>(screenCols_) - visible, ' ');
-    out += "\x1b[m\x1b[K\r\n";
+    out += rule(kTopLeft, kTopRight, kTeeDown, tabs, wide, std::string(), 0);
+    out += "\x1b[K\r\n";
+}
+
+// The line the panes are closed off with. The divider between them runs down to
+// it when the panel is shut, and stops at the panel's own line when it is open.
+void Editor::drawFrameFoot(std::string& out) const {
+    out += rule(kFootLeft, kFootRight, panelOpen_ ? 0 : kTeeUp,
+                std::string(), 0, std::string(), 0);
+    out += "\x1b[K\r\n";
 }
 
 void Editor::drawBody(std::string& out) const {
@@ -520,6 +606,7 @@ void Editor::drawBody(std::string& out) const {
         advanceState(buf_.line(i), lang_, state);
 
     for (int y = 0; y < bodyRows_; ++y) {
+        out += kDown;                       // the left edge of the window
         if (treeOpen_) {
             size_t row = treeOff_ + static_cast<size_t>(y);
             std::string cell;
@@ -534,7 +621,7 @@ void Editor::drawBody(std::string& out) const {
             if (picked) out += (focus_ == FocusTree) ? "\x1b[7m" : "\x1b[4m";
             out += window(cell, 0, static_cast<size_t>(treeCols_));
             if (picked) out += "\x1b[m";
-            out += " | ";
+            out += kDown;                   // and the one between the panes
         }
 
         size_t row = rowoff_ + static_cast<size_t>(y);
@@ -591,6 +678,9 @@ void Editor::drawBody(std::string& out) const {
             empty.resize(static_cast<size_t>(sourceCols_), ' ');
             out += empty;
         }
+        // Plainly, whatever the last thing drawn was coloured with.
+        out += "\x1b[m";
+        out += kDown;
         out += "\x1b[K\r\n";
     }
 }
@@ -600,13 +690,26 @@ void Editor::drawPanel(std::string& out) const {
 
     std::string header;
     const char* names[TabCount] = {" Console ", " Debug ", " Assembly "};
-    size_t visible = 0;
+    int visible = 0;
     for (int i = 0; i < TabCount; ++i) {
         bool on = (tab_ == static_cast<Tab>(i));
-        if (on) header += "\x1b[7m";
-        header += names[i];
-        if (on) header += "\x1b[m";
-        visible += std::string(names[i]).size();
+        if (on) {
+            header += "\x1b[7m";
+            header += names[i];
+            header += "\x1b[m";
+        } else {
+            header += "\x1b[90m";
+            header += names[i];
+            header += "\x1b[39m";
+        }
+        visible += static_cast<int>(std::string(names[i]).size());
+
+        // A tick of the line between one tab and the next, so they read as
+        // three names on a line rather than as one long one.
+        if (i + 1 < TabCount) {
+            header += kAcross;
+            visible += 1;
+        }
     }
 
     std::string right;
@@ -617,33 +720,31 @@ void Editor::drawPanel(std::string& out) const {
     else
         right = assembly_.empty() ? std::string("nothing built yet")
                                   : number(assembly_.size()) + " lines";
-    // The escape codes take no columns, so the padding is measured from the
-    // visible text rather than from the string's length.
-    std::string pad;
-    if (visible + right.size() + 1 < static_cast<size_t>(screenCols_))
-        pad = std::string(static_cast<size_t>(screenCols_) - visible - right.size(), ' ');
-
-    out += "\x1b[4m";
-    out += header;
-    out += pad;
-    out += right;
-    out += "\x1b[m\x1b[K\r\n";
+    // The line between the text and the panel, carrying the panel's own tabs
+    // and, at its far end, how much there is to read. The divider between the
+    // panes stops here, which is what the tee pointing up says.
+    out += rule(kTeeRight, kTeeLeft, kTeeUp, header, visible, " " + right + " ",
+                static_cast<int>(right.size()) + 2);
+    out += "\x1b[K\r\n";
 
     const std::vector<std::string>& lines = panelLines();
     Language panelLang = (tab_ == TabAssembly) ? LangAsm : LangPlain;
+    size_t panelCols = static_cast<size_t>(screenCols_ > 2 ? screenCols_ - 2 : 1);
     for (int y = 0; y < panelRows_; ++y) {
         size_t row = panelOff_ + static_cast<size_t>(y);
+        out += kDown;
         if (row >= lines.size()) {
-            out += std::string(static_cast<size_t>(screenCols_), ' ');
-            out += "\x1b[K\r\n";
-            continue;
+            out += std::string(panelCols, ' ');
+        } else {
+            SyntaxState panelState;
+            std::vector<unsigned char> kinds = highlight(lines[row], panelLang, panelState);
+            std::string text;
+            std::vector<unsigned char> spread;
+            expandWithKinds(lines[row], kinds, text, spread);
+            out += colouredWindow(text, spread, 0, panelCols, 0, 0);
         }
-        SyntaxState panelState;
-        std::vector<unsigned char> kinds = highlight(lines[row], panelLang, panelState);
-        std::string text;
-        std::vector<unsigned char> spread;
-        expandWithKinds(lines[row], kinds, text, spread);
-        out += colouredWindow(text, spread, 0, static_cast<size_t>(screenCols_), 0, 0);
+        out += "\x1b[m";
+        out += kDown;
         out += "\x1b[K\r\n";
     }
 }
@@ -699,7 +800,7 @@ void Editor::drawMessage(std::string& out) const {
     out += "\x1b[K";
 }
 
-void Editor::drawDropdown(std::string& out) const {
+void Editor::drawDropdown(std::string& out, std::vector<size_t>& covered) const {
     if (!menu_.dropped()) return;
 
     const MenuColumn& col = menu_.columns()[menu_.column()];
@@ -710,39 +811,136 @@ void Editor::drawDropdown(std::string& out) const {
         if (w > width) width = w;
     }
 
+    // The box hangs from the title it belongs to, with its left-hand line one
+    // column left of the words so that they sit under the title rather than
+    // beside it - and, at the far left, over the window's own corner instead
+    // of beside that.
     size_t at = menu_.titleAt(menu_.column());
-    if (at + width + 1 > static_cast<size_t>(screenCols_))
-        at = static_cast<size_t>(screenCols_) - width - 1;
+    if (at > 0) --at;
+    if (at + width + 3 > static_cast<size_t>(screenCols_))
+        at = static_cast<size_t>(screenCols_) - width - 3;
+
+    // A box of its own, hanging from the title it belongs to. Drawn last and
+    // placed by hand, so it lies over the text rather than pushing it aside.
+    out += "\x1b[2;" + number(at + 1) + "H\x1b[m";
+    out += kTopLeft;
+    out += repeated(kAcross, static_cast<int>(width));
+    out += kTopRight;
+    covered.push_back(1);
 
     for (size_t i = 0; i < col.items.size(); ++i) {
-        // Drawn last and placed by hand, so it lies over the text rather than
-        // pushing it aside.
-        out += "\x1b[" + number(i + 2) + ";" + number(at + 1) + "H";
+        out += "\x1b[" + number(i + 3) + ";" + number(at + 1) + "H\x1b[m";
+        out += kDown;
+
         std::string row = " " + col.items[i].label;
         row.resize(width - col.items[i].key.size() - 1, ' ');
         row += col.items[i].key;
         row += " ";
-        out += (i == menu_.item()) ? "\x1b[7m" : "\x1b[4m";
+        if (i == menu_.item()) out += "\x1b[7m";
         out += row;
         out += "\x1b[m";
+        out += kDown;
+        covered.push_back(i + 2);
+    }
+
+    out += "\x1b[" + number(col.items.size() + 3) + ";" + number(at + 1) + "H\x1b[m";
+    out += kFootLeft;
+    out += repeated(kAcross, static_cast<int>(width));
+    out += kFootRight;
+    covered.push_back(col.items.size() + 2);
+}
+
+// A question in a box of its own, in the middle of the text. It used to be
+// asked on the message line, which is also where the editor answers back - so
+// the question and the answer to the last one shared a row and neither looked
+// like it was waiting for anything.
+void Editor::drawDialog(std::string& out, std::vector<size_t>& covered) const {
+    if (askTitle_.empty()) return;
+
+    int wide = static_cast<int>(askTitle_.size());
+    int answer = static_cast<int>(utf8::columns(askAnswer_, askAnswer_.size()));
+    if (answer + 2 > wide) wide = answer + 2;
+    if (wide < 40) wide = 40;
+    if (wide > screenCols_ - 6) wide = screenCols_ - 6;
+    if (wide < 8) wide = 8;
+
+    int at = (screenCols_ - wide - 2) / 2;
+    if (at < 0) at = 0;
+    int top = 3 + bodyRows_ / 3;
+    if (top < 3) top = 3;
+
+    // The title sits in the top line of the box, as the tabs sit in the line
+    // above the text: a name in a line, not a row given up to a name.
+    std::string title = " " + askTitle_ + " ";
+    int titleWide = static_cast<int>(utf8::columns(title, title.size()));
+    if (titleWide > wide - 2) {
+        title = " ";
+        titleWide = 1;
+    }
+
+    std::string head = kTopLeft;
+    head += kAcross;
+    head += title;
+    head += repeated(kAcross, wide - titleWide - 1);
+    head += kTopRight;
+
+    std::string shown = askAnswer_;
+    while (static_cast<int>(utf8::columns(shown, shown.size())) > wide - 2)
+        shown.erase(0, utf8::next(shown, 0));
+    std::string middle = kDown;
+    middle += " " + shown;
+    middle += std::string(
+        static_cast<size_t>(wide - 1 - static_cast<int>(utf8::columns(shown, shown.size()))), ' ');
+    middle += kDown;
+
+    std::string foot = kFootLeft;
+    foot += repeated(kAcross, wide);
+    foot += kFootRight;
+
+    const std::string* rows[3] = {&head, &middle, &foot};
+    for (int i = 0; i < 3; ++i) {
+        out += "\x1b[" + number(static_cast<size_t>(top + i)) + ";" +
+               number(static_cast<size_t>(at + 1)) + "H";
+        out += "\x1b[m";
+        out += *rows[i];
+        covered.push_back(static_cast<size_t>(top + i - 1));
     }
 }
 
 void Editor::placeCursor(std::string& out) const {
     size_t row = 1, col = 1;
-    if (menu_.dropped()) {
-        row = menu_.item() + 2;
+    if (!askTitle_.empty()) {
+        // In the box, after what has been typed into it - which is the only
+        // place a caret means anything while a question is being asked.
+        int wide = static_cast<int>(askTitle_.size());
+        int answer = static_cast<int>(utf8::columns(askAnswer_, askAnswer_.size()));
+        if (answer + 2 > wide) wide = answer + 2;
+        if (wide < 40) wide = 40;
+        if (wide > screenCols_ - 6) wide = screenCols_ - 6;
+        if (wide < 8) wide = 8;
+        int at = (screenCols_ - wide - 2) / 2;
+        if (at < 0) at = 0;
+        int top = 3 + bodyRows_ / 3;
+        if (top < 3) top = 3;
+        if (answer > wide - 2) answer = wide - 2;
+        row = static_cast<size_t>(top + 1);
+        col = static_cast<size_t>(at + 3 + answer);
+    } else if (menu_.dropped()) {
+        // On the item it is standing on, inside the box's own left-hand line.
+        row = menu_.item() + 3;
         col = menu_.titleAt(menu_.column()) + 2;
     } else if (focus_ == FocusTree) {
         row = 3 + (treeSel_ - treeOff_);
-        col = 1;
+        col = 2;
     } else if (focus_ == FocusPanel) {
         row = static_cast<size_t>(3 + bodyRows_ + 1);
-        col = 1;
+        col = 2;
     } else {
         row = 3 + (cy_ - rowoff_);
-        col = (treeOpen_ ? static_cast<size_t>(treeCols_) + 3 : 0) +
-              static_cast<size_t>(gutterCols_) + (rx_ - coloff_) + 1;
+        // The left edge, then the project pane and the line beside it when
+        // they are there, then the numbers, then how far along the line.
+        col = (treeOpen_ ? static_cast<size_t>(treeCols_) + 3 : 2) +
+              static_cast<size_t>(gutterCols_) + (rx_ - coloff_);
     }
     out += "\x1b[" + number(row) + ";" + number(col) + "H";
 }
@@ -752,19 +950,67 @@ void Editor::refresh() {
     clampCursor();
     scroll();
 
+    std::string screen;
+    drawMenuBar(screen);
+    drawFrameTop(screen);
+    drawBody(screen);
+    drawPanel(screen);
+    drawFrameFoot(screen);
+    drawStatus(screen);
+    drawMessage(screen);
+
+    // Every part above writes whole rows and ends each one the same way, so the
+    // screen can be taken apart again here rather than every part being asked
+    // to hand back a list.
+    std::vector<std::string> rows;
+    size_t from = 0;
+    for (;;) {
+        size_t end = screen.find("\r\n", from);
+        if (end == std::string::npos) {
+            rows.push_back(screen.substr(from));
+            break;
+        }
+        rows.push_back(screen.substr(from, end - from));
+        from = end + 2;
+    }
+    present(rows);
+}
+
+// What is on the screen already is left alone. A keystroke changes one row and
+// the status line, so those are what gets written - not the whole screen, which
+// is what made the whole screen flicker.
+void Editor::present(const std::vector<std::string>& rows) {
     std::string out;
-    out += "\x1b[?25l\x1b[H";
 
-    drawMenuBar(out);
-    drawTabs(out);
-    drawBody(out);
-    drawPanel(out);
-    drawStatus(out);
-    drawMessage(out);
-    drawDropdown(out);
+    // "Show me this all at once", for the terminals that understand it. The
+    // ones that do not skip it, as they skip anything else they do not know.
+    out += "\x1b[?2026h\x1b[?25l";
+
+    bool everything = painted_.size() != rows.size() || paintedCols_ != screenCols_;
+    if (everything) {
+        out += "\x1b[2J";
+        painted_.assign(rows.size(), std::string());
+        paintedCols_ = screenCols_;
+    }
+
+    for (size_t i = 0; i < rows.size(); ++i) {
+        if (!everything && painted_[i] == rows[i]) continue;
+        out += "\x1b[" + number(i + 1) + ";1H";
+        out += rows[i];
+        out += "\x1b[m\x1b[K";
+    }
+    painted_ = rows;
+
+    // The menu and the question box lie over the screen rather than in it, so
+    // what they covered is remembered as unwritten and comes back when they go.
+    std::vector<size_t> covered;
+    drawDropdown(out, covered);
+    drawDialog(out, covered);
+    for (size_t i = 0; i < covered.size(); ++i)
+        if (covered[i] < painted_.size()) painted_[covered[i]].clear();
+
     placeCursor(out);
-
-    out += "\x1b[?25h";
+    out += "\x1b[?25h\x1b[?2026l";
     Terminal::write(out);
 }
 
@@ -1773,23 +2019,44 @@ std::string Editor::prompt(const std::string& text, bool& cancelled) {
     std::string answer;
     cancelled = false;
 
-    for (;;) {
-        say(text + answer);
+    // The title is what was asked, without the colon and space it used to be
+    // run together with its answer on the message line.
+    std::string title = text;
+    while (!title.empty() && (title[title.size() - 1] == ' ' || title[title.size() - 1] == ':'))
+        title.resize(title.size() - 1);
+    if (title.empty()) title = "?";
+    // A title, so it is written like one. The questions are phrased for the
+    // message line they used to be asked on and are left as they are there.
+    if (title[0] >= 'a' && title[0] <= 'z') title[0] = static_cast<char>(title[0] - 'a' + 'A');
+
+    bool done = false;
+    for (; !done;) {
+        askTitle_ = title;
+        askAnswer_ = answer;
         refresh();
 
         int key = term_.readKey();
         if (key == KEY_NONE) {
-            if (term_.eof()) { cancelled = true; return std::string(); }
-            continue;
+            if (!term_.eof()) continue;
+            cancelled = true;
+            done = true;
+        } else if (key == '\x1b') {
+            cancelled = true;
+            done = true;
+        } else if (key == '\r' || key == '\n') {
+            done = true;
+        } else if (key == KEY_BACKSPACE || key == ctrl('h')) {
+            if (!answer.empty()) answer.resize(utf8::startOf(answer, answer.size() - 1));
+        } else if (key >= 32 && key < 127) {
+            answer += static_cast<char>(key);
         }
-        if (key == '\x1b') { cancelled = true; return std::string(); }
-        if (key == '\r' || key == '\n') return answer;
-        if (key == KEY_BACKSPACE || key == ctrl('h')) {
-            if (!answer.empty()) answer.resize(answer.size() - 1);
-            continue;
-        }
-        if (key >= 32 && key < 127) answer += static_cast<char>(key);
     }
+
+    // The box goes when the question has been answered, and the screen it was
+    // over comes back on the next refresh.
+    askTitle_.clear();
+    askAnswer_.clear();
+    return cancelled ? std::string() : answer;
 }
 
 void Editor::processKey(int key) {

@@ -207,6 +207,36 @@ refuse.
 **Line numbers down the left**, in the manner of Shalimar's, with the caret's
 own line picked out. `Ctrl-L` turns them off.
 
+**The panes are drawn in a box.** The project pane, the text and the panel each
+have their own part of one frame, with the line between the panes running from
+the top down to whichever line closes it - the panel's line when the panel is
+open, and the bottom of the window when it is shut, where it ends in a tee
+either way. The names go into the lines rather than onto rows of their own: the
+files you have open are laid into the top line over the text they belong to,
+and Console, Debug and Assembly into the line above the panel, with how much
+there is to read at its right-hand end. That is two rows of names in one row of
+line, and rows are what a terminal has least of.
+
+The characters are the box-drawing ones, written as UTF-8 - which is what the
+editor writes anyway, since it has always handled files by the character rather
+than by the byte. On Windows the console is put into UTF-8 for as long as the
+editor is running and put back afterwards; a console left on the machine's own
+code page would show those three bytes as three characters of something else.
+
+**The menu and the questions are boxed too.** A menu hangs from its title in a
+box of its own, and a question - find, replace, save as, the name of a new file
+- is asked in a box in the middle of the text rather than on the message line,
+which is also where the editor answers back. A question and the answer to the
+last one sharing a row is how you end up reading neither.
+
+**It does not flicker.** The screen is written a row at a time, and a row that
+has not changed since the last time is not written again: a keystroke rewrites
+the line it changed and the status bar, not the whole screen. On a 24 by 80
+terminal that is a sixth of the bytes for the same typing, and the difference
+is larger the bigger the window - which is what the flicker was made of, over
+ssh most of all. The frame is written between the two halves of the
+"show me this all at once" pair as well, for the terminals that understand it.
+
 **Tabs for the files you have open.** Opening from the project pane adds one;
 F2 and F3 move between them. Each tab remembers its own caret and its own
 scroll, so coming back to a file puts you where you were rather than at the top.
@@ -333,6 +363,42 @@ three architectures the assembly is for.
 Handing C++ to cc1 is caught before it is run: the editor says so and points at
 Ctrl-K, rather than letting a C compiler fail somewhere inside the first class
 with a diagnostic that explains nothing.
+
+## The three variants
+
+Three things are built from this repository, and every one of them has its own
+source kept here. Nothing that has been built is left without the code that
+builds it.
+
+| | what it is | built from | built by |
+| --- | --- | --- | --- |
+| **ed1** | the console editor on Linux and macOS | `src/*.cpp` with `src/terminal.cpp` | `make` |
+| **WinConsole** | the console editor on Windows | the same `src/*.cpp` with `src/terminal_win.cpp` | `build.bat` |
+| **ed1gui** | the C++/CLI window, WinForms | `winforms/*.cpp` and the core files named in `winforms/ed1gui.vcxproj` | `msbuild winforms\ed1gui.vcxproj` |
+
+**The two consoles are one front end and two terminals.** `src/editor.cpp` draws
+the screen for both; `src/terminal.cpp` and `src/terminal_win.cpp` are the halves
+that differ, and only they know anything about the machine. That is why the box
+the panes are drawn in arrived on Windows the day it arrived on Linux - it is
+not two pieces of work and there is no version of it that is only on one of
+them. The binary takes its name from the command it was started as, so the
+usage line says `ed1` where it is ed1 and `winconsole` where it is WinConsole.
+
+**The window shares the core and nothing else.** `ed1gui.vcxproj` compiles
+`bridge.cpp`, `Program.cpp` and `MainForm.h` together with `buffer`, `indent`,
+`syntax`, `find`, `utf8`, `json`, `project`, `workspace`, `symbols`, `compile`,
+`toolchain`, `path`, `process`, `debugger`, `settings` and `about` - and not
+`editor.cpp`, `menu.cpp`, `tree.cpp` or either terminal, because a window has
+its own menu bar, its own tree and no terminal at all. So the console's looks
+and the window's looks are independent by construction: neither can take the
+other with it.
+
+**If the two consoles ever have to differ**, the place they part is
+`src/editor.cpp`, and the way to do it is the way the rest of the project does
+it: put the difference behind the seam that already separates them, not a
+second copy of the editor. Two editors that behave nearly the same are worse
+than one editor with two terminals - the same reason the window shares the core
+rather than reimplementing it.
 
 ## Building and checking
 

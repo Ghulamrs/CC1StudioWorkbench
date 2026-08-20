@@ -8,7 +8,21 @@
 #include "symbols.h"
 #include "workspace.h"
 
+// What this copy of the editor is called where it is installed. There is one
+// terminal editor and three names for what is built from it - ed1 on Linux and
+// macOS, winconsole on Windows, and whatever anyone renames it to - so the name
+// is taken from the command rather than written down in the messages.
+static std::string calledIt(const char* argv0) {
+    std::string name = (argv0 == 0 || *argv0 == 0) ? "ed1" : argv0;
+    size_t slash = name.find_last_of("/\\");
+    if (slash != std::string::npos) name = name.substr(slash + 1);
+    if (name.size() > 4 && name.compare(name.size() - 4, 4, ".exe") == 0)
+        name.resize(name.size() - 4);
+    return name;
+}
+
 int main(int argc, char** argv) {
+    const std::string me = calledIt(argc > 0 ? argv[0] : 0);
     std::string file;
     std::string cc1;
     std::string project;
@@ -40,11 +54,12 @@ int main(int argc, char** argv) {
         } else if (std::strcmp(argv[i], "-h") == 0 ||
                    std::strcmp(argv[i], "--help") == 0) {
             std::printf(
-                "usage: ed1 [file.c] [--project dir] [--toolchain auto|cc1|msvc]\n"
+                "usage: %s [file.c] [--project dir] [--toolchain auto|cc1|msvc]\n"
                 "           [--config debug|release] [--cc1 path] [--cl path]\n"
                 "           [--width n] [--tabs] [--case-indent]\n"
-                "  CC1 Studio Workbench - the terminal half. ed1gui is the same\n"
-                "  editor in a window, over the same core.\n"
+                "  CC1 Studio Workbench - the console half, which is ed1 on Linux\n"
+                "  and macOS and winconsole on Windows. ed1gui is the same editor\n"
+                "  in a window, over the same core.\n"
                 "\n"
                 "  --toolchain    auto (the default) lets the file choose: C goes\n"
                 "                 to cc1, C++ to cl, since cc1 compiles C. Naming\n"
@@ -66,10 +81,11 @@ int main(int argc, char** argv) {
                 "\n"
                 "  F10 menu   Ctrl-B build   F5 run    Ctrl-A lay out\n"
                 "  F9 breakpoint   F8 debug   F7/F6 step over/into\n"
-                "  F1 keys    Ctrl-Q quit\n");
+                "  F1 keys    Ctrl-Q quit\n",
+                me.c_str());
             return 0;
         } else if (argv[i][0] == '-' && argv[i][1] != '\0') {
-            std::fprintf(stderr, "ed1: unknown option %s\n", argv[i]);
+            std::fprintf(stderr, "%s: unknown option %s\n", me.c_str(), argv[i]);
             return 2;
         } else {
             file = argv[i];
@@ -78,7 +94,7 @@ int main(int argc, char** argv) {
 
     if (!toolchain.empty() && toolchain != "auto" && toolchain != "cc1" &&
         toolchain != "msvc" && toolchain != "cl") {
-        std::fprintf(stderr, "ed1: unknown toolchain %s\n", toolchain.c_str());
+        std::fprintf(stderr, "%s: unknown toolchain %s\n", me.c_str(), toolchain.c_str());
         return 2;
     }
 
@@ -115,7 +131,7 @@ int main(int argc, char** argv) {
     if (config == "release") ed.setConfig(editor::ConfigRelease);
     else if (config == "debug") ed.setConfig(editor::ConfigDebug);
     else if (!config.empty()) {
-        std::fprintf(stderr, "ed1: unknown configuration %s\n", config.c_str());
+        std::fprintf(stderr, "%s: unknown configuration %s\n", me.c_str(), config.c_str());
         return 2;
     }
 

@@ -105,39 +105,53 @@ struct Screen {
     std::vector<std::string> rows;    // the last screen, escape codes replayed
 };
 
-// Replays the final screen onto a grid. The editor positions things absolutely
-// - the menu drops over the text - so the bytes cannot simply have their escape
-// codes stripped out and be read in order.
+// Replays the whole session onto a grid, as the terminal it was written for
+// would. It cannot be done by reading the last screen alone any more: the
+// editor writes only the rows that have changed since the one before, which is
+// what stops it flickering, so the last thing written is a handful of rows and
+// not a screen. What is checked is therefore what a person would have been
+// looking at when the editor stopped.
+//
+// Four things move or clear the grid - absolute positioning, carriage return,
+// newline and the two erases - and everything else the editor writes is
+// colours, which take no room and are stepped over.
 std::vector<std::string> lastScreen(const std::string& raw) {
-    const std::string start = "\x1b[?25l\x1b[H";
-    size_t at = raw.rfind(start);
-    std::string last = (at == std::string::npos) ? raw : raw.substr(at + start.size());
-    size_t clear = last.find("\x1b[2J");
-    if (clear != std::string::npos) last = last.substr(0, clear);
+    std::string all = raw;
+    // The editor clears the screen on its way out; the picture wanted is the
+    // one it had before that.
+    size_t leaving = all.rfind("\x1b[2J");
+    if (leaving != std::string::npos) all = all.substr(0, leaving);
 
     std::vector<std::string> rows;
     size_t row = 0, col = 0;
 
-    for (size_t i = 0; i < last.size();) {
-        if (last[i] == '\x1b' && i + 1 < last.size() && last[i + 1] == '[') {
+    for (size_t i = 0; i < all.size();) {
+        if (all[i] == '\x1b' && i + 1 < all.size() && all[i + 1] == '[') {
             size_t j = i + 2;
             std::string digits;
-            while (j < last.size() && !((last[j] >= 'A' && last[j] <= 'Z') ||
-                                        (last[j] >= 'a' && last[j] <= 'z')))
-                digits += last[j++];
-            if (j < last.size() && last[j] == 'H') {
+            while (j < all.size() && !((all[j] >= 'A' && all[j] <= 'Z') ||
+                                       (all[j] >= 'a' && all[j] <= 'z')))
+                digits += all[j++];
+            char final = (j < all.size()) ? all[j] : 0;
+
+            if (final == 'H') {
                 size_t semi = digits.find(';');
                 row = static_cast<size_t>(std::atol(digits.c_str()));
                 row = row ? row - 1 : 0;
                 col = (semi == std::string::npos)
                           ? 0
                           : static_cast<size_t>(std::atol(digits.c_str() + semi + 1)) - 1;
+            } else if (final == 'J' && (digits == "2" || digits.empty())) {
+                rows.clear();
+                row = col = 0;
+            } else if (final == 'K' && (digits.empty() || digits == "0")) {
+                if (row < rows.size() && rows[row].size() > col) rows[row].resize(col);
             }
-            i = (j < last.size()) ? j + 1 : last.size();
+            i = (j < all.size()) ? j + 1 : all.size();
             continue;
         }
 
-        char c = last[i++];
+        char c = all[i++];
         if (c == '\r') { col = 0; continue; }
         if (c == '\n') { ++row; continue; }
 

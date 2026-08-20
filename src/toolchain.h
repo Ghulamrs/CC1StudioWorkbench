@@ -147,9 +147,20 @@ Recipe targetRecipe(const Toolchain& tool, ToolchainKind kind,
                     const std::string& program);
 
 // Puts this process into the environment a Developer Command Prompt would have,
-// once, so that cl can be found when the editor was started from an ordinary
-// console. Does nothing anywhere but Windows, and nothing when already inside
-// one. Returns false if Visual Studio could not be found at all.
+// once, so that the compiler can be run when the editor was started from an
+// ordinary console. Does nothing anywhere but Windows, and nothing when already
+// inside one.
+//
+// It is needed for cc1 on Windows as much as for cl, which is not obvious: cc1
+// assembles and links what it compiles by calling ml64 and link by their bare
+// names, and those two ship with Visual Studio and reach PATH only after
+// vcvars64.bat has run. Without this, cc1 compiles and then says "'ml64.exe' is
+// not recognized" - which reads as a broken cc1 rather than a missing
+// environment. It went unnoticed for so long because every suite is run from a
+// prompt that already had it.
+//
+// Returns false only when cl is wanted and Visual Studio cannot be found at
+// all; cc1 without it can still reach -S, so it is not stopped here.
 bool prepareFor(ToolchainKind kind);
 
 }  // namespace editor

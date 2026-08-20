@@ -179,8 +179,14 @@ private:
     void Start(String^ projectDirectory, array<String^>^ files) {
         project_ = ed1_project_new();
         arch_ = "x86_64-windows";
-        cc1_ = "cc1";
-        cl_ = "cl";
+
+        // The bare names are looked for on PATH, and beside the editor when it
+        // was started from its own directory - which is where the product puts
+        // cc1.exe. $CC1 and $CL name one outright, as they do for the terminal
+        // half: it reads them and this did not, so the same machine could
+        // build from one and not from the other.
+        cc1_ = Named("CC1", "cc1");
+        cl_ = Named("CL", "cl");
         toolKind_ = ED1_TOOL_AUTO;
         config_ = ED1_CONFIG_DEBUG;
         debugger_ = ed1_debugger_new();
@@ -511,6 +517,12 @@ private:
     void SayWhere() {
         String^ root = RootNow();
         root_->Text = root == nullptr || root->Length == 0 ? "no project" : root;
+    }
+
+    // What the environment says a compiler is, or the bare name to look for.
+    static String^ Named(String^ variable, String^ orElse) {
+        String^ said = Environment::GetEnvironmentVariable(variable);
+        return (said == nullptr || said->Length == 0) ? orElse : said;
     }
 
     // A menu item with its key, since there are a dozen of them now. The

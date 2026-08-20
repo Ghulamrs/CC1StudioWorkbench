@@ -401,6 +401,11 @@ std::string shownCommand(const Toolchain& tool, ToolchainKind kind,
 bool prepareFor(ToolchainKind kind) {
 #ifdef _WIN32
     if (kind == ToolMsvc) return importMsvcEnvironment();
+
+    // cc1 needs it too, for ml64 and link. Its answer is not passed on: cl
+    // without Visual Studio cannot run at all, while cc1 without it still
+    // compiles - and what it then cannot do, it says for itself.
+    importMsvcEnvironment();
     return true;
 #else
     (void)kind;

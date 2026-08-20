@@ -514,6 +514,19 @@ there are; pressing `Ctrl-Q` again leaves anyway, and anything else typed in
 between takes the offer back. The file you are looking at is rarely the one you
 forgot to save, which is what made checking only that one worse than useless.
 
+**The project pane can be used without a mouse.** `Ctrl-0` puts the keyboard in
+it, the arrows move, Enter opens what is picked - or folds a group heading, which
+has no file behind it - and `Ctrl-4` goes back to the text. Before this the pane
+answered a double-click and nothing else: Tab belongs to the text box, which
+lays a line out with it, so there was no way in at all.
+
+**A file has one tab however you reach it.** The pane hands out paths written
+with forward slashes, because that is how the project file writes them, while
+the command line and the open dialog give backslashes - so opening from the pane
+a file that was already open used to open it a second time, showing what was on
+disk. That reads as your changes having been thrown away, which is why it counts
+as more than untidiness. Paths are compared as one canonical name now.
+
 **Nothing unsaved is thrown away without being asked about.** Closing a tab
 whose file has changes in it, and closing the window with any such tab open,
 both ask - Save, Don't save, Cancel - and Cancel leaves everything where it
@@ -530,6 +543,14 @@ the caret's own line picked out; the gutter widens for the last line and does
 not shrink back as you scroll. The gutter is double-buffered, since it is
 repainted on every keystroke and a plain panel clears itself first - which is
 seen as a blink.
+
+**While you type, only the line you are typing on is coloured**, and a quarter of
+a second after you stop, the screen is coloured properly. Colouring the visible
+window freezes the box and repaints all of it, which is right when a file
+arrives or the view moves and is far too much for one keystroke - it showed as
+the line numbers juddering, because the whole text area was being redrawn per
+character. The state the lexer is in at the start of the line being typed on is
+remembered, so typing does not re-read the file above it for every keystroke.
 
 **Colouring is done to what is on the screen**, and a screenful either side of
 it. The lexer still runs from the top of the file, because a comment opened on

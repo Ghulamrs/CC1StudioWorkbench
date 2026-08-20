@@ -138,6 +138,19 @@ private:
     String^ needle_;      // what was last searched for
     bool colouring_;
 
+    // The lexer's state at the start of one line, kept so that typing on that
+    // line does not lex the whole file above it again for every character.
+    // Typing on a line cannot change the state it began with; moving to
+    // another line can, and OnCaretMoved throws it away.
+    bool stateGood_;
+    int stateRow_;
+    int stateAt_;
+
+    // Fires when typing stops. Colouring the line you are on keeps up with the
+    // keyboard; what a typed quote or /* does to the lines below it can wait a
+    // quarter of a second for this.
+    Timer^ settle_;
+
     // Kept as fields because their proportions are set once the window has a
     // size, not while it is being built - see Arrange.
     SplitContainer^ outer_;
@@ -233,6 +246,13 @@ private:
         StartPosition = FormStartPosition::CenterScreen;
         DoubleBuffered = true;
         colouring_ = false;
+        stateGood_ = false;
+        stateRow_ = 0;
+        stateAt_ = 0;
+
+        settle_ = gcnew Timer();
+        settle_->Interval = 250;
+        settle_->Tick += gcnew EventHandler(this, &MainForm::OnSettled);
 
         MenuStrip^ bar = gcnew MenuStrip();
 
@@ -347,6 +367,14 @@ private:
 
         // The panel's three tabs, reachable without the mouse.
         ToolStripMenuItem^ view = gcnew ToolStripMenuItem("&View");
+        // The pane was reachable by mouse and by nothing else: Tab belongs to
+        // the text box, which lays a line out with it. Zero, before the three
+        // that pick the panels, because it is the pane before them.
+        view->DropDownItems->Add(Item("Project pane", Keys::Control | Keys::D0,
+                                      gcnew EventHandler(this, &MainForm::OnFocusTree)));
+        view->DropDownItems->Add(Item("The file", Keys::Control | Keys::D4,
+                                      gcnew EventHandler(this, &MainForm::OnFocusText)));
+        view->DropDownItems->Add(gcnew ToolStripSeparator());
         view->DropDownItems->Add(Item("Console", Keys::Control | Keys::D1,
                                       gcnew EventHandler(this, &MainForm::OnShowConsole)));
         view->DropDownItems->Add(Item("Debug", Keys::Control | Keys::D2,
@@ -409,6 +437,9 @@ private:
         tree_->Indent = 16;
         tree_->NodeMouseDoubleClick +=
             gcnew TreeNodeMouseClickEventHandler(this, &MainForm::OnTreeOpen);
+        // A double-click was the only way in, so the pane could not be used
+        // from the keyboard at all - where the terminal half opens on Enter.
+        tree_->KeyDown += gcnew KeyEventHandler(this, &MainForm::OnTreeKey);
         upper->Panel1->Controls->Add(tree_);
 
         sheets_ = gcnew System::Collections::Generic::List<Sheet^>();
@@ -654,11 +685,31 @@ private:
         return sheets_[at];
     }
 
+    // One file has more than one spelling. The project pane hands out paths
+    // with forward slashes, because that is how the project writes them; the
+    // command line and the open dialog give backslashes. Comparing the text
+    // meant a file opened from the pane while already open opened a *second*
+    // time, showing what was on disk - so the changes in the first tab looked
+    // as though they had been thrown away.
+    static String^ OneName(String^ path) {
+        if (path == nullptr) return nullptr;
+        String^ full = path;
+        try {
+            full = System::IO::Path::GetFullPath(path);
+        } catch (Exception^) {
+            // Not a path this machine can resolve; the text will have to do.
+        }
+        return full->Replace('/', '\\')->TrimEnd('\\')->ToLowerInvariant();
+    }
+
+    static bool SamePath(String^ one, String^ other) {
+        if (one == nullptr || other == nullptr) return false;
+        return String::Equals(OneName(one), OneName(other), StringComparison::Ordinal);
+    }
+
     Sheet^ SheetFor(String^ path) {
         for (int i = 0; i < sheets_->Count; ++i)
-            if (sheets_[i]->path != nullptr &&
-                String::Equals(sheets_[i]->path, path, StringComparison::OrdinalIgnoreCase))
-                return sheets_[i];
+            if (SamePath(sheets_[i]->path, path)) return sheets_[i];
         return nullptr;
     }
 
@@ -768,7 +819,14 @@ private:
         // box in front yet, and colouring it would use the language of
         // whatever is - so only the one in front is coloured here.
         if (sender == text_) {
-            Recolour();
+            // The line being typed on, and nothing else. Recolour freezes the
+            // box and repaints all of it, which is right when a file arrives
+            // or the view moves and is far too much for one keystroke - it was
+            // the whole text area redrawn per character, which is what made
+            // the numbers down the side judder.
+            RecolourLine(CaretRow());
+            settle_->Stop();
+            settle_->Start();
             MarkTab(sheet);
         }
     }
@@ -1020,6 +1078,7 @@ private:
         int length = text_->SelectionLength;
 
         Spot scrolled;
+        stateGood_ = false;
         Tell(text_->Handle, kWhereScrolled, IntPtr::Zero, scrolled);
         Drawing(text_, false);
 
@@ -1084,6 +1143,82 @@ private:
         Tell(text_->Handle, kScrollTo, IntPtr::Zero, scrolled);
         text_->Modified = touched;
         Drawing(text_, true);
+        colouring_ = false;
+    }
+
+    // A quarter of a second after the last keystroke, colour what is on the
+    // screen properly: a quote or a /* just typed changes the lines below it,
+    // and that is the pass which notices.
+    void OnSettled(Object^, EventArgs^) {
+        settle_->Stop();
+        Recolour();
+    }
+
+    // One line, coloured where it sits. No freezing and no full repaint: the
+    // line is on the screen already, so the box redraws it and nothing else.
+    void RecolourLine(int row) {
+        if (colouring_ || text_ == nullptr || !text_->IsHandleCreated) return;
+
+        array<String^>^ all = text_->Lines;
+        if (row < 0 || row >= all->Length) return;
+
+        colouring_ = true;
+        int language = LanguageNow();
+
+        int state = 0;
+        if (stateGood_ && stateRow_ == row) {
+            state = stateAt_;
+        } else {
+            for (int above = 0; above < row; ++above) {
+                array<Byte>^ bytes = Utf8Of(all[above]);
+                pin_ptr<Byte> linePin = &bytes[0];
+                array<Byte>^ kinds = gcnew array<Byte>(bytes->Length);
+                pin_ptr<Byte> kindPin = &kinds[0];
+                ed1_highlight(reinterpret_cast<const char*>(linePin), language, &state,
+                              kindPin, kinds->Length);
+            }
+            stateGood_ = true;
+            stateRow_ = row;
+            stateAt_ = state;
+        }
+
+        bool touched = text_->Modified;
+        int caret = text_->SelectionStart;
+        int length = text_->SelectionLength;
+
+        int at = text_->GetFirstCharIndexFromLine(row);
+        if (at >= 0) {
+            text_->Select(at, all[row]->Length);
+            text_->SelectionColor = System::Drawing::Color::Black;
+
+            array<Byte>^ bytes = Utf8Of(all[row]);
+            pin_ptr<Byte> linePin = &bytes[0];
+            array<Byte>^ kinds = gcnew array<Byte>(bytes->Length);
+            pin_ptr<Byte> kindPin = &kinds[0];
+            int howMany = ed1_highlight(reinterpret_cast<const char*>(linePin), language,
+                                        &state, kindPin, kinds->Length);
+
+            int column = 0;
+            int byte = 0;
+            while (byte < howMany) {
+                Byte kind = kinds[byte];
+                int end = byte;
+                while (end < howMany && kinds[end] == kind) ++end;
+
+                int width =
+                    System::Text::Encoding::UTF8->GetString(bytes, byte, end - byte)->Length;
+                if (width > 0 && kind != ED1_KIND_NORMAL) {
+                    text_->Select(at + column, width);
+                    text_->SelectionColor = ColourOf(kind);
+                }
+                column += width;
+                byte = end;
+            }
+        }
+
+        text_->Select(caret, length);
+        text_->SelectionColor = System::Drawing::Color::Black;
+        text_->Modified = touched;
         colouring_ = false;
     }
 
@@ -1246,6 +1381,7 @@ private:
         // Colouring moves the caret to every run it paints. None of those are
         // the person's caret, and the line and column below are theirs.
         if (colouring_) return;
+        stateGood_ = false;   // another line begins in another state
 
         int caret = text_->SelectionStart;
         int row = text_->GetLineFromCharIndex(caret);
@@ -1408,12 +1544,11 @@ private:
         String^ now = OutcomePath();
         for (int i = 0; i < sheets_->Count; ++i) {
             if (sheets_[i]->path == nullptr) continue;
-            if (!String::Equals(sheets_[i]->path, target, StringComparison::OrdinalIgnoreCase))
-                continue;
+            if (!SamePath(sheets_[i]->path, target)) continue;
             sheets_[i]->path = now;
-            sheets_[i]->page->Text = System::IO::Path::GetFileName(now);
+            MarkTab(sheets_[i]);   // the new name, and the star if it still has one
         }
-        if (String::Equals(path_, target, StringComparison::OrdinalIgnoreCase)) {
+        if (SamePath(path_, target)) {
             path_ = now;
             Text = String::Format("{0} - {1}", ProductName(), System::IO::Path::GetFileName(now));
         }
@@ -1441,8 +1576,7 @@ private:
 
         for (int i = sheets_->Count - 1; i >= 0; --i) {
             if (sheets_[i]->path == nullptr) continue;
-            if (!String::Equals(sheets_[i]->path, target, StringComparison::OrdinalIgnoreCase))
-                continue;
+            if (!SamePath(sheets_[i]->path, target)) continue;
             Sheet^ sheet = sheets_[i];
             sheets_->Remove(sheet);
             files_->TabPages->Remove(sheet->page);
@@ -1523,6 +1657,38 @@ private:
         OpenPath(safe_cast<String^>(e->Node->Tag));
     }
 
+    // Somewhere to put the keyboard. Without these the pane can be reached
+    // only with a mouse, and once in it there is no way back to the text.
+    void OnFocusTree(Object^, EventArgs^) {
+        if (tree_->Nodes->Count == 0) { what_->Text = "no project is open"; return; }
+        if (tree_->SelectedNode == nullptr) tree_->SelectedNode = tree_->Nodes[0];
+        tree_->Focus();
+        what_->Text = "the project pane - enter opens, Ctrl-4 goes back to the file";
+    }
+
+    void OnFocusText(Object^, EventArgs^) {
+        if (text_ != nullptr) text_->Focus();
+    }
+
+    // Enter opens what is picked, as it does in the pane of the terminal half.
+    // A group has no file behind it and opens nothing; it folds instead, which
+    // is what Enter on a heading should do.
+    void OnTreeKey(Object^, KeyEventArgs^ e) {
+        if (e->KeyCode != Keys::Return) return;
+        TreeNode^ node = tree_->SelectedNode;
+        if (node == nullptr) return;
+
+        e->Handled = true;
+        e->SuppressKeyPress = true;   // or the box beeps at a key it did not use
+
+        if (node->Tag == nullptr) {
+            if (node->IsExpanded) node->Collapse();
+            else node->Expand();
+            return;
+        }
+        OpenPath(safe_cast<String^>(node->Tag));
+    }
+
     void OnOpenFile(Object^, EventArgs^) {
         OpenFileDialog^ pick = gcnew OpenFileDialog();
         pick->Filter = "C and C++|*.c;*.h;*.cpp;*.hpp|All files|*.*";
@@ -1557,8 +1723,8 @@ private:
             spare->path = path;
             spare->box->Text = contents;
             spare->box->Modified = false;
-            spare->page->Text = System::IO::Path::GetFileName(path);
             sheet = spare;
+            MarkTab(sheet);
         } else {
             sheet = MakeSheet(path, contents);
         }

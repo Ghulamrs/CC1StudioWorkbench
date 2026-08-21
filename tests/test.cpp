@@ -1651,6 +1651,17 @@ void whatTheProgramSaid() {
     checkEqual(editor::dbg_programOutput(editor::DebuggerCdb, cdbExit), "MARKER-TWO 2\n",
                "and what it printed on the way out comes through the same way");
 
+    // The same gdb, once the program is not buffered: its output arrives the
+    // instant it is printed, which is after gdb's prompt on gdb's own line.
+    // Captured with the exec-wrapper in place. Dropping prompt lines whole -
+    // which is right for lldb - lost this one entirely.
+    const std::string gdbLive =
+        "\n(gdb) MARKER-TWO 2\n"
+        "11\t    return 0;\n"
+        "(gdb) \n";
+    checkEqual(editor::dbg_programOutput(editor::DebuggerGdb, gdbLive), "MARKER-TWO 2\n",
+               "gdb: output printed after its prompt is the program's, not gdb's");
+
     // What is not recognised is kept. A debugger line nobody has taught this
     // about is a smaller fault in the console than a line of output that never
     // arrives, and this says which way that trade goes.

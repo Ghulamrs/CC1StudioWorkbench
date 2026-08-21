@@ -40,6 +40,29 @@ void sayMarker(Process& child, DebuggerKind kind) {
     child.say("script print(\"<<ed1\" + \"-done>>\")");
 }
 
+// Whether a program of this name is on PATH. Asked rather than assumed,
+// because what depends on the answer is a command that would otherwise stop
+// the debugger from starting at all.
+bool onPath(const std::string& name) {
+#ifdef _WIN32
+    (void)name;
+    return false;
+#else
+    const char* where = std::getenv("PATH");
+    if (!where) return false;
+    std::string all = where;
+    size_t from = 0;
+    while (from <= all.size()) {
+        size_t end = all.find(':', from);
+        std::string dir = all.substr(from, end == std::string::npos ? std::string::npos : end - from);
+        if (!dir.empty() && path::exists(path::join(dir, name))) return true;
+        if (end == std::string::npos) break;
+        from = end + 1;
+    }
+    return false;
+#endif
+}
+
 // Said once, before anything else, to make the thing driveable.
 std::vector<std::string> preamble(DebuggerKind kind) {
     std::vector<std::string> said;
@@ -57,6 +80,22 @@ std::vector<std::string> preamble(DebuggerKind kind) {
         // and not on the Mac.
         said.push_back("set width unlimited");
         said.push_back("set breakpoint pending on");
+        // What the program prints has to arrive when it prints it, and under
+        // gdb it does not: the program inherits gdb's own stdout, which is
+        // this editor's pipe, so the C runtime full-buffers it and everything
+        // it printed turns up at once when it exits. Stepping over a printf
+        // then shows nothing, which is most of what stepping is for.
+        //
+        // stdbuf runs it with that buffering turned off. It is asked for by
+        // name first because a wrapper that is not there is not a degraded
+        // feature but a debugger that will not start: gdb reports the failure
+        // from inside the program's own startup. Without it the output still
+        // arrives, at the end, exactly as it did before.
+        //
+        // lldb needs none of this - it gives the program a pseudo-terminal, so
+        // the same program is line-buffered there and prints as it goes. That
+        // was measured on all three rather than reasoned about.
+        if (onPath("stdbuf")) said.push_back("set exec-wrapper stdbuf -o0 -e0");
     } else if (kind == DebuggerCdb) {
         // Line information is not loaded unless it is asked for, and without
         // l+t both t and p step one instruction rather than one line of
@@ -234,10 +273,15 @@ std::string dbg_programOutput(DebuggerKind kind, const std::string& said) {
     for (size_t i = 0; i < all.size(); ++i) {
         std::string line = all[i];
 
-        // Where the prompt is the debugger's own line, it takes the line with
-        // it; where the program writes after it, only the prompt goes.
+        // Only lldb's prompt takes its line with it. lldb echoes every
+        // command it is given down a pipe, so what follows its prompt is that
+        // echo - the same fact sayMarker is built around. gdb echoes nothing,
+        // so after its prompt comes either a message of its own, which gdbOwn
+        // knows, or the program's output; and cdb is the same. Treating gdb's
+        // prompt line as gdb's own threw away "(gdb) MARKER-TWO 2" - which is
+        // what a program's line looks like the moment it is not buffered.
         const DebuggerKind prompt = promptOn(line);
-        if (prompt == DebuggerGdb || prompt == DebuggerLldb) continue;
+        if (prompt == DebuggerLldb) continue;
         if (prompt != DebuggerNone) line = withoutPrompt(line);
 
         if (trimmed(line).empty()) continue;

@@ -136,11 +136,13 @@ Stop dbg_readStop(DebuggerKind kind, const std::string& said);
 // line in the console is a smaller fault than a line of the program's output
 // that never arrives.
 //
-// The three differ in one way that matters here. gdb and lldb print their
-// prompt and then their own words after it, so a line beginning with a prompt
-// is theirs entire. cdb prints its prompt and the program's output arrives
-// after it on the same line, so there the prompt is taken off and what is left
-// is weighed on its own.
+// The three differ in one way that matters here, and it is not the one it
+// first looks like. lldb echoes every command it is given when its input is a
+// pipe, so what follows an lldb prompt is that echo and the line is lldb's
+// entire. gdb and cdb echo nothing, so after their prompt comes either a
+// message of their own or the program's output - the prompt comes off and what
+// is left is weighed on its own. A program's output lands there as soon as it
+// is not buffered, which is exactly when this is worth having.
 //
 // Blank lines go. A transcript is mostly blank lines, and a program whose
 // output has them loses them, which is the one thing here that is a real loss

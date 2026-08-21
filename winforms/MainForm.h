@@ -482,6 +482,8 @@ private:
         bar->Items->Add(tools);
 
         ToolStripMenuItem^ help = gcnew ToolStripMenuItem("&Help");
+        help->DropDownItems->Add(Item("Keys", Keys::F1,
+                                      gcnew EventHandler(this, &MainForm::OnKeys)));
         help->DropDownItems->Add("About " + ProductName(), nullptr,
                                  gcnew EventHandler(this, &MainForm::OnAbout));
         bar->Items->Add(help);
@@ -2074,6 +2076,79 @@ private:
         return !sheet->box->Modified;
     }
 
+
+    // Read off the menus, not kept as a second list. A key table written by
+    // hand is a promise about the menus that nothing checks, and this project
+    // has been bitten more than once by a document that outlived the thing it
+    // described - the Makefile's hand-kept dependency list being the worst of
+    // them. Rebind anything and this says so the same afternoon.
+    //
+    // It cannot be the terminal's table either: the window's keys really do
+    // differ - Ctrl+PageUp/PageDown for files where the terminal has F2/F3,
+    // Ctrl+L for Re-indent where the terminal has Ctrl-A, Ctrl+A for Select
+    // all. F1 is the same in both, which is how anybody finds this.
+    void OnKeys(Object^, EventArgs^) {
+        System::Text::StringBuilder^ table = gcnew System::Text::StringBuilder();
+        System::Windows::Forms::KeysConverter^ spelling =
+            gcnew System::Windows::Forms::KeysConverter();
+
+        for each (ToolStripItem^ top in MainMenuStrip->Items) {
+            ToolStripMenuItem^ menu = dynamic_cast<ToolStripMenuItem^>(top);
+            if (menu == nullptr) continue;
+
+            System::Text::StringBuilder^ under = gcnew System::Text::StringBuilder();
+            for each (ToolStripItem^ each in menu->DropDownItems) {
+                ToolStripMenuItem^ item = dynamic_cast<ToolStripMenuItem^>(each);
+                if (item == nullptr || item->ShortcutKeys == Keys::None) continue;
+                under->AppendFormat("  {0,-18}{1}\r\n",
+                                    spelling->ConvertToString(item->ShortcutKeys),
+                                    item->Text->Replace("&", ""));
+            }
+
+            // A menu whose items all go without keys says nothing here.
+            if (under->Length == 0) continue;
+            table->Append(menu->Text->Replace("&", ""))->Append("\r\n");
+            table->Append(under->ToString())->Append("\r\n");
+        }
+
+        // The one key that is not a menu item, and so the one line here that
+        // is written by hand. It is handled in OnKeyDown because it belongs to
+        // the text box - a menu shortcut on Tab would take it away from typing.
+        table->Append("Editing\r\n");
+        table->Append("  Tab               lay this line out, in the leading space\r\n");
+
+        Form^ box = gcnew Form();
+        box->Text = "Keys";
+        box->FormBorderStyle = System::Windows::Forms::FormBorderStyle::SizableToolWindow;
+        box->StartPosition = System::Windows::Forms::FormStartPosition::CenterParent;
+        box->ClientSize = System::Drawing::Size(460, 560);
+        box->ShowInTaskbar = false;
+
+        TextBox^ shown = gcnew TextBox();
+        shown->Multiline = true;
+        shown->ReadOnly = true;
+        shown->WordWrap = false;
+        shown->ScrollBars = System::Windows::Forms::ScrollBars::Vertical;
+        shown->Dock = DockStyle::Fill;
+        shown->BorderStyle = System::Windows::Forms::BorderStyle::None;
+        shown->BackColor = System::Drawing::Color::White;
+        shown->Font = gcnew System::Drawing::Font("Consolas", 10.0f);
+        shown->Text = table->ToString();
+        box->Controls->Add(shown);
+
+        // Shown without a selection, and with the caret at the top: a read-only
+        // box that opens with everything highlighted looks like a mistake.
+        box->Shown += gcnew EventHandler(this, &MainForm::OnKeysShown);
+        box->ShowDialog(this);
+    }
+
+    void OnKeysShown(Object^ sender, EventArgs^) {
+        Form^ box = dynamic_cast<Form^>(sender);
+        if (box == nullptr || box->Controls->Count == 0) return;
+        TextBox^ shown = dynamic_cast<TextBox^>(box->Controls[0]);
+        if (shown == nullptr) return;
+        shown->Select(0, 0);
+    }
 
     void OnAbout(Object^, EventArgs^) {
         MessageBox::Show(this, TakeUtf8(ed1_about())->Replace("\n", "\r\n"),

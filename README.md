@@ -516,6 +516,13 @@ the whole gutter with them, breakpoint dots and the stopped-at arrow included,
 which is what `Ctrl-L` does in the terminal too. The menu ticks say which of the
 three are showing; without them nobody would learn they can be turned off.
 
+**Help ▸ Keys** — `F1`, the same key as the terminal's — lists what is bound,
+**read off the menu bar when you ask for it** rather than kept as a second list
+somewhere. Rebind something and the table says so the same afternoon; there is
+nothing to forget to update. It cannot be the terminal's table anyway: the two
+differ on purpose in four places now. Only `Tab` is written by hand there, since
+it belongs to the text box rather than to a menu.
+
 **The project operations** are on the Project menu: new project, save project,
 add this file, new file, rename, move to group and delete. New file and new
 project are on the File menu as well, because that is where somebody who wants

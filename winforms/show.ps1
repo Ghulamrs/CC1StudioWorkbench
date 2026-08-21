@@ -45,7 +45,7 @@ param(
     # Where to write the picture.
     [string]$Out = "show.png",
 
-    # Press F7 once the window is up, and wait for the compiler.
+    # Press Ctrl-B once the window is up, and wait for the compiler.
     [switch]$Build,
 
     # Anything else to press, in SendKeys spelling - "{F9}{F8}" sets a
@@ -141,7 +141,13 @@ if ($script:handle -eq [IntPtr]::Zero) {
 Start-Sleep -Milliseconds 700
 
 if ($Build) {
-    [System.Windows.Forms.SendKeys]::SendWait("{F7}")
+    # Ctrl-B, not F7. Build moved off F7 when the Debug menu took that key for
+    # Step over, and this went on sending F7 - so -Build stepped instead of
+    # building, and said nothing, because stepping with nothing running does
+    # nothing to look at. A picture came back with an empty console and the
+    # editor looked at fault. A key this script presses belongs to a menu, and
+    # has to be read from it rather than remembered.
+    [System.Windows.Forms.SendKeys]::SendWait("^b")
     Start-Sleep -Seconds $BuildSeconds
 }
 
@@ -173,7 +179,10 @@ if ($WithDialogs) {
     exit 0
 }
 $picture = New-Object System.Drawing.Bitmap ($box.R - $box.L), ($box.B - $box.T)
-$canvas = New-Object System.Drawing.Graphics
+# FromImage and not New-Object: Graphics has no public constructor, so the
+# New-Object that used to stand here threw on every capture - a red error
+# either side of a picture that had been written correctly anyway, since the
+# next line assigned over it.
 $canvas = [System.Drawing.Graphics]::FromImage($picture)
 $deviceContext = $canvas.GetHdc()
 # 2 is PW_RENDERFULLCONTENT, which is what gets the text rather than a blank.

@@ -503,11 +503,10 @@ binary as native code. Nothing is duplicated: laying a file out, colouring it,
 reading ed1.json and choosing between cc1 and cl are all the same code running.
 
 **File ▸ New** gives a blank buffer with no name, as the terminal's does, and
-`Ctrl+PageDown` / `Ctrl+PageUp` move between the open files. That last pair is
-the one place the two front ends disagree about a key on purpose: `F2` and `F3`
-are previous and next file in the terminal, but Rename and Find next in the
-window, so the window takes the Windows convention rather than moving two
-bindings that were already there.
+`Ctrl+PageDown` / `Ctrl+PageUp` move between the open files rather than the
+terminal's `F2` and `F3`, which are Rename and Find next here. That is one of
+nine places the two disagree about a key on purpose, and they are all in the
+table below.
 
 **View hides what you are not using**: `Ctrl+P` the project pane, `Ctrl+E` the
 bottom panel — the terminal's own keys for both — and **Show line numbers** on
@@ -524,12 +523,49 @@ between, which is what the terminal's own menu does with `Ctrl-D`. A key bound
 twice would go to whichever menu was built first and leave the other advertising
 a key that does nothing; that is what once happened to `F7` and Step over.
 
+### Where the keys differ, and why
+
+Most keys are the same in both. These nine are not, and every one of them is a
+decision rather than an oversight — which is worth writing down, because an
+undocumented difference is indistinguishable from a mistake to whoever compares
+the two next.
+
+| | terminal | window | why |
+|---|---|---|---|
+| previous / next open file | `F2` / `F3` | `Ctrl+PageUp` / `Ctrl+PageDown` | `F2` is Rename here and `F3` is Find next |
+| Select all | menu only | `Ctrl+A` | the Windows convention, and the first domino |
+| Re-indent | `Ctrl-A` | `Ctrl+L` | `Ctrl+A` had gone to Select all |
+| line numbers | `Ctrl-L` | menu only | `Ctrl+L` had gone to Re-indent |
+| Find next | `Ctrl-G` | `F3` | the Windows convention |
+| Find previous | menu only | `Shift+F3` | follows `F3` |
+| Replace | `Ctrl-R` | `Ctrl+H` | the Windows convention |
+| close the open file | menu only | `Ctrl+W` | the Windows convention |
+| move between panes | `Ctrl-W`, cycling | `Ctrl+0` … `Ctrl+4`, picking one | `Ctrl+W` had gone to Close |
+
+**`Ctrl+W` is the one to be careful with**, and the only difference here that
+can surprise you rather than merely fail: in the terminal it moves to the next
+pane, and in the window it closes the file you are looking at. It does ask
+before throwing away unsaved work — but it is still a file gone where you meant
+to change focus.
+
+**Three of those rows are one decision, not three.** Taking `Ctrl+A` for Select
+all in a Windows program pushes Re-indent onto `Ctrl+L`, and that pushes line
+numbers off a key altogether. Nobody chose to leave line numbers without a
+shortcut; it is what was left after two conventions were honoured. The terminal
+has the opposite problem and the opposite answer: it has no `Ctrl+A` to spare
+for Select all, because `Ctrl-A` is the key its own users learned for laying
+code out.
+
+**Everything else the window adds is a gap being closed, not a divergence** —
+`Ctrl+Q`, `Ctrl+D`, `Ctrl+K` and `Ctrl+T` are the terminal's keys, doing the
+terminal's things.
+
 **Help ▸ Keys** — `F1`, the same key as the terminal's — lists what is bound,
 **read off the menu bar when you ask for it** rather than kept as a second list
 somewhere. Rebind something and the table says so the same afternoon; there is
-nothing to forget to update. It cannot be the terminal's table anyway: the two
-differ on purpose in four places now. Only `Tab` is written by hand there, since
-it belongs to the text box rather than to a menu.
+nothing to forget to update. It cannot be the terminal's table anyway, for the
+nine reasons above. Only `Tab` is written by hand there, since it belongs to
+the text box rather than to a menu.
 
 **The project operations** are on the Project menu: new project, save project,
 add this file, new file, rename, move to group and delete. New file and new

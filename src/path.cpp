@@ -14,6 +14,10 @@
 #include <unistd.h>
 #endif
 
+#ifdef __APPLE__
+#include <mach-o/dyld.h>
+#endif
+
 namespace editor {
 namespace path {
 
@@ -293,6 +297,51 @@ std::string homeDir() {
     std::string out = withSlashes(named);
     while (out.size() > 1 && out[out.size() - 1] == '/') out.resize(out.size() - 1);
     return out;
+}
+
+// Three machines, three ways of asking, and no portable one. Each hands back
+// the program's own path, links and PATH lookups already resolved, which is
+// what argv[0] does not do.
+std::string programDirectory() {
+#ifdef _WIN32
+    char buffer[MAX_PATH];
+    DWORD wrote = GetModuleFileNameA(NULL, buffer, sizeof buffer);
+    if (wrote == 0 || wrote >= sizeof buffer) return std::string();
+    return parent(withSlashes(std::string(buffer, wrote)));
+#elif defined(__APPLE__)
+    char buffer[4096];
+    uint32_t room = sizeof buffer;
+    if (_NSGetExecutablePath(buffer, &room) != 0) return std::string();
+    // It can hand back a path with symbolic links and .. still in it, which
+    // absolute() takes out - and which matters, since the answer is joined to
+    // a name and handed to a shell.
+    return parent(absolute(withSlashes(std::string(buffer))));
+#else
+    char buffer[4096];
+    ssize_t wrote = readlink("/proc/self/exe", buffer, sizeof buffer - 1);
+    if (wrote <= 0) return std::string();
+    buffer[wrote] = 0;
+    return parent(withSlashes(std::string(buffer)));
+#endif
+}
+
+std::string besideProgram(const std::string& name) {
+    if (name.empty()) return std::string();
+
+    std::string where = programDirectory();
+    if (where.empty()) return std::string();
+
+#ifdef _WIN32
+    std::string leaf = name + ".exe";
+#else
+    std::string leaf = name;
+#endif
+
+    std::string full = join(where, leaf);
+    // A directory of that name is not a program, and answering with one would
+    // put it on a command line to be run.
+    if (!exists(full) || isDirectory(full)) return std::string();
+    return full;
 }
 
 std::vector<Entry> entries(const std::string& directory, bool* ok) {

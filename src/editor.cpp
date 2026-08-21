@@ -249,8 +249,25 @@ Editor::Editor()
     // past -S on this machine - and so the only one Run can do anything with.
     for (size_t i = 0; i < 3; ++i)
         if (std::string(kArches[i]) == hostArch()) arch_ = i;
+    // $CC1 first, then a cc1 installed beside this editor, then the bare name
+    // for PATH to answer - the same three the window asks, in the same order.
+    // The middle one is what `make product` and `build.bat product` build:
+    // one directory holding the editor and the compiler it drives, which used
+    // to be found only when the editor happened to be started in it. Beside
+    // the editor is asked before PATH deliberately - a compiler shipped with
+    // this copy is the one this copy is meant to run. --cc1 overrides all of
+    // it, later, in main.
+    //
+    // cl is not looked for here: nothing installs it beside the editor, and
+    // toolchain.cpp already finds it through Visual Studio itself, which is a
+    // better answer than any directory search.
     const char* fromEnv = std::getenv("CC1");
-    if (fromEnv && *fromEnv) tool_.cc1 = fromEnv;
+    if (fromEnv && *fromEnv) {
+        tool_.cc1 = fromEnv;
+    } else {
+        const std::string beside = path::besideProgram("cc1");
+        if (!beside.empty()) tool_.cc1 = beside;
+    }
 
     console_.push_back("cc1 output appears here.  Ctrl-B builds.");
     resetDebug();

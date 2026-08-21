@@ -325,7 +325,7 @@ by hand is a file people leave notes in.
 Two things are deliberately *not* in it. Where cc1 and cl live is a fact about
 a machine rather than about a project, and a path written into a shared file is
 a path that is wrong on the other machine - those come from `--cc1`, `--cl`,
-`$CC1` or PATH. And the indent settings are a number and a flag rather than a
+`$CC1`, the directory the editor itself is installed in, or PATH. And the indent settings are a number and a flag rather than a
 nested object, because an object with two members in it is a nest for no gain.
 
 A group is the project's own arrangement, not a directory: moving a file
@@ -849,8 +849,14 @@ ed1 [file.c] [--project dir] [--toolchain cc1|msvc] [--compiler path]
     [--cc1 path] [--width n] [--tabs] [--case-indent]
 ```
 
-`--cc1` names the compiler; `$CC1` and `--compiler` do the same. Indentation is four spaces
-because that is what cc1's own sources use, and they contain no tab at all.
+`--cc1` names the compiler; `$CC1` and `--compiler` do the same. Told none of
+them, both front ends look for a `cc1` **beside the editor** before asking
+PATH - `make product` and `build.bat product` put the editor and the compiler
+it drives in one directory, and that directory should work whatever directory
+you started the editor in. A compiler shipped with a copy of the editor is the
+one that copy is meant to run, so it is preferred to whatever PATH would have
+answered. Indentation is four spaces because that is what cc1's own sources
+use, and they contain no tab at all.
 
 | key | |
 |---|---|

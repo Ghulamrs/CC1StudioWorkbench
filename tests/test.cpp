@@ -1206,6 +1206,52 @@ void paths() {
     check(!p::exists(dir), "leaving nothing behind");
 }
 
+// Where the running program is, and what is next to it. This is how the editor
+// finds a compiler installed alongside it, so the answer has to be the
+// program's own directory whatever directory it was started in.
+void whereTheProgramIs(const char* argv0) {
+    std::printf("where the program is, and what is beside it\n");
+
+    namespace p = editor::path;
+
+    const std::string where = p::programDirectory();
+    check(!where.empty(), "the machine says where the running program is");
+    check(p::isDirectory(where), "and it is a directory");
+    checkEqual(where, p::withSlashes(where), "in forward slashes, like everything here");
+    checkEqual(where, p::absolute(where), "and absolute, with nothing left to resolve");
+
+    // Whatever this binary is called - test on a Mac or a Linux box, test.exe
+    // on Windows, and whatever anyone renames it to - it is beside itself, so
+    // asking for its own name has to find it. Taking the name from argv[0]
+    // rather than writing "test" here keeps that true.
+    std::string me = p::filename(p::withSlashes(argv0 ? argv0 : ""));
+    if (me.size() > 4 && me.compare(me.size() - 4, 4, ".exe") == 0) me.resize(me.size() - 4);
+    check(!me.empty(), "this test knows what it was called");
+
+    const std::string found = p::besideProgram(me);
+    check(!found.empty(), "a program beside the running one is found");
+    check(p::exists(found), "and what comes back is really there");
+    checkEqual(p::parent(found), where, "in the directory the program is in");
+
+    check(p::besideProgram("").empty(), "nothing is beside nothing");
+    check(p::besideProgram("cc1-nobody-has-installed").empty(),
+          "a name that is not there is not answered with a path");
+
+    // A directory of the right name is not a program, and answering with one
+    // would put it on a command line to be run.
+#ifdef _WIN32
+    const std::string decoyLeaf = "beside-decoy.exe";
+#else
+    const std::string decoyLeaf = "beside-decoy";
+#endif
+    const std::string decoy = p::join(where, decoyLeaf);
+    if (p::makeDirectories(decoy)) {
+        check(p::besideProgram("beside-decoy").empty(),
+              "a directory of that name is not a program");
+        p::removeTree(decoy);
+    }
+}
+
 // Talking to a child rather than only listening to one. Everything else here
 // runs a command with popen, says nothing to it and reads until it ends; a
 // debugger needs the other direction as well.
@@ -2125,8 +2171,9 @@ void whatTheProjectBuilds() {
     file::remove_all(bare);
 }
 
-int main() {
+int main(int argc, char** argv) {
     paths();
+    whereTheProgramIs(argc > 0 ? argv[0] : 0);
     aProjectMadeFromWhatIsThere();
     whatItRemembers();
     talkingToAChild();

@@ -75,6 +75,23 @@ bool removeTree(const std::string& path);
 
 std::string tempDir();
 
+// The directory the running program is in - not the one it was started from,
+// which is a different question and already has an answer in absolute(). The
+// machine is asked outright rather than argv[0] being read: a program started
+// through PATH is handed a bare name, and one started through a link is handed
+// the link. Empty when the machine will not say.
+std::string programDirectory();
+
+// A program of this name sitting beside the running one: its path when it is
+// there, empty when it is not. On Windows ".exe" is added, that being what a
+// program is called there.
+//
+// This is how the editor finds a compiler that was installed alongside it -
+// `make product` and `build.bat product` put one directory together holding
+// what you would actually run, and a compiler in it should be found by the
+// editor next to it whatever directory the editor was started in.
+std::string besideProgram(const std::string& name);
+
 // Where this person's own files live, which is where anything the editor
 // remembers between sessions belongs - it is about them and not about any one
 // project. Empty when the machine will not say.

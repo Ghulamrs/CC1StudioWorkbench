@@ -1318,7 +1318,13 @@ private:
 
     void OnFind(Object^, EventArgs^) {
         String^ want = Ask("Find", needle_);
-        if (want == nullptr || want->Length == 0) return;
+        // Nothing asked for, whether the box was cleared or the question was
+        // cancelled - and said out loud, where this used to close and leave no
+        // trace of having been opened. Editor::findPrompt answers the same.
+        if (want == nullptr || want->Length == 0) {
+            what_->Text = "nothing looked for";
+            return;
+        }
         needle_ = want;
         Seek(CaretRow(), ByteColumn(CaretRow(), CaretColumn()), true);
     }

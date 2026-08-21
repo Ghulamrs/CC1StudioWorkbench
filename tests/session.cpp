@@ -601,6 +601,14 @@ void findingAndReplacing(const std::string& ed1) {
     Screen missing = drive(ed1, args, ctrl('f') + "absent" + kEnter + ctrl('q'), dir);
     check(onScreen(missing, "is not in this file"), "and says when it is not there");
 
+    // An empty answer looks for nothing at all - it used to be read as the last
+    // search again here, while the window read it as a cancel and said nothing.
+    // Looking on is what Ctrl-G is for, in both.
+    Screen nothing = drive(ed1, args,
+                           ctrl('f') + "three" + kEnter + ctrl('f') + kEnter + ctrl('q'), dir);
+    check(onScreen(nothing, "nothing looked for"), "an empty answer to find says so");
+    check(onScreen(nothing, "3/3"), "and leaves the caret where the last find put it");
+
     // Ctrl-F for the first, Ctrl-G for the next: 'return' is on every line.
     Screen again = drive(ed1, args,
                          ctrl('f') + "return" + kEnter + ctrl('g') + ctrl('q'), dir);

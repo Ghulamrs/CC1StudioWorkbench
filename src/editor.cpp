@@ -1411,8 +1411,11 @@ void Editor::findAgain(bool forwards) {
 void Editor::findPrompt() {
     bool cancelled = false;
     std::string want = prompt("find: ", cancelled);
-    if (cancelled) { say("nothing looked for"); return; }
-    if (want.empty()) { findAgain(true); return; }
+    // An empty answer is not a search for nothing, and it is not the last
+    // search again either - looking on is what Ctrl-G is for, in both front
+    // ends. It used to re-find here and do nothing at all in the window, which
+    // is the sort of difference nobody discovers on purpose.
+    if (cancelled || want.empty()) { say("nothing looked for"); return; }
 
     needle_ = want;
     // From the caret itself this time, so a word already under it is found.

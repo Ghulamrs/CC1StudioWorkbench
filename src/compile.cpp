@@ -82,9 +82,63 @@ bool parseMsvc(const std::string& line, Diagnostic& d) {
 
 }  // namespace
 
+// cc1 says it in two shapes and this only ever knew one of them.
+//
+// The parser's shape is what parseGnu reads: file:line:col: error: message.
+// The preprocessor's is two lines, with no severity word and no column at all -
+// it echoes the offending line and points at it:
+//
+//     /path/main.c:1: #include "shapes.h"
+//                               ^ cannot find "shapes.h" - looked in ...
+//
+// The column is recoverable even so: the caret sits under the character it
+// means, and the echoed source began at the width of the "file:line: " prefix,
+// so the difference between them is the column. A missing header is the most
+// ordinary mistake there is, and until this the editor could not take you to it.
+bool parseCc1Preprocessor(const std::string& first, const std::string& caretLine,
+                          Diagnostic& d) {
+    if (first.empty()) return false;
+
+    size_t caret = caretLine.find('^');
+    if (caret == std::string::npos) return false;
+    for (size_t i = 0; i < caret; ++i)
+        if (caretLine[i] != ' ' && caretLine[i] != '\t') return false;   // not a caret line
+
+    // "file:line: " - found from the right, so a Windows drive letter's colon
+    // is never mistaken for the one that separates the line number.
+    size_t after = first.rfind(": ");
+    if (after == std::string::npos || after == 0) return false;
+    std::string where = first.substr(0, after);
+    size_t lineAt = where.rfind(':');
+    if (lineAt == std::string::npos || lineAt == 0) return false;
+
+    for (size_t i = lineAt + 1; i < where.size(); ++i)
+        if (where[i] < '0' || where[i] > '9') return false;
+    if (lineAt + 1 >= where.size()) return false;
+
+    size_t lineNo = static_cast<size_t>(std::atol(where.c_str() + lineAt + 1));
+    if (lineNo == 0) return false;
+
+    size_t prefix = after + 2;                 // where the echoed source starts
+    size_t col = caret >= prefix ? caret - prefix + 1 : 1;
+
+    std::string message = caretLine.substr(caret + 1);
+    size_t begin = message.find_first_not_of(" \t");
+    message = (begin == std::string::npos) ? std::string() : message.substr(begin);
+    if (message.empty()) return false;         // a caret with nothing to say is not one
+
+    d.file = where.substr(0, lineAt);
+    d.line = lineNo;
+    d.col = col;
+    d.message = message;
+    d.present = true;
+    return true;
+}
+
 Diagnostic parseDiagnostic(const std::string& text) {
     Diagnostic d;
 
+    std::string previous;
     size_t at = 0;
     while (at <= text.size()) {
         size_t end = text.find('\n', at);
@@ -93,7 +147,9 @@ Diagnostic parseDiagnostic(const std::string& text) {
         if (!line.empty() && line[line.size() - 1] == '\r') line.resize(line.size() - 1);
 
         if (parseGnu(line, d) || parseMsvc(line, d)) return d;
+        if (parseCc1Preprocessor(previous, line, d)) return d;
 
+        previous = line;
         if (end == std::string::npos) break;
         at = end + 1;
     }
@@ -154,10 +210,27 @@ int runCaptured(const std::string& command, std::string& output,
 
 // The shell reads its own words when a program is not there, and they differ
 // per platform and explain nothing about how to fix it here.
+// Whether the compiler could not be *started*, as against having run and
+// failed. It used to look for "not found" anywhere in the output, which every
+// undefined symbol says: "ld: symbol(s) not found for architecture arm64" got
+// a program that had just run perfectly diagnosed as one that was not
+// installed, and the advice that followed - name it with --cc1, put it on PATH
+// - sent people looking in the wrong place entirely.
+//
+// So: the shell's own words, and nothing that only a running compiler or
+// linker could have said.
 bool looksLikeMissingProgram(const std::string& output) {
-    return output.find("not found") != std::string::npos ||
-           output.find("not recognized") != std::string::npos ||
-           output.find("No such file") != std::string::npos;
+    bool shellSaidSo =
+        output.find("command not found") != std::string::npos ||
+        output.find("not recognized as an internal or external command") != std::string::npos ||
+        output.find(": No such file or directory") != std::string::npos;
+    if (!shellSaidSo) return false;
+
+    const char* ranAfterAll[] = {"Undefined symbols", "symbol(s) not found", "ld: ",
+                                 "LNK", "error:", "warning:"};
+    for (size_t i = 0; i < sizeof ranAfterAll / sizeof *ranAfterAll; ++i)
+        if (output.find(ranAfterAll[i]) != std::string::npos) return false;
+    return true;
 }
 
 }  // namespace

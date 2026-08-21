@@ -393,6 +393,34 @@ bool Project::targetSources(std::vector<std::string>& sources, Language& lang,
         }
     }
 
+    // Named in the project and not on disk. The compiler would say "cannot
+    // open" and stop, with no line to go to and nothing about the project;
+    // this is a fault in the configuration, and the editor is the one holding
+    // the list.
+    std::vector<std::string> gone;
+    for (size_t i = 0; i < sources.size(); ++i)
+        if (!path::exists(sources[i])) gone.push_back(relative(sources[i]));
+
+    if (!gone.empty()) {
+        why = gone[0] + " is in this project and not on disk";
+        if (gone.size() > 1) {
+            why += " (and " + std::to_string(gone.size() - 1) +
+                   (gone.size() == 2 ? " other" : " others") + ")";
+        }
+        if (detail) {
+            *detail = std::string("The build list in ") + fileName() +
+                      " names files that are not there: ";
+            for (size_t i = 0; i < gone.size(); ++i) {
+                if (i) *detail += ", ";
+                *detail += gone[i];
+            }
+            *detail += ". Put them back, or take them out of the group - a project that "
+                       "lists a file it has not got cannot be built from.";
+        }
+        sources.clear();
+        return false;
+    }
+
     if (sawC && sawCpp) {
         why = "this project holds both C and C++, which cannot make one program";
         if (detail)

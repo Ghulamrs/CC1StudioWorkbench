@@ -1929,6 +1929,85 @@ void whatItRemembers() {
 // What a project says it builds, and the three ways it can say something that
 // cannot be built. The compiling itself is the session suite's job; this is
 // about the reading and the refusing, which is where the rules live.
+// cc1 says it in two shapes, and the editor only ever read one of them: a
+// missing header - the most ordinary mistake there is - left the caret where it
+// was and the console to be read by eye.
+void theOtherShapeOfDiagnostic() {
+    std::printf("the second shape a diagnostic comes in\n");
+
+    // What cc1's preprocessor actually writes, caret line and all.
+    std::string said =
+        "/tmp/p/src/main.c:1: #include \"shapes.h\"\n"
+        "                               ^ cannot find \"shapes.h\" - looked in /tmp/p/src\n";
+    editor::Diagnostic d = editor::parseDiagnostic(said);
+    check(d.present, "a preprocessor diagnostic is read at all");
+    checkEqual(d.file, "/tmp/p/src/main.c", "with the file it is about");
+    check(d.line == 1, "and the line");
+    check(d.col > 1, "and a column worked out from where the caret points");
+    check(d.message.find("cannot find") != std::string::npos, "and what it says");
+
+    // A Windows path has a colon after the drive letter that means nothing
+    // here, and the line number is still the last one.
+    std::string onWindows =
+        "C:\\work\\src\\main.c:7: #include \"gone.h\"\n"
+        "                              ^ cannot find \"gone.h\"\n";
+    editor::Diagnostic w = editor::parseDiagnostic(onWindows);
+    check(w.present, "a Windows path is read too");
+    checkEqual(w.file, "C:\\work\\src\\main.c", "with the drive letter kept");
+    check(w.line == 7, "and the right line");
+
+    // The first shape still wins where both could be read.
+    editor::Diagnostic ordinary =
+        editor::parseDiagnostic("/tmp/a.c:3:9: error: no such thing\n");
+    check(ordinary.present && ordinary.line == 3 && ordinary.col == 9,
+          "the shape with a severity word still reads as it did");
+
+    // A caret with nothing after it is somebody underlining, not an error.
+    editor::Diagnostic bare = editor::parseDiagnostic("/tmp/a.c:3: int x = ;\n        ^\n");
+    check(!bare.present, "a caret with nothing to say is not a diagnostic");
+}
+
+// A link that fails is a compiler that ran, and used to be reported as one
+// that could not be started: "ld: symbol(s) not found" contains "not found",
+// and the advice that followed - name it with --cc1, put it on PATH - sent
+// anybody who read it looking in the wrong place.
+void whatALinkFailureSays() {
+    std::printf("what a link failure is called\n");
+
+    const char* cc1 = std::getenv("CC1");
+    if (cc1 && *cc1 && !editor::path::exists(cc1)) {
+        std::printf("  (no cc1 at %s, so nothing is linked)\n", cc1);
+        return;
+    }
+    if (!cc1 || !*cc1) {
+        std::printf("  (no $CC1, so nothing is linked)\n");
+        return;
+    }
+
+    std::string dir = editor::path::join(editor::path::tempDir(), "ed1-link-test");
+    editor::path::removeTree(dir);
+    editor::path::makeDirectories(dir);
+    std::string source = editor::path::join(dir, "calls.c");
+    writeSource(source,
+                "extern int area(int side);\n"
+                "int main(void) { return area(2); }\n");
+
+    editor::Toolchain tool;
+    tool.cc1 = cc1;
+    // buildProgram, not build: the second stops at compiling, and a link that
+    // never happens cannot fail.
+    editor::Built made = editor::buildProgram(tool, editor::ToolCc1, source, editor::LangC,
+                                              editor::hostArch(), editor::ConfigDebug);
+    check(!made.ok, "a function declared and never defined does not link");
+    check(made.output.find("could not be run") == std::string::npos,
+          "and the compiler is not blamed for not being installed");
+    check(made.output.find("area") != std::string::npos,
+          "the console names the symbol nothing defined");
+
+    editor::removeProgram(made);
+    editor::path::removeTree(dir);
+}
+
 void whatTheProjectBuilds() {
     std::printf("what a project says it builds\n");
 
@@ -1946,6 +2025,13 @@ void whatTheProjectBuilds() {
               "  },\n"
               "  \"build\": { \"target\": \"sums\", \"groups\": [\"Sources\"] }\n"
               "}\n");
+
+    // The files themselves, because a project that lists what is not there is
+    // refused now - which is the case a few checks further down.
+    writeSource((dir / "add.c").string(), "int add(int a, int b) { return a + b; }\n");
+    writeSource((dir / "main.c").string(), "int main(void) { return 0; }\n");
+    writeSource((dir / "add.h").string(), "int add(int a, int b);\n");
+    writeSource((dir / "README.md").string(), "notes\n");
 
     editor::Project project;
     std::string error;
@@ -1973,10 +2059,26 @@ void whatTheProjectBuilds() {
     both.name = "mixed";
     both.groups.push_back("Sources");
     project.setTarget(both);
+    writeSource((dir / "extra.cpp").string(), "int twice(int n) { return n * 2; }\n");
     check(project.addFile("extra.cpp", "Sources"), "a C++ file joins the group");
     check(!project.targetSources(sources, lang, why, &detail), "and the build is refused");
     check(why.find("C++") != std::string::npos, "saying which two languages");
     check(!detail.empty(), "with the rest of it for the console");
+    check(sources.empty(), "and nothing handed back to compile");
+
+    // A file the project lists and the disk has not got. The compiler would
+    // say "cannot open" with no line to go to and nothing about the project;
+    // this is a fault in the configuration and the editor holds the list.
+    editor::Target onlyThere;
+    onlyThere.name = "gone";
+    onlyThere.groups.push_back("Absent");
+    project.setTarget(onlyThere);
+    check(project.addFile("nowhere.c", "Absent"), "a file is listed that is not on disk");
+    check(!project.targetSources(sources, lang, why, &detail),
+          "and the build is refused before a compiler runs");
+    check(why.find("nowhere.c") != std::string::npos, "naming the file that is not there");
+    check(why.find("not on disk") != std::string::npos, "and saying what is wrong with it");
+    check(detail.find("ed1.json") != std::string::npos, "with where the list lives");
     check(sources.empty(), "and nothing handed back to compile");
 
     // A group that is not there, and a target with no source in it.
@@ -2047,6 +2149,8 @@ int main() {
     jsonReading();
     projects();
     operations();
+    theOtherShapeOfDiagnostic();
+    whatALinkFailureSays();
     whatTheProjectBuilds();
 
     std::printf("\n%d checks, %d failed\n", checks, failures);

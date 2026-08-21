@@ -186,6 +186,7 @@ private:
     void goToFrame();
     void lookAlongStack(int by);
     void lookAt(size_t which);
+    void editVariable(size_t which);
     void writeDebugTab();
 
     void refreshTree();

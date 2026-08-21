@@ -818,6 +818,19 @@ size_t dbg_frameOnLine(const std::vector<StackFrame>& stack, const std::string& 
     return stack.size();
 }
 
+std::string dbg_variableLine(const Variable& variable) {
+    std::string said = "  " + variable.name + " = " + variable.value;
+    if (!variable.type.empty()) said += "   [" + variable.type + "]";
+    return said;
+}
+
+size_t dbg_variableOnLine(const std::vector<Variable>& locals, const std::string& line) {
+    const std::string bare = trimmed(line);
+    for (size_t i = 0; i < locals.size(); ++i)
+        if (trimmed(dbg_variableLine(locals[i])) == bare) return i;
+    return locals.size();
+}
+
 std::string dbg_stopLine(const std::string& file, size_t line,
                          const std::string& function) {
     return "stopped at " + path::filename(file) + ":" + std::to_string(line) +
@@ -1003,6 +1016,52 @@ std::vector<Variable> Debugger::locals() {
     std::vector<Variable> locals = dbg_readVariables(kind_, ask("info locals"));
     for (size_t i = 0; i < locals.size(); ++i) found.push_back(locals[i]);
     return found;
+}
+
+bool Debugger::setVariable(const std::string& name, const std::string& value,
+                           std::string* said) {
+    if (said) said->clear();
+    if (!running() || name.empty() || value.empty()) return false;
+
+    // cdb's ?? is its C++ expression evaluator, which takes an assignment;
+    // gdb's `set variable` exists so that `set` cannot be mistaken for one of
+    // its own settings - `set width = 3` sets the width; and lldb's
+    // `expression` is the general one, `expr` being the abbreviation of it.
+    std::string answer;
+    if (kind_ == DebuggerCdb) {
+        answer = ask("?? " + name + " = " + value);
+    } else if (kind_ == DebuggerGdb) {
+        answer = ask("set variable " + name + " = " + value);
+    } else {
+        answer = ask("expression " + name + " = " + value);
+    }
+    // Refused, in each of their words. What they have in common is that none of
+    // them says anything at all when it worked - gdb and cdb print nothing and
+    // lldb prints the value it now holds - so what is looked for is the
+    // complaint rather than the success.
+    //
+    // The line it is on is what comes back, not the whole transcript: that
+    // line is the message, and a message line has room for one line.
+    const char* const complaints[] = {
+        "error:",              // lldb
+        "No symbol",           // gdb, and cdb when the name is not there
+        "not an lvalue",
+        "Couldn't",
+        "cannot be",
+        "Syntax error",        // cdb
+        "Type conflict",
+        "Bad register error"
+    };
+    std::vector<std::string> all = lines(answer);
+    for (size_t i = 0; i < all.size(); ++i) {
+        const std::string line = trimmed(withoutPrompt(all[i]));
+        for (size_t c = 0; c < sizeof complaints / sizeof complaints[0]; ++c) {
+            if (line.find(complaints[c]) == std::string::npos) continue;
+            if (said) *said = line;
+            return false;
+        }
+    }
+    return true;
 }
 
 bool Debugger::selectFrame(size_t which) {

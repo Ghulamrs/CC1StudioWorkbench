@@ -143,6 +143,21 @@ The way back is also the top line: it names the frame the program stopped in,
 and pressing enter on it goes there. Any step goes back too - every stop starts
 at the frame it stopped in.
 
+**And a variable can be written back.** Enter on one in the Debug tab, or a
+double-click in the window, asks for a value in the box that asks for
+filenames, and it goes into whichever frame is being looked at - so a caller's
+variable is set as easily as this one's. `expression` to lldb, `set variable`
+to gdb, `??` to cdb.
+
+What it reads back afterwards is what is in there rather than what was typed:
+a debugger asked for `3.7` in an `int` stores 3, and the tab should say 3. A
+value one of them will not take is refused in its own words - `No symbol "x" in
+current context` names the mistake better than anything this could invent.
+
+That it reaches the program rather than only the pane is what the tests check:
+`stepped.c` returns 2 + 4 + 6, and with `total` set to 100 at the first
+breakpoint it returns 112.
+
 **The gutter marks the frame's line too**, so the answer is in the code and not
 only in the panel: `:` in the terminal where `>` marks the stop and `*` a
 breakpoint, and in the window the same arrow drawn as an outline rather than

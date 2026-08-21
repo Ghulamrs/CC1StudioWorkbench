@@ -1316,11 +1316,39 @@ void stoppingAndStepping(const std::string& ed1, const std::string& cc1) {
     Screen bottom = drive(ed1, withCc1, toLoopBody + kF9 + kF8 + kF6 + kCtrlDown + ctrl('q'), dir);
     check(wasShown(bottom, "nothing below it"), "and says so at the bottom of it");
 
-    // A line that is not a frame says so rather than going somewhere.
-    const std::string toAVariable = ctrl('w') + ctrl('w') + times(kDown, 2) + kEnter;
-    Screen notAFrame = drive(ed1, withCc1,
-                             toLoopBody + kF9 + kF8 + kF6 + toAVariable + ctrl('q'), dir);
-    check(wasShown(notAFrame, "not a frame"), "enter on a variable says it is not a frame");
+    // Setting a variable: the cursor on its line in the panel, enter, and the
+    // value typed into the box that asks for filenames. Stopped in main here,
+    // where there is no stack to walk and variables all the same.
+    //
+    // Which variable that line holds is the debugger's business and not the
+    // same on two machines: lldb lists them as they were declared and gdb
+    // lists the innermost block first, so under gdb the loop's own i is above
+    // total. The check is that the one on that line was set, whichever it is -
+    // the same keystrokes naming a different variable is not this feature
+    // going wrong.
+    const std::string toTheVariable = ctrl('w') + ctrl('w') + times(kDown, 2) + kEnter;
+    Screen written = drive(ed1, withCc1,
+                           toLoopBody + kF9 + kF8 + toTheVariable + "7" + kEnter + ctrl('q'), dir);
+    check(wasShown(written, "is 7 now"), "enter on a variable sets it");
+    check(onScreen(written, "= 7"), "and the tab shows what is in there now");
+
+    // And a value it will not take is refused in the debugger's own words,
+    // which name the mistake better than anything the editor could invent.
+    Screen refused = drive(ed1, withCc1,
+                           toLoopBody + kF9 + kF8 + toTheVariable + "nosuch" + kEnter + ctrl('q'),
+                           dir);
+    check(!onScreen(refused, "= nosuch"), "a value it will not take is not written into the tab");
+    check(onScreen(refused, "total = 0"), "and the variable is left as it was");
+
+    // A line that is neither says so rather than doing something. Six down
+    // from the top of that tab is the "called from" heading, which names a
+    // frame without being one - the likeliest line to press enter on by
+    // mistake.
+    const std::string toTheHeading = ctrl('w') + ctrl('w') + times(kDown, 5) + kEnter;
+    Screen neither = drive(ed1, withCc1,
+                           toLoopBody + kF9 + kF8 + kF6 + toTheHeading + ctrl('q'), dir);
+    check(wasShown(neither, "neither a frame nor a variable"),
+          "enter on a line that is neither says so");
 
     Screen carried = drive(ed1, withCc1, toLoopBody + kF9 + kF8 + kF7 + kF8 + ctrl('q'), dir);
     check(onScreen(carried, "total = 2"), "F7 steps over it and F8 carries on round the loop");

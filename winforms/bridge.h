@@ -361,6 +361,20 @@ const char* ed1_local_name(Ed1Debugger* debugger, int index);
 const char* ed1_local_type(Ed1Debugger* debugger, int index);
 const char* ed1_local_value(Ed1Debugger* debugger, int index);
 
+// How a variable is written in the Debug tab, which variable a line of it is
+// about, and the setting of one. The window writes the line with the first and
+// reads it back with the second rather than counting rows of its own, exactly
+// as it does with the frames - see dbg_variableLine.
+//
+// ed1_set_variable answers 0 when the debugger would not take it, and
+// ed1_set_complaint is what it said about that: its own words name the mistake
+// better than any this could invent. A set that worked re-reads the locals, so
+// ed1_local_* answer with what is in there afterwards.
+const char* ed1_local_text(Ed1Debugger* debugger, int index);
+int ed1_locals_on_line(Ed1Debugger* debugger, const char* line);
+int ed1_set_variable(Ed1Debugger* debugger, const char* name, const char* value);
+const char* ed1_set_complaint(Ed1Debugger* debugger);
+
 // And how it got there: the frame it is standing in first, and what called it
 // after that. One frame is a program standing in main, which the Debug tab
 // says nothing about - see dbg_readFrames for why the stack stops there.

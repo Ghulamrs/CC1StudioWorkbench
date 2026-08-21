@@ -125,6 +125,19 @@ public:
     // program is standing. Nothing here has to put it back.
     bool selectFrame(size_t which);
 
+    // Writing a variable back. Every one of them will do it, each in its own
+    // words, and each into the frame it is currently in - so a caller's
+    // variable is set the same way as one of the stopped frame's, selectFrame
+    // having already said which.
+    //
+    // False when it would not: a name that is not in scope, a value it cannot
+    // parse, something that is not an lvalue. The line it complained on goes
+    // into `said`, because the debugger's own words are a better message than
+    // any this could invent - "No symbol \"x\" in current context" names the
+    // mistake, and one line is what a message line holds.
+    bool setVariable(const std::string& name, const std::string& value,
+                     std::string* said = 0);
+
     // Anything else, for the console: what was typed, answered as it came.
     std::string ask(const std::string& command);
 
@@ -238,6 +251,15 @@ size_t dbg_frameOnLine(const std::vector<StackFrame>& stack, const std::string& 
 // frame the program stopped in. The tab says this above them rather than
 // leaving "stopped at stepped.c:3 in twice" standing over another function's
 // locals, which is a sentence and a list that contradict each other.
+// How a variable is written in the Debug tab - "  total = 0   [int]" - and
+// which variable a line of that tab is about, for the same reason the frames
+// have a pair like it: the two front ends compose that tab separately, and
+// pressing enter on one of these lines is how either of them sets it.
+//
+// dbg_variableOnLine answers locals.size() when the line is not a variable.
+std::string dbg_variableLine(const Variable& variable);
+size_t dbg_variableOnLine(const std::vector<Variable>& locals, const std::string& line);
+
 std::string dbg_lookingAt(const StackFrame& frame);
 
 // The first line of the tab, which names the frame the program stopped in -

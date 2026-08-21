@@ -1580,6 +1580,31 @@ void whatACallStackLooksLike() {
     checkEqual(editor::dbg_lookingAt(one), "the variables are main's, at stepped.c:11",
                "and the tab says whose variables it is showing");
 
+    // A variable is written and read back the same way a frame is, for the
+    // same reason: enter on one of those lines is how it is set.
+    editor::Variable counted;
+    counted.name = "total";
+    counted.value = "0";
+    counted.type = "int";
+    checkEqual(editor::dbg_variableLine(counted), "  total = 0   [int]",
+               "a variable is written with its type after it");
+
+    editor::Variable untyped;
+    untyped.name = "i";
+    untyped.value = "1";
+    checkEqual(editor::dbg_variableLine(untyped), "  i = 1",
+               "and without one where the debugger gave none");
+
+    std::vector<editor::Variable> inScope;
+    inScope.push_back(counted);
+    inScope.push_back(untyped);
+    check(editor::dbg_variableOnLine(inScope, editor::dbg_variableLine(untyped)) == 1,
+          "and the line it wrote is read back as that variable");
+    check(editor::dbg_variableOnLine(inScope, "called from") == inScope.size(),
+          "while a line that is not a variable is not read as one");
+    check(editor::dbg_variableOnLine(inScope, editor::dbg_frameLine(one)) == inScope.size(),
+          "and neither is a frame, which the same tab is full of");
+
     // The tab's first line names frame 0, and is written here because pressing
     // enter on it is how either front end goes back to the stop.
     checkEqual(editor::dbg_stopLine("/home/me/work/stepped.c", 3, "twice"),
@@ -1731,6 +1756,40 @@ void debuggingForReal() {
 
     debugger.stop();
     check(!debugger.running(), "the debugger goes when it is told to");
+
+    // Writing a variable back, on a second run of the same program - a run of
+    // its own so that the one above still measures what the program does when
+    // nothing has been written into it.
+    //
+    // What is checked is what the program returned. A variable that reads back
+    // as 100 and then has no effect on the answer would be a debugger showing
+    // its own idea of the program rather than the program.
+    editor::Debugger writing;
+    check(writing.start(editor::dbg_for(editor::ToolCc1, editor::hostArch()), program),
+          "the debugger starts again on the same program");
+    if (writing.running()) {
+        writing.breakAt(source, 11);
+        check(writing.run().stopped, "and stops in the loop again");
+
+        std::string said;
+        check(writing.setVariable("total", "100", &said), "a variable is written back");
+        std::vector<editor::Variable> after = writing.locals();
+        bool now = false;
+        for (size_t i = 0; i < after.size(); ++i)
+            if (after[i].name == "total" && after[i].value == "100") now = true;
+        check(now, "and reads back as what it was set to");
+
+        check(!writing.setVariable("nosuch", "1", &said),
+              "a name that is not in scope is refused");
+        check(!said.empty(), "with the debugger's own words for why");
+
+        writing.clearBreakpoints();
+        editor::Stop ran = writing.resume();
+        check(ran.exited && ran.status == 112,
+              "and what was written reached the program - 100 + 2 + 4 + 6");
+        writing.stop();
+    }
+
     editor::path::removeTree(dir);
 }
 
@@ -2074,10 +2133,27 @@ void debuggingCppForReal() {
     editor::Stop out = debugger.stepOut();
     check(out.stopped && out.function == "main", "and stepping out comes back");
 
+    // Writing one back, which is cdb's ?? - its C++ expression evaluator -
+    // rather than lldb's expression or gdb's set variable. Only this machine
+    // can say whether that spelling is right, and what is checked is what the
+    // program returns: a variable that reads back as 100 and changes nothing
+    // is a debugger showing its own idea of the program rather than the
+    // program.
+    std::string said;
+    check(debugger.setVariable("total", "100", &said), "a variable is written back");
+    std::vector<editor::Variable> now = debugger.locals();
+    bool written = false;
+    for (size_t i = 0; i < now.size(); ++i)
+        if (now[i].name == "total" && now[i].value == "100") written = true;
+    check(written, "and reads back as what it was set to");
+
+    check(!debugger.setVariable("nosuch", "1", &said), "a name that is not in scope is refused");
+    check(!said.empty(), "with the debugger's own words for why");
+
     debugger.clearBreakpoints();
     editor::Stop ended = debugger.resume();
     check(ended.exited, "and with none left the program runs to the end");
-    check(ended.status == 12, "returning what it worked out - 2 + 4 + 6");
+    check(ended.status == 112, "returning what was written into it - 100 + 2 + 4 + 6");
 
     debugger.stop();
     editor::removeProgram(made);
@@ -2270,6 +2346,36 @@ void theSeamTheWindowUses() {
           "where nothing is said about whose variables they are, the top line saying it");
     check(ed1_debugger_look_at(debugger, 9) == 0,
           "a frame that is not there is refused rather than answered with another's");
+
+    // Setting one through the seam, which is the window's only way to it. The
+    // line it writes for a variable is read back the same way a frame's is.
+    check(ed1_debugger_look_at(debugger, 0) != 0, "back at the frame it stopped in");
+    std::string variableLine = ed1_local_text(debugger, 0);   // n, inside twice
+    check(!variableLine.empty(), "the window is given the line to write for a variable");
+    check(ed1_locals_on_line(debugger, variableLine.c_str()) == 0,
+          "and reads it back as the variable it was written for");
+    check(ed1_locals_on_line(debugger, "called from") == -1,
+          "while a row that is not a variable answers -1");
+
+    // In the caller's frame, which is where the window's own gesture would be
+    // aimed as often as not - and put back afterwards, so that what the
+    // program returns at the end of this test is still what it worked out
+    // rather than what was written into it. The reaching-the-program half is
+    // checked on its own run in debuggingForReal.
+    check(ed1_debugger_look_at(debugger, 1) != 0, "looking at the caller to set one of its own");
+    check(ed1_set_variable(debugger, "total", "100") != 0, "a variable is set through it");
+    bool setThrough = false;
+    for (int i = 0; i < ed1_locals_count(debugger); ++i)
+        if (std::string(ed1_local_name(debugger, i)) == "total" &&
+            std::string(ed1_local_value(debugger, i)) == "100") setThrough = true;
+    check(setThrough, "and the locals it reads afterwards say so");
+
+    check(ed1_set_variable(debugger, "nosuch", "1") == 0, "a name that is not there is refused");
+    check(std::string(ed1_set_complaint(debugger)).size() > 0,
+          "with the debugger's own words to show for it");
+
+    check(ed1_set_variable(debugger, "total", "0") != 0, "and it is put back where it was");
+    check(ed1_debugger_look_at(debugger, 0) != 0, "with the frame put back too");
 
     // And the line the window writes at the top, which it compares a clicked
     // row against to know that the row means the frame it stopped in.

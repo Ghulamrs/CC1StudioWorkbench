@@ -223,7 +223,9 @@ struct Ed1Debugger {
     std::vector<editor::StackFrame> stack;
     size_t looking;          // which frame the variables belong to; 0 is the stop
     std::string frameLine;   // one frame as the Debug tab spells it
+    std::string variableLine;
     std::string lookingLine;
+    std::string complaint;   // what it said about a value it would not take
     std::string answer;
     std::string output;   // the program's own words, kept for the same reason
 
@@ -809,6 +811,32 @@ const char* ed1_stack_text(Ed1Debugger* debugger, int index) {
             : std::string();
     return debugger->frameLine.c_str();
 }
+
+const char* ed1_local_text(Ed1Debugger* debugger, int index) {
+    debugger->variableLine = holds(debugger, index)
+                                 ? editor::dbg_variableLine(debugger->locals[index])
+                                 : std::string();
+    return debugger->variableLine.c_str();
+}
+
+int ed1_locals_on_line(Ed1Debugger* debugger, const char* line) {
+    size_t which = editor::dbg_variableOnLine(debugger->locals, line ? line : "");
+    return which < debugger->locals.size() ? static_cast<int>(which) : -1;
+}
+
+int ed1_set_variable(Ed1Debugger* debugger, const char* name, const char* value) {
+    debugger->complaint.clear();
+    if (!debugger->debugger.setVariable(name ? name : "", value ? value : "",
+                                        &debugger->complaint))
+        return 0;
+
+    // Read back rather than assumed: a debugger may take 3.7 for an int and
+    // store 3, and the tab should say what is in there.
+    debugger->locals = debugger->debugger.locals();
+    return 1;
+}
+
+const char* ed1_set_complaint(Ed1Debugger* debugger) { return debugger->complaint.c_str(); }
 
 int ed1_debugger_look_at(Ed1Debugger* debugger, int which) {
     if (!reaches(debugger, which)) return 0;

@@ -3293,13 +3293,8 @@ private:
         if (howMany == 0) {
             said->Append("  (nothing in scope here)\r\n");
         } else {
-            for (int i = 0; i < howMany; ++i) {
-                String^ type = FromUtf8(ed1_local_type(debugger_, i));
-                said->AppendFormat("  {0} = {1}", FromUtf8(ed1_local_name(debugger_, i)),
-                                   FromUtf8(ed1_local_value(debugger_, i)));
-                if (!String::IsNullOrEmpty(type)) said->AppendFormat("   [{0}]", type);
-                said->Append("\r\n");
-            }
+            for (int i = 0; i < howMany; ++i)
+                said->AppendFormat("{0}\r\n", FromUtf8(ed1_local_text(debugger_, i)));
         }
         // Who is waiting for it. The first frame is where it is standing and
         // the line at the top already says that, so what is worth showing is
@@ -3312,11 +3307,23 @@ private:
         }
 
         said->Append("\r\nF8 carries on   F7 steps over   F6 steps into   F9 sets a breakpoint");
+
+        // Setting a variable needs no stack at all, so it is said whether or
+        // not there is one: a program standing in main has one frame and
+        // variables like any other.
+        said->Append("\r\nDouble-click a variable, or press enter on it, to set it");
         if (deep > 1) {
             said->Append("\r\nCtrl+Up looks at what called this   Ctrl+Down comes back down");
-            said->Append("\r\nDouble-click a frame, or press enter on it, to look at it");
+            said->Append("\r\nThe same on a frame looks at it, and on the top line goes back");
         }
         debug_->Text = said->ToString();
+
+        // And the caret at the top of it, as the terminal's panel comes back
+        // to its own top line. Without this it is left wherever the last text
+        // put it, and enter - which acts on the line the caret is on - acts on
+        // whichever line that happened to be.
+        debug_->SelectionStart = 0;
+        debug_->SelectionLength = 0;
     }
 
     // The tab's first line, which names the frame the program stopped in. From
@@ -3360,11 +3367,48 @@ private:
         if (which < 0 && ed1_stack_count(debugger_) > 0 && row_text == StopLine()) which = 0;
 
         if (which < 0) {
-            what_->Text = "that line is not a frame - a frame is one under \"called from\"";
+            // Not a frame, but the tab's other kind of line is a variable, and
+            // this gesture on one of those is how it is set.
+            int variable = ed1_locals_on_line(debugger_,
+                                              reinterpret_cast<const char*>(line));
+            if (variable >= 0) { EditVariable(variable); return; }
+
+            what_->Text = "that line is neither a frame nor a variable";
             return;
         }
 
         LookAt(which);
+    }
+
+    // Writing a variable back, into whichever frame is being looked at. Asked
+    // for in the same box that asks for a filename, and what the debugger says
+    // about a value it will not take is what the line at the bottom says: its
+    // complaint names the mistake better than anything invented here.
+    void EditVariable(int which) {
+        String^ name = FromUtf8(ed1_local_name(debugger_, which));
+        String^ was = FromUtf8(ed1_local_value(debugger_, which));
+        if (name->Length == 0) return;
+
+        String^ value = Ask(String::Format("set {0}", name), was);
+        if (value == nullptr || value->Length == 0) {
+            what_->Text = String::Format("{0} is still {1}", name, was);
+            return;
+        }
+
+        pin_ptr<Byte> named = &Utf8Of(name)[0];
+        pin_ptr<Byte> wanted = &Utf8Of(value)[0];
+        if (ed1_set_variable(debugger_, reinterpret_cast<const char*>(named),
+                             reinterpret_cast<const char*>(wanted)) == 0) {
+            String^ complaint = FromUtf8(ed1_set_complaint(debugger_));
+            what_->Text = complaint->Length > 0
+                              ? complaint
+                              : String::Format("the debugger would not set {0}", name);
+            return;
+        }
+
+        WriteDebugTab();
+        what_->Text = String::Format("{0} is {1} now", name,
+                                     FromUtf8(ed1_local_value(debugger_, which)));
     }
 
     // One frame along, without going near the panel: Ctrl-Up towards what
@@ -3405,8 +3449,6 @@ private:
         // The variables are what was asked for, so the tab comes back to the
         // top where they are - and where the line that goes back is.
         WriteDebugTab();
-        debug_->SelectionStart = 0;
-        debug_->SelectionLength = 0;
 
         String^ file = FromUtf8(ed1_stack_file(debugger_, which));
         int at = ed1_stack_line(debugger_, which);

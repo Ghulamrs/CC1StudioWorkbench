@@ -1777,11 +1777,48 @@ void Editor::goToFrame() {
         which = 0;
 
     if (which >= stack_.size()) {
-        say("that line is not a frame - the cursor is on the panel's top line");
+        // Not a frame, but the tab's other kind of line is a variable, and
+        // pressing enter on one of those is how it is set.
+        size_t variable = dbg_variableOnLine(locals_, lines[panelOff_]);
+        if (variable < locals_.size()) { editVariable(variable); return; }
+
+        say("that line is neither a frame nor a variable");
         return;
     }
 
     lookAt(which);
+}
+
+// Writing a variable back, into whichever frame is being looked at. The value
+// is asked for in the same box that asks for a filename, and what the debugger
+// says about a value it will not take is what the message line says: its
+// complaint names the mistake better than anything invented here.
+void Editor::editVariable(size_t which) {
+    if (which >= locals_.size()) return;
+
+    const std::string name = locals_[which].name;
+    const std::string was = locals_[which].value;
+
+    bool cancelled = false;
+    std::string value = prompt("set " + name + " (" + was + ") to: ", cancelled);
+    if (cancelled || value.empty()) { say(name + " is still " + was); return; }
+
+    std::string said;
+    if (!debugger_.setVariable(name, value, &said)) {
+        say(said.empty() ? "the debugger would not set " + name : said);
+        return;
+    }
+
+    locals_ = debugger_.locals();
+    writeDebugTab();
+
+    // Read back rather than assumed: a debugger may take "3.7" for an int and
+    // store 3, and the tab should say what is in there rather than what was
+    // typed at it.
+    std::string now = value;
+    for (size_t i = 0; i < locals_.size(); ++i)
+        if (locals_[i].name == name) now = locals_[i].value;
+    say(name + " is " + now + " now");
 }
 
 // One frame along, without going near the panel: Ctrl-Up towards what called
@@ -2297,11 +2334,8 @@ void Editor::writeDebugTab() {
     if (locals_.empty()) {
         debug_.push_back("  (nothing in scope here)");
     } else {
-        for (size_t i = 0; i < locals_.size(); ++i) {
-            std::string said = "  " + locals_[i].name + " = " + locals_[i].value;
-            if (!locals_[i].type.empty()) said += "   [" + locals_[i].type + "]";
-            debug_.push_back(said);
-        }
+        for (size_t i = 0; i < locals_.size(); ++i)
+            debug_.push_back(dbg_variableLine(locals_[i]));
     }
 
     // Who is waiting for it. The first frame is where it is standing, which
@@ -2316,9 +2350,14 @@ void Editor::writeDebugTab() {
 
     debug_.push_back("");
     debug_.push_back("F8 carries on   F7 steps over   F6 steps into   F9 sets a breakpoint");
+
+    // Setting a variable needs no stack at all, so it is said whether or not
+    // there is one: a program standing in main has one frame and variables
+    // like any other.
+    debug_.push_back("Ctrl-W puts the cursor in the panel; Enter on a variable sets it");
     if (stack_.size() > 1) {
         debug_.push_back("Ctrl-Up looks at what called this   Ctrl-Down comes back down");
-        debug_.push_back("Ctrl-W puts the cursor in the panel; Enter on a frame looks at it");
+        debug_.push_back("Enter on a frame looks at it, and on the top line goes back");
     }
 }
 

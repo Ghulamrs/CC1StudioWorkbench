@@ -509,6 +509,13 @@ are previous and next file in the terminal, but Rename and Find next in the
 window, so the window takes the Windows convention rather than moving two
 bindings that were already there.
 
+**View hides what you are not using**: `Ctrl+P` the project pane, `Ctrl+E` the
+bottom panel — the terminal's own keys for both — and **Show line numbers** on
+the menu, which has no key because `Ctrl+L` is Re-indent here. Line numbers take
+the whole gutter with them, breakpoint dots and the stopped-at arrow included,
+which is what `Ctrl-L` does in the terminal too. The menu ticks say which of the
+three are showing; without them nobody would learn they can be turned off.
+
 **The project operations** are on the Project menu: new project, save project,
 add this file, new file, rename, move to group and delete. New file and new
 project are on the File menu as well, because that is where somebody who wants

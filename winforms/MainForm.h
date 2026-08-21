@@ -178,6 +178,14 @@ private:
     // written when there was only ever one file still reads the same.
     RichTextBox^ text_;
     TabControl^ panel_;
+    // The three things View can hide, and the ticks that say which are showing.
+    // numbers_ is the gutter as a whole - the line numbers, the breakpoint dots
+    // and the arrow together - which is what Ctrl-L takes away in the terminal
+    // too, rather than the digits alone.
+    bool numbers_;
+    ToolStripMenuItem^ numbersItem_;
+    ToolStripMenuItem^ paneItem_;
+    ToolStripMenuItem^ panelItem_;
     TextBox^ console_;
     TextBox^ debug_;
     RichTextBox^ assembly_;
@@ -242,6 +250,7 @@ private:
         breakNames_ = gcnew System::Collections::Generic::Dictionary<String^, String^>();
         stopFile_ = nullptr;
         stopLine_ = 0;
+        numbers_ = true;
         indentWidth_ = 4;
         indentTabs_ = 0;
         indentCase_ = 0;
@@ -434,6 +443,28 @@ private:
                                       gcnew EventHandler(this, &MainForm::OnShowDebug)));
         view->DropDownItems->Add(Item("Assembly", Keys::Control | Keys::D3,
                                       gcnew EventHandler(this, &MainForm::OnShowAssembly)));
+        view->DropDownItems->Add(gcnew ToolStripSeparator());
+
+        // What is showing, rather than what to look at. Ctrl+P and Ctrl+E are
+        // free here and are the terminal's own keys for these two. Ctrl+L is
+        // not free - it is Re-indent in this window - so line numbers are on
+        // the menu and nowhere else. The ticks are how anybody finds out these
+        // can be turned off at all.
+        numbersItem_ = Item("Show line numbers", Keys::None,
+                            gcnew EventHandler(this, &MainForm::OnToggleNumbers));
+        numbersItem_->Checked = true;
+        view->DropDownItems->Add(numbersItem_);
+
+        paneItem_ = Item("Show project pane", Keys::Control | Keys::P,
+                         gcnew EventHandler(this, &MainForm::OnTogglePane));
+        paneItem_->Checked = true;
+        view->DropDownItems->Add(paneItem_);
+
+        panelItem_ = Item("Show bottom panel", Keys::Control | Keys::E,
+                          gcnew EventHandler(this, &MainForm::OnTogglePanel));
+        panelItem_->Checked = true;
+        view->DropDownItems->Add(panelItem_);
+
         bar->Items->Add(view);
 
         ToolStripMenuItem^ target = gcnew ToolStripMenuItem("&Target");
@@ -807,6 +838,7 @@ private:
         sheet->gutter->BackColor = System::Drawing::Color::FromArgb(245, 245, 245);
         sheet->gutter->Tag = sheet->box;
         sheet->gutter->Paint += gcnew PaintEventHandler(this, &MainForm::OnGutterPaint);
+        sheet->gutter->Visible = numbers_;   // a tab opened while they are off has none either
         sheet->box->Tag = sheet->gutter;
 
         sheet->page = gcnew TabPage(path == nullptr
@@ -1646,6 +1678,31 @@ private:
     // A blank buffer with no name, as Editor::newFile makes one. MakeSheet
     // adds the tab and brings it forward, and bringing it forward is what puts
     // "untitled" on the message line - so what this has to say is said after.
+    // The gutter goes as a whole, as Ctrl-L takes the whole column away in the
+    // terminal: the numbers, the breakpoint dots and the arrow are one thing to
+    // turn off, not three.
+    void OnToggleNumbers(Object^, EventArgs^) {
+        numbers_ = !numbers_;
+        numbersItem_->Checked = numbers_;
+        for each (Sheet^ sheet in sheets_)
+            if (sheet->gutter != nullptr) sheet->gutter->Visible = numbers_;
+        what_->Text = numbers_ ? "line numbers on" : "line numbers off";
+    }
+
+    void OnTogglePane(Object^, EventArgs^) {
+        bool hidden = !upper_->Panel1Collapsed;
+        upper_->Panel1Collapsed = hidden;
+        paneItem_->Checked = !hidden;
+        what_->Text = hidden ? "project pane hidden" : "project pane showing";
+    }
+
+    void OnTogglePanel(Object^, EventArgs^) {
+        bool hidden = !outer_->Panel2Collapsed;
+        outer_->Panel2Collapsed = hidden;
+        panelItem_->Checked = !hidden;
+        what_->Text = hidden ? "bottom panel hidden" : "bottom panel showing";
+    }
+
     void OnNewBuffer(Object^, EventArgs^) {
         MakeSheet(nullptr, "");
         what_->Text = "new file - Ctrl+S names it";

@@ -185,7 +185,11 @@ private:
     // own background and the only per-range colour it draws is behind
     // characters - so the bar is not asked of it. It is a window of our own,
     // made translucent and click-through, sitting on top.
-    Panel^ stopBar_;          // 0 when the program is not standing still
+    Panel^ stopBar_;
+    // The font code is drawn in. One font for every tab: a file does not have
+    // a typeface, the person reading it does. The gutter draws its numbers with
+    // the box's own font, so it follows this without being told.
+    System::Drawing::Font^ codeFont_;          // 0 when the program is not standing still
 
     String^ path_;
     String^ projectDirectory_;
@@ -301,6 +305,7 @@ private:
         stopLine_ = 0;
         highlightRow_ = -1;
         stopBar_ = nullptr;
+        codeFont_ = RememberedFont();
         numbers_ = true;
         ForgetError();
         indentWidth_ = 4;
@@ -510,6 +515,10 @@ private:
         // not free - it is Re-indent in this window - so line numbers are on
         // the menu and nowhere else. The ticks are how anybody finds out these
         // can be turned off at all.
+        view->DropDownItems->Add("Font...", nullptr,
+                                 gcnew EventHandler(this, &MainForm::OnFont));
+        view->DropDownItems->Add(gcnew ToolStripSeparator());
+
         numbersItem_ = Item("Show line numbers", Keys::None,
                             gcnew EventHandler(this, &MainForm::OnToggleNumbers));
         numbersItem_->Checked = true;
@@ -782,6 +791,34 @@ private:
     static bool SetLayeredWindowAttributes(System::IntPtr window, int key, unsigned char alpha,
                                            int flags);
 
+    // "Courier New 11.5" - the name, then the size, which is what the last
+    // space separates. Anything this machine cannot make is quietly the
+    // default: a settings file carried from another machine may name a font
+    // that is not here, and that is not worth a complaint on startup.
+    System::Drawing::Font^ RememberedFont() {
+        String^ said = FromUtf8(ed1_code_font());
+        if (said != nullptr && said->Length > 0) {
+            int cut = said->LastIndexOf(' ');
+            if (cut > 0) {
+                String^ name = said->Substring(0, cut);
+                double points = 0;
+                if (Double::TryParse(said->Substring(cut + 1),
+                                     System::Globalization::NumberStyles::Float,
+                                     System::Globalization::CultureInfo::InvariantCulture,
+                                     points) && points >= 6 && points <= 48) {
+                    try {
+                        System::Drawing::Font^ made =
+                            gcnew System::Drawing::Font(name, (float)points);
+                        // A name it does not have gives back something else
+                        // entirely, so ask what it made rather than trust it.
+                        if (made->FontFamily->Name == name) return made;
+                    } catch (Exception^) { }
+                }
+            }
+        }
+        return gcnew System::Drawing::Font("Consolas", 11.0f);
+    }
+
     ToolStripMenuItem^ Item(String^ label, Keys key, EventHandler^ handler) {
         ToolStripMenuItem^ item = gcnew ToolStripMenuItem(label, nullptr, handler);
         item->ShortcutKeys = key;
@@ -918,7 +955,7 @@ private:
 
         sheet->box = gcnew RichTextBox();
         sheet->box->Dock = DockStyle::Fill;
-        sheet->box->Font = gcnew System::Drawing::Font("Consolas", 11.0f);
+        sheet->box->Font = codeFont_;
         sheet->box->WordWrap = false;
         sheet->box->AcceptsTab = true;
         sheet->box->HideSelection = false;
@@ -1937,6 +1974,48 @@ private:
     // The gutter goes as a whole, as Ctrl-L takes the whole column away in the
     // terminal: the numbers, the breakpoint dots and the arrow are one thing to
     // turn off, not three.
+    // Fixed-pitch only: code in a proportional face is not worth offering, and
+    // the gutter's numbers are laid out on the assumption that every character
+    // is the same width.
+    void OnFont(Object^, EventArgs^) {
+        FontDialog^ pick = gcnew FontDialog();
+        pick->Font = codeFont_;
+        pick->FixedPitchOnly = true;
+        pick->ShowEffects = false;
+        pick->ShowColor = false;
+        pick->MinSize = 6;
+        pick->MaxSize = 48;
+        if (pick->ShowDialog(this) != System::Windows::Forms::DialogResult::OK) {
+            what_->Text = "font unchanged";
+            return;
+        }
+
+        UseFont(pick->Font);
+
+        String^ said = String::Format(
+            System::Globalization::CultureInfo::InvariantCulture, "{0} {1}",
+            codeFont_->FontFamily->Name, codeFont_->SizeInPoints);
+        array<Byte>^ bytes = Utf8Of(said);
+        pin_ptr<Byte> pinned = &bytes[0];
+        ed1_remember_code_font(reinterpret_cast<const char*>(pinned));
+        what_->Text = said;
+    }
+
+    // Every tab, not only the one in front, and everything measured from the
+    // font afterwards: the gutter draws its numbers in it, and the bar over the
+    // stopped line is one line high.
+    void UseFont(System::Drawing::Font^ chosen) {
+        codeFont_ = chosen;
+        for each (Sheet^ sheet in sheets_) {
+            bool touched = sheet->box->Modified;
+            sheet->box->Font = codeFont_;
+            sheet->box->Modified = touched;   // a font is not an edit
+            if (sheet->gutter != nullptr) sheet->gutter->Invalidate();
+        }
+        Recolour();
+        PlaceStopBar();
+    }
+
     void OnToggleNumbers(Object^, EventArgs^) {
         numbers_ = !numbers_;
         numbersItem_->Checked = numbers_;

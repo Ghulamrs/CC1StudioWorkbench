@@ -80,6 +80,11 @@ char* ed1_replace_all(const char* text, const char* needle, const char* with,
    Undoing your own typing is unaffected - only what happens between the two
    calls goes unrecorded. Anywhere but Windows, and wherever the interface
    cannot be had, they do nothing and colouring behaves as before. */
+/* The font the window last drew code in, as the window spelled it, and a way
+   to keep the next choice. Empty when nothing was ever chosen. */
+const char* ed1_code_font(void);
+int ed1_remember_code_font(const char* described);
+
 void ed1_undo_suspend(void* windowHandle);
 void ed1_undo_resume(void* windowHandle);
 

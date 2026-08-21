@@ -259,6 +259,15 @@ static void undoRecording(void* windowHandle, long how) {
 }
 #endif
 
+const char* ed1_code_font(void) {
+    scratch() = editor::settings::codeFont();
+    return scratch().c_str();
+}
+
+int ed1_remember_code_font(const char* described) {
+    return editor::settings::rememberCodeFont(described ? described : "") ? 1 : 0;
+}
+
 void ed1_undo_suspend(void* windowHandle) {
 #ifdef _WIN32
     undoRecording(windowHandle, tomSuspend);

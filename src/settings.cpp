@@ -59,6 +59,14 @@ bool rememberPlainFrame(bool plain) {
     return writeAll(root);
 }
 
+std::string codeFont() { return readAll().get("font").text(std::string()); }
+
+bool rememberCodeFont(const std::string& described) {
+    Json root = readAll();
+    root.set("font", Json::fromText(described));
+    return writeAll(root);
+}
+
 std::string lastProject() {
     std::string where = fileName();
     if (where.empty()) return std::string();

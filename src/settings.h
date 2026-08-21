@@ -38,6 +38,14 @@ bool rememberProject(const std::string& directory);
 // the junctions from a second face, which breaks the lines at every join - so
 // it belongs here beside the project and not in any ed1.json.
 bool plainFrame();
+
+// The font the window draws code in, kept as the window spells it - a name and
+// a size, and this side does not look inside. A property of the machine you are
+// sitting at, like the frame above it: the same ed1.json opened elsewhere must
+// not drag along a font that machine may not have. Empty when nothing was ever
+// chosen, and the window uses its own default then.
+std::string codeFont();
+bool rememberCodeFont(const std::string& described);
 bool rememberPlainFrame(bool plain);
 
 }  // namespace settings

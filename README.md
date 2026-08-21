@@ -516,6 +516,15 @@ terminal's `F2` and `F3`, which are Rename and Find next here. That is one of
 ten places the two disagree about a key on purpose, and they are all in the
 table below.
 
+**View ▸ Font...** changes the face code is drawn in - Courier New, Cascadia,
+whatever this machine has - fixed-pitch only, since the gutter's numbers are
+laid out on every character being the same width. It applies to every tab at
+once, because a file does not have a typeface: the person reading it does. And
+it is remembered in `~/.ed1config.json`, beside the last project and the frame
+style, for the same reason those are there - it is a fact about the machine you
+are sitting at, not about any project. A name that machine does not have is
+quietly the default rather than a complaint at startup.
+
 **View hides what you are not using**: `Ctrl+P` the project pane, `Ctrl+E` the
 bottom panel — the terminal's own keys for both — and **Show line numbers** on
 the menu, which has no key because `Ctrl+L` is Re-indent here. Line numbers take

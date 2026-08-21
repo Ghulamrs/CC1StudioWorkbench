@@ -471,6 +471,14 @@ const char* ed1_toolchain_name(int kind) {
     return editor::toolchainName(static_cast<editor::ToolchainKind>(kind));
 }
 
+const char* ed1_language_name(int language) {
+    return editor::languageName(static_cast<editor::Language>(language));
+}
+
+const char* ed1_config_name(int config) {
+    return editor::configName(static_cast<editor::Configuration>(config));
+}
+
 int ed1_resolve(int toolchainKind, int language) {
     editor::Toolchain tool;
     tool.kind = static_cast<editor::ToolchainKind>(toolchainKind);

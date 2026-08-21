@@ -213,6 +213,7 @@ private:
     TextBox^ debug_;
     RichTextBox^ assembly_;
     StatusStrip^ status_;
+    ToolStripStatusLabel^ build_;
     ToolStripStatusLabel^ where_;
     ToolStripStatusLabel^ what_;
     ToolStripStatusLabel^ root_;   // which directory the project is in
@@ -613,15 +614,25 @@ private:
         what_ = gcnew ToolStripStatusLabel("no file");
         what_->Spring = true;
         what_->TextAlign = System::Drawing::ContentAlignment::MiddleLeft;
+        // What the next build will use, the way the terminal's status bar has
+        // always carried it. The ticks in the menus answer the same question,
+        // but only when a menu is open; this answers it at a glance.
+        build_ = gcnew ToolStripStatusLabel("");
+        build_->BorderSides = ToolStripStatusLabelBorderSides::Left;
+        build_->ToolTipText =
+            "language, debug or release, the compiler that will run "
+            "(* when the file chose it) and the target when it matters";
         root_ = gcnew ToolStripStatusLabel("no project");
         root_->BorderSides = ToolStripStatusLabelBorderSides::Left;
         root_->ForeColor = System::Drawing::Color::FromArgb(90, 90, 90);
         where_ = gcnew ToolStripStatusLabel("1:1");
         where_->BorderSides = ToolStripStatusLabelBorderSides::Left;
         status_->Items->Add(what_);
+        status_->Items->Add(build_);
         status_->Items->Add(root_);
         status_->Items->Add(where_);
         Controls->Add(status_);
+        SayBuild();   // ShowChoices ran before this strip existed
 
         // FixedPanel is the rule the terminal front end already follows: the
         // project pane takes 22 columns and the bottom panel takes 7 rows -
@@ -913,6 +924,7 @@ private:
                           : System::IO::Path::GetFileName(path_) + "  " +
                                 text_->Lines->Length + " lines";
         text_->Focus();
+        SayBuild();   // the language is the file's, so it arrives with the tab
         sheet->gutter->Invalidate();
 
         // Each tab keeps its own text, so the one coming forward is coloured
@@ -1802,6 +1814,7 @@ private:
         if (SamePath(path_, target)) {
             path_ = now;
             Text = String::Format("{0} - {1}", ProductName(), System::IO::Path::GetFileName(now));
+            SayBuild();   // a rename can change the suffix, and so the language
         }
 
         // So do its breakpoints, which are filed under the file's name. Without
@@ -2010,6 +2023,7 @@ private:
         text_ = sheet->box;
         path_ = path;
         Text = String::Format("{0} - {1}", ProductName(), System::IO::Path::GetFileName(path));
+        SayBuild();   // the file names the language, and no tab changed here
         Recolour();
         OnTextChanged(nullptr, nullptr);
 
@@ -2077,6 +2091,7 @@ private:
         path_ = pick->FileName;
         Text = String::Format("{0} - {1}", ProductName(),
                               System::IO::Path::GetFileName(path_));
+        SayBuild();
         OnSave(nullptr, nullptr);
         FillTree();
     }
@@ -2854,6 +2869,24 @@ private:
     // which includes opening a project: an ed1.json carries all of them, and a
     // tick that only followed the menus would start lying the moment one was
     // opened.
+    void SayBuild() {
+        if (build_ == nullptr) return;
+        int language = LanguageNow();
+        int kind = ed1_resolve(toolKind_, language);
+        String^ said = FromUtf8(ed1_language_name(language)) + "  " +
+                       FromUtf8(ed1_config_name(config_)) + "  " +
+                       FromUtf8(ed1_toolchain_name(kind));
+        // The star means the file picked the compiler, not the menu - the same
+        // mark, in the same place, as the terminal's.
+        if (toolKind_ == ED1_TOOL_AUTO) said += "*";
+        // The target is shown only when it means something: cl builds for the
+        // host it was installed as, and offering a choice that changes nothing
+        // would be the status bar telling a lie. Editor::drawStatus says the
+        // same thing in the same words.
+        if (ed1_uses_arch(kind) != 0) said += "  " + arch_;
+        build_->Text = said;
+    }
+
     void ShowChoices() {
         for each (ToolStripMenuItem^ one in targetItems_)
             one->Checked = String::Equals(one->Text, arch_, StringComparison::Ordinal);
@@ -2862,6 +2895,7 @@ private:
         toolClItem_->Checked = toolKind_ == ED1_TOOL_MSVC;
         debugConfigItem_->Checked = config_ == ED1_CONFIG_DEBUG;
         releaseConfigItem_->Checked = config_ == ED1_CONFIG_RELEASE;
+        SayBuild();
     }
 
     // Debug and release are two, so this is a toggle. The compilers and the

@@ -163,6 +163,12 @@ const char* ed1_outcome_path(Ed1Project* project);
 
 const char* ed1_arch(int index);              /* 0, 1, 2 */
 const char* ed1_toolchain_name(int kind);
+
+/* What the core calls a language and a configuration. Here so that both front
+   ends say the same words for the same thing - the terminal's status bar has
+   had these since the beginning and the window had no way to ask for them. */
+const char* ed1_language_name(int language);
+const char* ed1_config_name(int config);
 int ed1_resolve(int toolchainKind, int language);
 int ed1_can_compile(int kind, int language);
 const char* ed1_refusal(int kind, int language);

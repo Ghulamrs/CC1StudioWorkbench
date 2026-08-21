@@ -523,6 +523,17 @@ between, which is what the terminal's own menu does with `Ctrl-D`. A key bound
 twice would go to whichever menu was built first and leave the other advertising
 a key that does nothing; that is what once happened to `F7` and Step over.
 
+**The status bar says what the next build will use** — the language, debug or
+release, the compiler that will actually run with a `*` when the file chose it
+rather than the menu, and the target when it means anything. `C  debug  cc1*
+x86_64-windows`. It is the terminal's own line, through the same four core
+functions, so the two cannot drift into different words for the same state; the
+target is left out for cl, which builds for the host it was installed as, since
+showing a choice that changes nothing would be the status bar telling a lie.
+
+The menu ticks answer the same question where the choice is made. This answers
+it without opening anything.
+
 ### Where the keys differ, and why
 
 Most keys are the same in both. These nine are not, and every one of them is a

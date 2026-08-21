@@ -1286,6 +1286,20 @@ void stoppingAndStepping(const std::string& ed1, const std::string& cc1) {
     check(onScreen(up, "total = 0"), "with that frame's variables");
     check(onScreen(up, "11/14"), "and the caret on the line waiting for the call");
 
+    // And the gutter says which line that is, in the code rather than only in
+    // the panel. It outranks the breakpoint that is on the same line - the
+    // mark is about now, and the breakpoint is about every run of the program.
+    //
+    // With the line's own text after it, because "stepped.c:11" in the panel
+    // holds ":11" as well and a check that matches that is a check that passes
+    // whatever the gutter does.
+    const std::string markedLine = ":11         total = total + twice(i);";
+    const std::string breakLine = "*11         total = total + twice(i);";
+    check(onScreen(up, markedLine), "the gutter marks the line the frame is waiting on");
+    check(onScreen(up, "> 3     int doubled"),
+          "while the arrow stays where the program is standing");
+    check(!onScreen(up, breakLine), "and the breakpoint's own mark gives way to it");
+
     // And the ends of it, which are the two answers with nowhere to go.
     Screen top = drive(ed1, withCc1,
                        toLoopBody + kF9 + kF8 + kF6 + kCtrlUp + kCtrlUp + ctrl('q'), dir);
@@ -1296,6 +1310,8 @@ void stoppingAndStepping(const std::string& ed1, const std::string& cc1) {
     check(wasShown(down, "back where it stopped"), "Ctrl-Down comes back down");
     check(onScreen(down, "n = 1"), "to the variables of the frame it stopped in");
     check(onScreen(down, "3/14"), "and the line it stopped on");
+    check(!onScreen(down, markedLine), "with the mark gone from the frame it was looking at");
+    check(onScreen(down, breakLine), "and the breakpoint's own mark back where it was");
 
     Screen bottom = drive(ed1, withCc1, toLoopBody + kF9 + kF8 + kF6 + kCtrlDown + ctrl('q'), dir);
     check(wasShown(bottom, "nothing below it"), "and says so at the bottom of it");

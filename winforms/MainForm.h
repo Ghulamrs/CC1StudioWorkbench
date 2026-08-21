@@ -182,6 +182,8 @@ private:
     String^ errorFile_;
     String^ stopFile_;
     String^ stopFunction_;   // what it stopped in, for writing the tab again
+    String^ lookingFile_;    // and the frame being looked at, when it is not that one
+    int lookingLine_;
     int stopLine_;
     // The row wearing the stopped-here bar, so it can be taken off again. -1
     // when no line has one.
@@ -308,6 +310,8 @@ private:
         breakNames_ = gcnew System::Collections::Generic::Dictionary<String^, String^>();
         stopFile_ = nullptr;
         stopLine_ = 0;
+        lookingFile_ = nullptr;
+        lookingLine_ = 0;
         highlightRow_ = -1;
         stopBar_ = nullptr;
         codeFont_ = RememberedFont();
@@ -1178,6 +1182,14 @@ private:
             gcnew System::Drawing::SolidBrush(System::Drawing::Color::FromArgb(200, 60, 60));
         System::Drawing::Brush^ stopMark =
             gcnew System::Drawing::SolidBrush(System::Drawing::Color::FromArgb(40, 150, 60));
+        // The same arrow, not filled in: the program is not standing on that
+        // line, you are only looking at it.
+        System::Drawing::Pen^ lookMark =
+            gcnew System::Drawing::Pen(System::Drawing::Color::FromArgb(40, 150, 60));
+
+        bool sameLookFile = file != nullptr && lookingFile_ != nullptr &&
+                            System::IO::Path::GetFileName(file) ==
+                                System::IO::Path::GetFileName(lookingFile_);
 
         for (int row = first; row < lines; ++row) {
             int at = box->GetFirstCharIndexFromLine(row);
@@ -1188,15 +1200,25 @@ private:
             // The left of the gutter is the debugger's: a breakpoint waiting,
             // and an arrow on the line the program is standing on. The numbers
             // are right-aligned away from it, so nothing moves when one appears.
+            //
+            // One column, one mark. Where the program is outranks where you
+            // are looking, which outranks a breakpoint: the first two are
+            // about now, and a breakpoint is about every run of the program.
+            // Drawing more than one is not a matter of taste at this size -
+            // an outlined arrow over the dot is a red blob with a green line
+            // through it, which was what it looked like before this.
             float top = static_cast<float>(where.Y) + 3.0f;
-            if (marks != nullptr && marks->Contains(row + 1))
-                e->Graphics->FillEllipse(breakMark, 3.0f, top, 9.0f, 9.0f);
-            if (sameFile && stopLine_ == row + 1) {
+            bool standingHere = sameFile && stopLine_ == row + 1;
+            bool lookingHere = sameLookFile && lookingLine_ == row + 1;
+            if (standingHere || lookingHere) {
                 array<System::Drawing::PointF>^ arrow = gcnew array<System::Drawing::PointF>(3);
                 arrow[0] = System::Drawing::PointF(3.0f, top);
                 arrow[1] = System::Drawing::PointF(12.0f, top + 4.5f);
                 arrow[2] = System::Drawing::PointF(3.0f, top + 9.0f);
-                e->Graphics->FillPolygon(stopMark, arrow);
+                if (standingHere) e->Graphics->FillPolygon(stopMark, arrow);
+                else e->Graphics->DrawPolygon(lookMark, arrow);
+            } else if (marks != nullptr && marks->Contains(row + 1)) {
+                e->Graphics->FillEllipse(breakMark, 3.0f, top, 9.0f, 9.0f);
             }
 
             String^ number = (row + 1).ToString();
@@ -3127,6 +3149,8 @@ private:
         if (built_ != nullptr) { ed1_program_free(built_); built_ = nullptr; }
         stopFile_ = nullptr;
         stopLine_ = 0;
+        lookingFile_ = nullptr;
+        lookingLine_ = 0;
         ShowStoppedLine(-1);   // the bar goes with the arrow
         Current()->gutter->Invalidate();
     }
@@ -3166,6 +3190,8 @@ private:
             if (ed1_stop_no_source(debugger_) != 0) {
                 stopFile_ = nullptr;
                 stopLine_ = 0;
+                lookingFile_ = nullptr;
+                lookingLine_ = 0;
                 ShowStoppedLine(-1);
                 Current()->gutter->Invalidate();
                 debug_->Text =
@@ -3201,6 +3227,8 @@ private:
         }
 
         stopFunction_ = function;
+        lookingFile_ = nullptr;
+        lookingLine_ = 0;
         WriteDebugTab();
 
         Current()->gutter->Invalidate();
@@ -3382,9 +3410,16 @@ private:
 
         String^ file = FromUtf8(ed1_stack_file(debugger_, which));
         int at = ed1_stack_line(debugger_, which);
+
+        // The gutter marks it, unless it is the frame the program stopped in -
+        // that one has the arrow already.
+        lookingFile_ = which == 0 ? nullptr : file;
+        lookingLine_ = which == 0 ? 0 : at;
+
         if (file->Length > 0 && !SamePath(path_, file) && System::IO::File::Exists(file))
             OpenPath(file);
         GoTo(at, 1);
+        Current()->gutter->Invalidate();
         what_->Text = String::Format("{0}:{1} in {2} - {3}",
                                      System::IO::Path::GetFileName(file), at,
                                      FromUtf8(ed1_stack_function(debugger_, which)),

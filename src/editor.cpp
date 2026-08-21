@@ -741,7 +741,7 @@ void Editor::drawBody(std::string& out) const {
 
         if (numbers_) {
             std::string cell(static_cast<size_t>(gutterCols_), ' ');
-            bool hasBreak = false, isStopped = false;
+            bool hasBreak = false, isStopped = false, isLooked = false;
             if (row < buf_.lineCount()) {
                 std::string num = number(row + 1);
                 // Right-aligned, with the last column left as a gap so the
@@ -756,7 +756,28 @@ void Editor::drawBody(std::string& out) const {
                 hasBreak = breakpointOn(row + 1);
                 isStopped = stopLine_ == row + 1 && !stopFile_.empty() &&
                             path::filename(stopFile_) == path::filename(buf_.path());
+
+                // And the frame being looked at, when it is not the one the
+                // program stopped in - the line that is waiting for the call to
+                // come back. A different mark rather than the same one: the
+                // program is not standing there, you are only looking at it.
+                isLooked = looking_ > 0 && looking_ < stack_.size() &&
+                           stack_[looking_].line == row + 1 &&
+                           !stack_[looking_].file.empty() &&
+                           path::filename(stack_[looking_].file) ==
+                               path::filename(buf_.path());
+
+                // Where the program is outranks where you are looking, which
+                // outranks a breakpoint: the first two are about now and the
+                // third is about every run of the program.
+                //
+                // A colon rather than the dash tried first, which against a
+                // two-digit number reads as a minus sign - "-11" - and is
+                // already what the project pane puts in front of an open
+                // group. A colon is nothing else here and cannot be read as
+                // part of the number.
                 if (isStopped) cell[0] = '>';
+                else if (isLooked) cell[0] = ':';
                 else if (hasBreak) cell[0] = '*';
             }
 
@@ -764,6 +785,7 @@ void Editor::drawBody(std::string& out) const {
             // for having the numbers where you can see them. Where the program
             // stopped outranks it: that is the one line being looked at.
             if (isStopped) out += "\x1b[92m";
+            else if (isLooked) out += "\x1b[96m";
             else if (hasBreak) out += "\x1b[91m";
             else out += (row == cy_) ? "\x1b[93m" : "\x1b[90m";
             out += cell;

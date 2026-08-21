@@ -143,6 +143,16 @@ The way back is also the top line: it names the frame the program stopped in,
 and pressing enter on it goes there. Any step goes back too - every stop starts
 at the frame it stopped in.
 
+**The gutter marks the frame's line too**, so the answer is in the code and not
+only in the panel: `:` in the terminal where `>` marks the stop and `*` a
+breakpoint, and in the window the same arrow drawn as an outline rather than
+filled in - the program is not standing there, you are only looking at it. A
+dash was tried first and reads as a minus sign against a two-digit number.
+
+It outranks the breakpoint on the same line, which is usually exactly where a
+caller is waiting: the two marks are about now, and a breakpoint is about every
+run of the program.
+
 The program has not moved through any of this. The arrow in the gutter still
 marks the line it is standing on: looking at a frame is not stepping.
 
@@ -178,8 +188,9 @@ draws - the notes are above `PaintRow` and `MakeStopBar`, so nobody spends the
 afternoon again.
 
 Both front ends have it, from that same core: the window has a Debug menu with
-the same keys, a red dot in its gutter where a breakpoint is and an arrow where
-the program is standing, and the same words in its Debug tab. There is an
+the same keys, a red dot in its gutter where a breakpoint is, an arrow where
+the program is standing and an outline of one on the frame being looked at, and
+the same words in its Debug tab. There is an
 awkwardness worth stating plainly, though. The window only runs on Windows, and
 Windows is exactly where there is nothing to debug - so on the one machine that
 can run the GUI, F8 will always answer "no debugger here". What it does there is

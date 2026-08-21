@@ -1860,6 +1860,29 @@ void whatItRemembers() {
           "the editor's own configuration is beside your files");
     check(editor::settings::lastProject().empty(), "and remembers nothing to begin with");
 
+    // A configuration that will not parse is not silently buried. It is kept
+    // under .error, a fresh one is written in its place, and the editor can say
+    // where the old one went. Before this, the first setting changed after a
+    // bad file wrote straight over it.
+    {
+        std::string config = editor::settings::fileName();
+        writeSource(config, "{ this is not json at all");
+        editor::settings::rememberProject(home);   // any read is enough to trip it
+
+        check(pth::exists(config + ".error"), "an unreadable configuration is kept as .error");
+        check(pth::exists(config), "and a fresh one is written in its place");
+        check(editor::settings::setAside() == config + ".error",
+              "and the editor can say where the old one went");
+        check(editor::settings::lastProject() == home,
+              "the fresh one is readable, and takes what is written to it");
+
+        // An empty file is nobody's work: it is not worth keeping a copy of.
+        pth::remove(config + ".error");
+        writeSource(config, "");
+        check(editor::settings::lastProject().empty(), "an empty configuration reads as nothing");
+        check(!pth::exists(config + ".error"), "and is not kept aside");
+    }
+
     // A first run has nothing to go back to, so it is given something to open.
     std::string demo = editor::demoDirectory();
     check(!demo.empty(), "a first run is given a project of its own");

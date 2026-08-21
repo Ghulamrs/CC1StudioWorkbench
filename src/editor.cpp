@@ -451,6 +451,7 @@ void Editor::openProject(const std::string& path) {
         size_t howMany = project_.groups().size();
         say("ready - " + project_.name() + ", " + number(howMany) +
             (howMany == 1 ? " group" : " groups"));
+        sayIfSettingsWereBad();
     } else if (error.empty()) {
         // Nothing to read, so one is written from what is in the directory
         // rather than opening without a project at all. An editor that needs a
@@ -2032,6 +2033,12 @@ std::string Editor::whereThatFileIs(const std::string& named) const {
 // Whatever a debugger printed, as lines. A string with newlines in it put into
 // the panel writes them to the screen, which walks the cursor out of the box
 // the panel is drawn in and leaves the frame in pieces.
+void Editor::sayIfSettingsWereBad() {
+    std::string kept = settings::setAside();
+    if (kept.empty()) return;
+    say("bad configuration file - kept as " + baseName(kept) + ", a new one made");
+}
+
 void Editor::sayLines(std::vector<std::string>& into, const std::string& text) {
     size_t from = 0;
     while (from <= text.size()) {

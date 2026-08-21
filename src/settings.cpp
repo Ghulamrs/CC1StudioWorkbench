@@ -1,5 +1,6 @@
 #include "settings.h"
 
+#include <cctype>
 #include <cstdio>
 
 #include "json.h"
@@ -19,6 +20,16 @@ namespace {
 // The file as it stands, or an empty object. Everything written here is
 // read-modify-write: the file holds more than one thing now, and a writer that
 // builds a fresh object throws away whatever it did not know about.
+// A pointer made once and never destroyed, not a string. A function-local
+// static with a destructor registers an atexit handler, and in the mixed-mode
+// binary that corrupts the heap - the hazard debugger.cpp's dbg_program was
+// written around, and this file is linked into the same binary.
+std::string* moved = 0;
+bool movedTo() { return moved != 0; }
+void rememberMoved(const std::string& where) { moved = new std::string(where); }
+
+bool writeAll(const Json& root);
+
 Json readAll() {
     std::string where = fileName();
     if (where.empty()) return Json::object();
@@ -33,8 +44,29 @@ Json readAll() {
 
     std::string why;
     Json root = Json::parse(text, why);
-    if (!why.empty() || !root.is(Json::Object)) return Json::object();
-    return root;
+    if (why.empty() && root.is(Json::Object)) return root;
+
+    // Unreadable. Three things, in this order: keep the old one, put a good
+    // one in its place, and let the front end say so.
+    //
+    // Only when there was something in it, though: an empty file is nobody's
+    // work, and renaming that would leave litter for no reason.
+    bool anything = false;
+    for (size_t i = 0; i < text.size(); ++i)
+        if (!std::isspace(static_cast<unsigned char>(text[i]))) { anything = true; break; }
+
+    if (anything && !movedTo()) {
+        std::string aside = where + ".error";
+        path::remove(aside);          // the newest bad one is the interesting one
+        if (path::rename(where, aside)) {
+            rememberMoved(aside);
+            // A fresh one now rather than at the next setting changed, so that
+            // what is on disk always matches what the editor believes, and so
+            // that a file exists to be written to at all.
+            writeAll(Json::object());
+        }
+    }
+    return Json::object();
 }
 
 bool writeAll(const Json& root) {
@@ -57,6 +89,11 @@ bool rememberPlainFrame(bool plain) {
     Json root = readAll();
     root.set("plain", Json::fromBool(plain));
     return writeAll(root);
+}
+
+std::string setAside() {
+    readAll();   // the moving happens there, on the first read of a bad file
+    return moved ? *moved : std::string();
 }
 
 std::string codeFont() { return readAll().get("font").text(std::string()); }

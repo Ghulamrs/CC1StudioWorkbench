@@ -677,6 +677,14 @@ private:
         Controls->Add(status_);
         SayBuild();   // ShowChoices ran before this strip existed
 
+        // If the settings would not parse they have been kept and replaced, and
+        // that is worth one line: the font and the last project have gone back
+        // to their defaults, and somebody should know why.
+        String^ kept = FromUtf8(ed1_settings_set_aside());
+        if (kept != nullptr && kept->Length > 0)
+            what_->Text = "bad configuration file - kept as " +
+                          System::IO::Path::GetFileName(kept) + ", a new one made";
+
         // FixedPanel is the rule the terminal front end already follows: the
         // project pane takes 22 columns and the bottom panel takes 7 rows -
         // "the command, and a few lines of what it said" - and the code gets

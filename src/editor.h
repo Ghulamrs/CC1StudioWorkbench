@@ -205,6 +205,10 @@ private:
 
     std::string prompt(const std::string& text, bool& cancelled);
     void say(const std::string& text) { message_ = text; }
+    // Said after "ready", so it is the last thing on the line and not buried
+    // under it: the settings are back to their defaults and the old file is
+    // still there.
+    void sayIfSettingsWereBad();
     size_t renderCol(const std::string& line, size_t col) const;
     void clampCursor();
     const std::vector<std::string>& panelLines() const;

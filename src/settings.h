@@ -46,6 +46,21 @@ bool plainFrame();
 // chosen, and the window uses its own default then.
 std::string codeFont();
 bool rememberCodeFont(const std::string& described);
+
+// Where an unreadable configuration was put, if that happened during this run,
+// and empty otherwise.
+//
+// A file that will not parse used to be treated as no file at all: the editor
+// carried on with its defaults, and the first setting changed afterwards wrote
+// a fresh object over whatever was there. Nothing said, nothing kept.
+//
+// Now, once, in this order: the old file is renamed to
+// `.ed1config.json.error`, a fresh empty one is written in its place, and this
+// says where the old one went so a front end can tell you. The same courtesy
+// an ed1.json gets, which is never written over when it will not parse. This is
+// less precious than somebody's project file, but it may hold a hand-edit, or a
+// key a later version wrote and this one does not know.
+std::string setAside();
 bool rememberPlainFrame(bool plain);
 
 }  // namespace settings

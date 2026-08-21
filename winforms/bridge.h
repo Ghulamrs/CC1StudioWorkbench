@@ -82,6 +82,11 @@ char* ed1_replace_all(const char* text, const char* needle, const char* with,
    cannot be had, they do nothing and colouring behaves as before. */
 /* The font the window last drew code in, as the window spelled it, and a way
    to keep the next choice. Empty when nothing was ever chosen. */
+/* Where an unreadable configuration was put, or empty. Worth saying once at
+   startup: the settings went back to their defaults and the old file is still
+   there to look at. */
+const char* ed1_settings_set_aside(void);
+
 const char* ed1_code_font(void);
 int ed1_remember_code_font(const char* described);
 

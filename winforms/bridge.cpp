@@ -259,6 +259,11 @@ static void undoRecording(void* windowHandle, long how) {
 }
 #endif
 
+const char* ed1_settings_set_aside(void) {
+    scratch() = editor::settings::setAside();
+    return scratch().c_str();
+}
+
 const char* ed1_code_font(void) {
     scratch() = editor::settings::codeFont();
     return scratch().c_str();

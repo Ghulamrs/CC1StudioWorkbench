@@ -515,10 +515,6 @@ private:
         // not free - it is Re-indent in this window - so line numbers are on
         // the menu and nowhere else. The ticks are how anybody finds out these
         // can be turned off at all.
-        view->DropDownItems->Add("Font...", nullptr,
-                                 gcnew EventHandler(this, &MainForm::OnFont));
-        view->DropDownItems->Add(gcnew ToolStripSeparator());
-
         numbersItem_ = Item("Show line numbers", Keys::None,
                             gcnew EventHandler(this, &MainForm::OnToggleNumbers));
         numbersItem_->Checked = true;
@@ -560,6 +556,11 @@ private:
             "MSVC (cl)", nullptr, gcnew EventHandler(this, &MainForm::OnToolCl));
         toolClItem_->ShortcutKeyDisplayString = "Ctrl+K";
         tools->DropDownItems->Add(toolClItem_);
+        tools->DropDownItems->Add(gcnew ToolStripSeparator());
+        // Here rather than on View: View is what is shown at this moment, and
+        // this is a choice made once and kept, like the compiler above it.
+        tools->DropDownItems->Add("Font...", nullptr,
+                                  gcnew EventHandler(this, &MainForm::OnFont));
         bar->Items->Add(tools);
 
         ToolStripMenuItem^ help = gcnew ToolStripMenuItem("&Help");

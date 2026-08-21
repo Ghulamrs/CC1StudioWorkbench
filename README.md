@@ -516,7 +516,7 @@ terminal's `F2` and `F3`, which are Rename and Find next here. That is one of
 ten places the two disagree about a key on purpose, and they are all in the
 table below.
 
-**View ▸ Font...** changes the face code is drawn in - Courier New, Cascadia,
+**Tools ▸ Font...** changes the face code is drawn in - Courier New, Cascadia,
 whatever this machine has - fixed-pitch only, since the gutter's numbers are
 laid out on every character being the same width. It applies to every tab at
 once, because a file does not have a typeface: the person reading it does. And

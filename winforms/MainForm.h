@@ -183,6 +183,15 @@ private:
     // and the arrow together - which is what Ctrl-L takes away in the terminal
     // too, rather than the digits alone.
     bool numbers_;
+    // The radio choices, kept so their ticks can say which one is in force.
+    // The terminal puts all three on its status bar and never has to be asked;
+    // here the answer lives where the choice is made.
+    System::Collections::Generic::List<ToolStripMenuItem^>^ targetItems_;
+    ToolStripMenuItem^ toolAutoItem_;
+    ToolStripMenuItem^ toolCc1Item_;
+    ToolStripMenuItem^ toolClItem_;
+    ToolStripMenuItem^ debugConfigItem_;
+    ToolStripMenuItem^ releaseConfigItem_;
     ToolStripMenuItem^ numbersItem_;
     ToolStripMenuItem^ paneItem_;
     ToolStripMenuItem^ panelItem_;
@@ -404,10 +413,12 @@ private:
                  gcnew EventHandler(this, &MainForm::OnBuildProject)));
         build->DropDownItems->Add("Run project", nullptr,
                                   gcnew EventHandler(this, &MainForm::OnRunProject));
-        build->DropDownItems->Add("Debug build", nullptr,
-                                  gcnew EventHandler(this, &MainForm::OnDebugConfig));
-        build->DropDownItems->Add("Release build", nullptr,
-                                  gcnew EventHandler(this, &MainForm::OnReleaseConfig));
+        debugConfigItem_ = gcnew ToolStripMenuItem(
+            "Debug build", nullptr, gcnew EventHandler(this, &MainForm::OnDebugConfig));
+        build->DropDownItems->Add(debugConfigItem_);
+        releaseConfigItem_ = gcnew ToolStripMenuItem(
+            "Release build", nullptr, gcnew EventHandler(this, &MainForm::OnReleaseConfig));
+        build->DropDownItems->Add(releaseConfigItem_);
         bar->Items->Add(build);
 
         // Its own column, as in the other front end: once the program has
@@ -468,17 +479,25 @@ private:
         bar->Items->Add(view);
 
         ToolStripMenuItem^ target = gcnew ToolStripMenuItem("&Target");
-        for (int i = 0; i < 3; ++i)
-            target->DropDownItems->Add(gcnew ToolStripMenuItem(
-                FromUtf8(ed1_arch(i)), nullptr, gcnew EventHandler(this, &MainForm::OnTarget)));
+        targetItems_ = gcnew System::Collections::Generic::List<ToolStripMenuItem^>();
+        for (int i = 0; i < 3; ++i) {
+            ToolStripMenuItem^ one = gcnew ToolStripMenuItem(
+                FromUtf8(ed1_arch(i)), nullptr, gcnew EventHandler(this, &MainForm::OnTarget));
+            targetItems_->Add(one);
+            target->DropDownItems->Add(one);
+        }
         bar->Items->Add(target);
 
         ToolStripMenuItem^ tools = gcnew ToolStripMenuItem("Too&ls");
-        tools->DropDownItems->Add("By language", nullptr,
-                                  gcnew EventHandler(this, &MainForm::OnToolAuto));
-        tools->DropDownItems->Add("cc1", nullptr, gcnew EventHandler(this, &MainForm::OnToolCc1));
-        tools->DropDownItems->Add("MSVC (cl)", nullptr,
-                                  gcnew EventHandler(this, &MainForm::OnToolCl));
+        toolAutoItem_ = gcnew ToolStripMenuItem(
+            "By language", nullptr, gcnew EventHandler(this, &MainForm::OnToolAuto));
+        tools->DropDownItems->Add(toolAutoItem_);
+        toolCc1Item_ = gcnew ToolStripMenuItem(
+            "cc1", nullptr, gcnew EventHandler(this, &MainForm::OnToolCc1));
+        tools->DropDownItems->Add(toolCc1Item_);
+        toolClItem_ = gcnew ToolStripMenuItem(
+            "MSVC (cl)", nullptr, gcnew EventHandler(this, &MainForm::OnToolCl));
+        tools->DropDownItems->Add(toolClItem_);
         bar->Items->Add(tools);
 
         ToolStripMenuItem^ help = gcnew ToolStripMenuItem("&Help");
@@ -490,6 +509,7 @@ private:
 
         MainMenuStrip = bar;
         Controls->Add(bar);
+        ShowChoices();
 
         // The same four regions as the terminal one: project, text, panel and
         // status - by splitters here instead of by counting rows.
@@ -1561,6 +1581,7 @@ private:
                 toolKind_ = ed1_project_toolchain(project_);
                 config_ = ed1_project_config(project_);
                 arch_ = FromUtf8(ed1_project_arch(project_));
+                ShowChoices();
                 ed1_remember_project(reinterpret_cast<const char*>(pinned));
                 what_->Text = FromUtf8(ed1_outcome_message(project_));
                 SayWhere();
@@ -1584,6 +1605,7 @@ private:
         toolKind_ = ed1_project_toolchain(project_);
         config_ = ed1_project_config(project_);
         arch_ = FromUtf8(ed1_project_arch(project_));
+        ShowChoices();
 
         // Remembered, so that starting the window with nothing opens here -
         // which the terminal half has always done and this never did.
@@ -1626,6 +1648,7 @@ private:
         toolKind_ = ed1_project_toolchain(project_);
         config_ = ed1_project_config(project_);
         arch_ = FromUtf8(ed1_project_arch(project_));
+        ShowChoices();
 
         what_->Text = String::Format("ready - {0}, {1} groups",
                                      FromUtf8(ed1_project_name(project_)), groups);
@@ -2792,31 +2815,55 @@ private:
     void OnShowDebug(Object^, EventArgs^) { ShowPanel(1); }
     void OnShowAssembly(Object^, EventArgs^) { ShowPanel(2); }
 
+    // Which target, which compiler and which of debug and release - said by a
+    // tick beside the one in force. They were announced on the message line
+    // when picked and nowhere after that, so the next thing to happen took the
+    // answer away with it; the terminal has all three on its status bar for as
+    // long as the editor is running. Called wherever the three can change,
+    // which includes opening a project: an ed1.json carries all of them, and a
+    // tick that only followed the menus would start lying the moment one was
+    // opened.
+    void ShowChoices() {
+        for each (ToolStripMenuItem^ one in targetItems_)
+            one->Checked = String::Equals(one->Text, arch_, StringComparison::Ordinal);
+        toolAutoItem_->Checked = toolKind_ == ED1_TOOL_AUTO;
+        toolCc1Item_->Checked = toolKind_ == ED1_TOOL_CC1;
+        toolClItem_->Checked = toolKind_ == ED1_TOOL_MSVC;
+        debugConfigItem_->Checked = config_ == ED1_CONFIG_DEBUG;
+        releaseConfigItem_->Checked = config_ == ED1_CONFIG_RELEASE;
+    }
+
     void OnDebugConfig(Object^, EventArgs^) {
         config_ = ED1_CONFIG_DEBUG;
+        ShowChoices();
         what_->Text = "debug";
     }
     void OnReleaseConfig(Object^, EventArgs^) {
         config_ = ED1_CONFIG_RELEASE;
+        ShowChoices();
         what_->Text = "release";
     }
     void OnTarget(Object^ sender, EventArgs^) {
         arch_ = safe_cast<ToolStripMenuItem^>(sender)->Text;
+        ShowChoices();
         RefreshDebugTab();   // what the target can carry is part of what it says
         what_->Text = "target: " + arch_;
     }
     void OnToolAuto(Object^, EventArgs^) {
         toolKind_ = ED1_TOOL_AUTO;
+        ShowChoices();
         RefreshDebugTab();
         what_->Text = "compiler: chosen by the file";
     }
     void OnToolCc1(Object^, EventArgs^) {
         toolKind_ = ED1_TOOL_CC1;
+        ShowChoices();
         RefreshDebugTab();
         what_->Text = "compiler: cc1";
     }
     void OnToolCl(Object^, EventArgs^) {
         toolKind_ = ED1_TOOL_MSVC;
+        ShowChoices();
         RefreshDebugTab();
         what_->Text = "compiler: cl";
     }

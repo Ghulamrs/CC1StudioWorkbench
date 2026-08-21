@@ -1234,10 +1234,29 @@ private:
     // afterwards, because a selection scrolls itself into view. Without that,
     // opening a long file walks visibly down to its last line - which is what
     // it used to do.
+    // Colouring is done *to* the box, and Rich Edit records what is done to the
+    // box twice over: as a text change, and in its undo buffer. colouring_ has
+    // always kept the first out of OnTextChanged. The second went unnoticed
+    // until Ctrl+Z on a file nobody had touched undid a colour, jumped the
+    // caret to it and put a star on the tab. Suspending the recording keeps
+    // colour out of the undo stack, so Ctrl+Z undoes your typing - and, when
+    // there is none, says there is none.
+    void BeginColouring() {
+        colouring_ = true;
+        if (text_ != nullptr && text_->IsHandleCreated)
+            ed1_undo_suspend(text_->Handle.ToPointer());
+    }
+
+    void EndColouring() {
+        if (text_ != nullptr && text_->IsHandleCreated)
+            ed1_undo_resume(text_->Handle.ToPointer());
+        colouring_ = false;
+    }
+
     void Recolour() {
         if (colouring_) return;
         if (text_ == nullptr || !text_->IsHandleCreated) return;
-        colouring_ = true;
+        BeginColouring();
 
         array<String^>^ all = text_->Lines;
         int language = LanguageNow();
@@ -1324,7 +1343,7 @@ private:
         Tell(text_->Handle, kScrollTo, IntPtr::Zero, scrolled);
         text_->Modified = touched;
         Drawing(text_, true);
-        colouring_ = false;
+        EndColouring();
     }
 
     // A quarter of a second after the last keystroke, colour what is on the
@@ -1343,7 +1362,7 @@ private:
         array<String^>^ all = text_->Lines;
         if (row < 0 || row >= all->Length) return;
 
-        colouring_ = true;
+        BeginColouring();
         int language = LanguageNow();
 
         int state = 0;
@@ -1400,7 +1419,7 @@ private:
         text_->Select(caret, length);
         text_->SelectionColor = System::Drawing::Color::Black;
         text_->Modified = touched;
-        colouring_ = false;
+        EndColouring();
     }
 
     System::Drawing::Color ColourOf(Byte kind) {

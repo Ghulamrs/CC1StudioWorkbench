@@ -71,6 +71,18 @@ char* ed1_replace_all(const char* text, const char* needle, const char* with,
 
 /* ---- colouring ---------------------------------------------------------- */
 
+/* Rich Edit records a change of colour in its undo buffer exactly as it records
+   typing, so colouring a file fills that buffer before anybody has touched the
+   text: Ctrl-Z then undoes a colour, moves the caret to it, and marks a file
+   modified that was only ever looked at. These suspend and resume the recording
+   around a colouring pass, given the editing window's handle.
+
+   Undoing your own typing is unaffected - only what happens between the two
+   calls goes unrecorded. Anywhere but Windows, and wherever the interface
+   cannot be had, they do nothing and colouring behaves as before. */
+void ed1_undo_suspend(void* windowHandle);
+void ed1_undo_resume(void* windowHandle);
+
 int ed1_language_for(const char* path);
 
 /* One kind per byte of the line, written into kinds. `state` carries the block

@@ -523,6 +523,14 @@ between, which is what the terminal's own menu does with `Ctrl-D`. A key bound
 twice would go to whichever menu was built first and leave the other advertising
 a key that does nothing; that is what once happened to `F7` and Step over.
 
+**Colouring does not disturb undo.** The window colours by applying formatting
+to its text box, and Rich Edit records formatting in its undo buffer exactly as
+it records typing — so `Ctrl+Z` on a file nobody had touched used to undo a
+*colour*, jump the caret to it and put a star on the tab. The recording is
+suspended around each colouring pass now (`ed1_undo_suspend` / `ed1_undo_resume`,
+which ask Rich Edit's own `ITextDocument` and do nothing anywhere else). Undo
+undoes your typing, and says `nothing to undo` when there is none.
+
 **Enter on the Console goes to the error it is about**, as it does in the
 terminal — and double-click does the same, since a console is a thing people
 click at. The window already jumps there when a build fails; this is for

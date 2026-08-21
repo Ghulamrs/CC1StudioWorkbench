@@ -17,6 +17,14 @@
 // After windows.h, which it needs.
 #include <dbghelp.h>
 #pragma comment(lib, "dbghelp.lib")
+// Rich Edit's own interfaces, for suspending its undo recording. richole.h
+// wants richedit.h before it, and tom.h wants both.
+#include <richedit.h>
+#include <richole.h>
+#include <tom.h>
+// SendMessage, for the one call below. The window's own project links this
+// already; the test build does not, and linked nothing else that needed it.
+#pragma comment(lib, "user32.lib")
 #endif
 
 #include "about.h"
@@ -226,6 +234,44 @@ void ed1_watch_for_faults(const char* logPath) {
     AddVectoredExceptionHandler(1, onFault);
 #else
     (void)logPath;
+#endif
+}
+
+#ifdef _WIN32
+// tomSuspend stacks: two suspends want two resumes. The colouring passes are
+// not nested, but the count is what the interface promises, not the caller.
+static void undoRecording(void* windowHandle, long how) {
+    HWND window = reinterpret_cast<HWND>(windowHandle);
+    if (!window) return;
+
+    IRichEditOle* ole = 0;
+    SendMessage(window, EM_GETOLEINTERFACE, 0, reinterpret_cast<LPARAM>(&ole));
+    if (!ole) return;
+
+    ITextDocument* document = 0;
+    if (SUCCEEDED(ole->QueryInterface(__uuidof(ITextDocument),
+                                      reinterpret_cast<void**>(&document))) &&
+        document) {
+        document->Undo(how, 0);
+        document->Release();
+    }
+    ole->Release();
+}
+#endif
+
+void ed1_undo_suspend(void* windowHandle) {
+#ifdef _WIN32
+    undoRecording(windowHandle, tomSuspend);
+#else
+    (void)windowHandle;
+#endif
+}
+
+void ed1_undo_resume(void* windowHandle) {
+#ifdef _WIN32
+    undoRecording(windowHandle, tomResume);
+#else
+    (void)windowHandle;
 #endif
 }
 

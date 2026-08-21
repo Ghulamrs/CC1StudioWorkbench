@@ -729,6 +729,7 @@ int ed1_stop_status(Ed1Debugger* debugger) { return debugger->stop.status; }
 const char* ed1_stop_file(Ed1Debugger* debugger) { return debugger->stop.file.c_str(); }
 int ed1_stop_line(Ed1Debugger* debugger) { return static_cast<int>(debugger->stop.line); }
 const char* ed1_stop_function(Ed1Debugger* debugger) { return debugger->stop.function.c_str(); }
+const char* ed1_stop_said(Ed1Debugger* debugger) { return debugger->stop.said.c_str(); }
 
 int ed1_locals_count(Ed1Debugger* debugger) {
     return static_cast<int>(debugger->locals.size());

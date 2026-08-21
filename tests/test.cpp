@@ -1578,6 +1578,77 @@ void debuggingForReal() {
     editor::path::removeTree(dir);
 }
 
+// What the debugger said, across the seam the window uses.
+//
+// A debugged program writes down the debugger's own stream, so what it printed
+// is in `said` along with the debugger's words - and the window had no way to
+// read `said` at all until ed1_stop_said existed. This is the property that
+// makes that accessor worth having, so it is checked rather than assumed: the
+// program's own output has to be in there.
+void whatTheDebuggerHeard() {
+    std::printf("what the debugger said, and the program with it\n");
+
+    const std::string host = editor::hostArch();
+    if (editor::dbg_for(editor::ToolCc1, host) == editor::DebuggerNone) {
+        std::printf("  (no debugger on this machine, so nothing is listened to)\n");
+        return;
+    }
+    const char* cc1 = std::getenv("CC1");
+    if (!cc1 || !*cc1 || !editor::path::exists(cc1)) {
+        std::printf("  (no cc1, so nothing is built to listen to)\n");
+        return;
+    }
+
+    std::string dir = editor::path::join(editor::path::tempDir(), "ed1-said-test");
+    editor::path::removeTree(dir);
+    editor::path::makeDirectories(dir);
+    std::string source = editor::path::join(dir, "talker.c");
+
+    // It flushes after printing, so a marker that is missing from `said` is
+    // missing because it never travelled - not because it was in a buffer.
+    writeSource(source,
+                "#include <stdio.h>\n"
+                "\n"
+                "int main(void)\n"
+                "{\n"
+                "    printf(\"MARKER-BEFORE\\n\");\n"
+                "    fflush(stdout);\n"
+                "    int x = 1;\n"
+                "    x = x + 1;\n"
+                "    return x;\n"
+                "}\n");
+
+    Ed1Program* built = ed1_build_program(cc1, "cl", editor::ToolCc1, source.c_str(),
+                                          editor::LangC, host.c_str(), editor::ConfigDebug);
+    if (ed1_program_ok(built) == 0) {
+        std::printf("  (cc1 did not build it, so there is nothing to stop inside)\n");
+        ed1_program_free(built);
+        editor::path::removeTree(dir);
+        return;
+    }
+
+    Ed1Debugger* debugger = ed1_debugger_new();
+    check(ed1_debugger_start(debugger, ed1_debugger_for(editor::ToolCc1, host.c_str()),
+                             ed1_program_path(built)) != 0,
+          "the debugger starts on a program that talks");
+
+    // Line 8 is x = x + 1, after the printf and its flush.
+    check(ed1_debugger_break(debugger, source.c_str(), 8) != 0, "a breakpoint after the printing");
+
+    ed1_debugger_run(debugger);
+    check(ed1_stop_stopped(debugger) != 0, "and it stops there");
+
+    const std::string said = ed1_stop_said(debugger);
+    check(!said.empty(), "what the debugger said comes across the seam");
+    check(said.find("MARKER-BEFORE") != std::string::npos,
+          "and the program's own output is in it, which is why the window wants it");
+
+    ed1_debugger_stop(debugger);
+    ed1_debugger_free(debugger);
+    ed1_program_free(built);
+    editor::path::removeTree(dir);
+}
+
 // C++ on Windows, where none of the chain is ours: cl writes the .pdb, cdb
 // reads it, and the editor only drives them. This is the other half of the
 // same machine - the C file next to it goes to cc1 and cannot be debugged at
@@ -2174,6 +2245,7 @@ void whatTheProjectBuilds() {
 int main(int argc, char** argv) {
     paths();
     whereTheProgramIs(argc > 0 ? argv[0] : 0);
+    whatTheDebuggerHeard();
     aProjectMadeFromWhatIsThere();
     whatItRemembers();
     talkingToAChild();

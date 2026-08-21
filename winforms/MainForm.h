@@ -782,6 +782,13 @@ private:
         console_->ScrollToCaret();
     }
 
+    // A text box wants CRLF; a debugger writes whatever it writes. Normalised
+    // rather than assumed, since cdb and lldb do not agree about it.
+    static String^ Lines(String^ text) {
+        if (String::IsNullOrEmpty(text)) return text;
+        return text->Replace("\r\n", "\n")->Replace("\r", "\n")->Replace("\n", "\r\n");
+    }
+
     // What the environment says a compiler is; failing that the one sitting
     // beside the editor; failing that the bare name, for PATH to answer.
     //
@@ -3112,7 +3119,14 @@ private:
         }
 
         if (ed1_stop_stopped(debugger_) == 0) {
-            debug_->Text = "the debugger stopped answering";
+            // With what it said under it. The terminal half has always printed
+            // this and the window said only the sentence, which is the least
+            // useful moment to be told nothing: a debugger that has stopped
+            // answering has usually just explained itself.
+            String^ heard = Lines(FromUtf8(ed1_stop_said(debugger_)));
+            debug_->Text = String::IsNullOrEmpty(heard)
+                ? "the debugger stopped answering"
+                : "the debugger stopped answering\r\n\r\n" + heard;
             EndDebugging();
             what_->Text = "the debugger stopped answering - see the Debug tab";
             return;

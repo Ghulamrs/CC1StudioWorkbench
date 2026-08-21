@@ -333,6 +333,17 @@ const char* ed1_stop_file(Ed1Debugger* debugger);
 int ed1_stop_line(Ed1Debugger* debugger);
 const char* ed1_stop_function(Ed1Debugger* debugger);
 
+/* What the debugger itself printed on its way to that stop - cdb's or lldb's
+   own words, and the debugged program's output along with them, since a
+   debuggee writes down the debugger's stream. Empty when it said nothing.
+
+   Six things were readable about a stop here and this was the seventh, kept on
+   the native side where the terminal half could reach it and the window could
+   not. So a stop the window could not make sense of was reported as "the
+   debugger stopped answering" with nothing under it, while the terminal
+   printed what had actually been said. */
+const char* ed1_stop_said(Ed1Debugger* debugger);
+
 /* What is in scope where it stopped, read after a move. */
 int ed1_locals_count(Ed1Debugger* debugger);
 const char* ed1_local_name(Ed1Debugger* debugger, int index);

@@ -1290,6 +1290,15 @@ int main(int argc, char** argv) {
         if (fromEnv) cc1 = fromEnv;
     }
 
+    // A compiler named but not there is worse than none named: every case that
+    // needs it fails, and none of them says why. Dropped with a word, so the
+    // cases skip themselves as they do when nothing was named at all. A path
+    // with a ~ in it is the way this happens - make does not expand one.
+    if (!cc1.empty() && !editor::path::exists(cc1)) {
+        std::printf("no cc1 at %s - the cases that need one are not tried\n\n", cc1.c_str());
+        cc1.clear();
+    }
+
     std::printf("driving %s\n\n", ed1.c_str());
 
     editingAndLayout(ed1);

@@ -1443,6 +1443,14 @@ void debuggingForReal() {
     std::printf("stopping, stepping and looking, for real\n");
 
     const char* cc1 = std::getenv("CC1");
+    // Named but not there counts as not named, and the path is printed: a
+    // $CC1 with a ~ in it never expands, and a build with an unfindable
+    // compiler fails in a way that reads as a broken editor rather than as a
+    // path nobody resolved. That cost most of a day once.
+    if (cc1 && *cc1 && !editor::path::exists(cc1)) {
+        std::printf("  (no cc1 at %s, so nothing is built to debug)\n", cc1);
+        return;
+    }
     if (!cc1 || !*cc1) {
         std::printf("  (no $CC1, so nothing is built to debug)\n");
         return;
@@ -1683,6 +1691,10 @@ void theSeamTheWindowUses() {
     }
 
     const char* cc1 = std::getenv("CC1");
+    if (cc1 && *cc1 && !editor::path::exists(cc1)) {
+        std::printf("  (no cc1 at %s, so nothing is built to stop inside)\n", cc1);
+        return;
+    }
     if (!cc1 || !*cc1) {
         std::printf("  (no $CC1, so nothing is built to stop inside)\n");
         return;

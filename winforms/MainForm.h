@@ -64,6 +64,13 @@ protected:
     // exactly what happened to F7 and Step over. So these are caught here and
     // shown on every item they move between with ShortcutKeyDisplayString.
     // Protected because what it overrides is.
+    // The view moves when the window does, so the bar over the stopped line is
+    // put back afterwards. Protected because what it overrides is.
+    virtual void OnResize(EventArgs^ e) override {
+        Form::OnResize(e);
+        if (stopBar_ != nullptr) PlaceStopBar();
+    }
+
     virtual bool ProcessCmdKey(System::Windows::Forms::Message% message, Keys keys) override {
         if (keys == static_cast<Keys>(Keys::Control | Keys::D)) { NextConfig(); return true; }
         if (keys == static_cast<Keys>(Keys::Control | Keys::K)) { NextTool(); return true; }
@@ -169,7 +176,16 @@ private:
     String^ errorMessage_;
     String^ errorFile_;
     String^ stopFile_;
-    int stopLine_;          // 0 when the program is not standing still
+    int stopLine_;
+    // The row wearing the stopped-here bar, so it can be taken off again. -1
+    // when no line has one.
+    int highlightRow_;
+    // The bar itself: a strip laid over the line, the width of the view. A
+    // RichTextBox will not colour past the end of a line's text - it paints its
+    // own background and the only per-range colour it draws is behind
+    // characters - so the bar is not asked of it. It is a window of our own,
+    // made translucent and click-through, sitting on top.
+    Panel^ stopBar_;          // 0 when the program is not standing still
 
     String^ path_;
     String^ projectDirectory_;
@@ -283,6 +299,8 @@ private:
         breakNames_ = gcnew System::Collections::Generic::Dictionary<String^, String^>();
         stopFile_ = nullptr;
         stopLine_ = 0;
+        highlightRow_ = -1;
+        stopBar_ = nullptr;
         numbers_ = true;
         ForgetError();
         indentWidth_ = 4;
@@ -756,6 +774,14 @@ private:
     // A menu item with its key, since there are a dozen of them now. The
     // handler arrives already made: a managed member function has no address
     // to take, so the delegate is built at the call.
+    [System::Runtime::InteropServices::DllImport("user32.dll", SetLastError = true)]
+    static int GetWindowLong(System::IntPtr window, int index);
+    [System::Runtime::InteropServices::DllImport("user32.dll", SetLastError = true)]
+    static int SetWindowLong(System::IntPtr window, int index, int value);
+    [System::Runtime::InteropServices::DllImport("user32.dll", SetLastError = true)]
+    static bool SetLayeredWindowAttributes(System::IntPtr window, int key, unsigned char alpha,
+                                           int flags);
+
     ToolStripMenuItem^ Item(String^ label, Keys key, EventHandler^ handler) {
         ToolStripMenuItem^ item = gcnew ToolStripMenuItem(label, nullptr, handler);
         item->ShortcutKeys = key;
@@ -940,6 +966,7 @@ private:
                                 text_->Lines->Length + " lines";
         text_->Focus();
         SayBuild();   // the language is the file's, so it arrives with the tab
+        PlaceStopBar();
         sheet->gutter->Invalidate();
 
         // Each tab keeps its own text, so the one coming forward is coloured
@@ -1013,6 +1040,7 @@ private:
     }
 
     void OnScrolled(Object^, EventArgs^) {
+        PlaceStopBar();
         Sheet^ sheet = Current();
         if (sheet == nullptr) return;
         // What has just come into view is coloured now that it can be seen.
@@ -1251,6 +1279,121 @@ private:
         if (text_ != nullptr && text_->IsHandleCreated)
             ed1_undo_resume(text_->Handle.ToPointer());
         colouring_ = false;
+    }
+
+    // The line the program is standing on, washed in light blue across its
+    // whole width. The gutter has an arrow for it, but the eye finds a bar
+    // through the line sooner than a mark beside it.
+    //
+    // Only the background: the syntax colours on that line are left as they
+    // are. And done the way the colouring passes are done - the caret put back,
+    // the Modified flag put back, and undo recording suspended - because to a
+    // RichTextBox this is formatting like any other, which means a text change
+    // and an undo entry unless both are held off.
+    // The wash stops where the line's text stops, and cannot be made to run to
+    // the edge of the view. A RichTextBox paints its own background and renders
+    // exactly one kind of per-range colour, which is behind characters. Both
+    // other roads were tried and are closed: including the line break in the
+    // selection extends nothing once the selection moves away, and Rich Edit
+    // stores paragraph shading for RTF's sake without ever drawing it. An
+    // edge-to-edge bar wants an owner-drawn edit control, which is a different
+    // project from this one.
+    void PaintRow(int row, bool on) {
+        if (text_ == nullptr || row < 0 || row >= text_->Lines->Length) return;
+        int start = text_->GetFirstCharIndexFromLine(row);
+        int length = text_->Lines[row]->Length;
+        if (row < text_->Lines->Length - 1) length += 1;   // take the line break too
+        int caret = text_->SelectionStart;
+        int chosen = text_->SelectionLength;
+        bool touched = text_->Modified;
+
+        BeginColouring();
+        text_->Select(start, length);
+        text_->SelectionBackColor =
+            on ? System::Drawing::Color::FromArgb(214, 234, 255) : text_->BackColor;
+        text_->Select(caret, chosen);
+        text_->Modified = touched;
+        EndColouring();
+    }
+
+    void ShowStoppedLine(int row) {
+        if (highlightRow_ != row) {
+            if (highlightRow_ >= 0) PaintRow(highlightRow_, false);
+            highlightRow_ = row;
+            if (row >= 0) PaintRow(row, true);
+        }
+        PlaceStopBar();
+    }
+
+    // Made once, on the form rather than inside the text box, so it can reach
+    // the edge of the view.
+    //
+    // It covers no text, and so needs no transparency: the line's own
+    // characters already carry the blue behind them, and this fills only the
+    // empty part of the line from where the code stops to the right-hand edge.
+    // The two meet and read as one band. A translucent strip over the whole
+    // line was tried first and the text went dim behind it - the form is
+    // double-buffered, so it composites its children itself and a layered
+    // child's alpha never applies.
+    //
+    // No WS_EX_TRANSPARENT, though click-through would have been nice: on a
+    // child window that flag means "do not paint your own background", and the
+    // strip simply never appeared. It is a plain panel now. What it costs is
+    // that a click in the empty space to the right of the stopped line lands on
+    // the strip instead of putting the caret at the end of that line - dead
+    // space, and only while the program is stopped there.
+    void MakeStopBar() {
+        if (stopBar_ != nullptr) return;
+        stopBar_ = gcnew Panel();
+        stopBar_->BackColor = System::Drawing::Color::FromArgb(214, 234, 255);
+        stopBar_->Visible = false;
+        stopBar_->TabStop = false;
+        Controls->Add(stopBar_);
+        stopBar_->BringToFront();
+    }
+
+    // Where the bar goes, in the form's own coordinates: the text box tells us
+    // where the line is, and the answer is turned into the form's frame because
+    // that is where the bar lives. Hidden when the line has scrolled out of the
+    // view, or there is no stop to show.
+    void PlaceStopBar() {
+        MakeStopBar();
+        if (text_ == nullptr || highlightRow_ < 0 || !text_->IsHandleCreated) {
+            stopBar_->Visible = false;
+            return;
+        }
+        // Only over the file the program is actually stopped in - another tab
+        // has its own line 12 and the program is not on it.
+        if (path_ == nullptr || stopFile_ == nullptr ||
+            System::IO::Path::GetFileName(stopFile_) != System::IO::Path::GetFileName(path_)) {
+            stopBar_->Visible = false;
+            return;
+        }
+        if (highlightRow_ >= text_->Lines->Length) { stopBar_->Visible = false; return; }
+
+        int index = text_->GetFirstCharIndexFromLine(highlightRow_);
+        System::Drawing::Point where = text_->GetPositionFromCharIndex(index);
+        int height = System::Windows::Forms::TextRenderer::MeasureText("Ay", text_->Font).Height;
+
+        if (where.Y < -height || where.Y > text_->ClientSize.Height) {
+            stopBar_->Visible = false;   // scrolled out of sight
+            return;
+        }
+
+        // Where the code on that line stops - the caret's place at the end of
+        // it - is where this begins.
+        int after = index + text_->Lines[highlightRow_]->Length;
+        System::Drawing::Point ends = text_->GetPositionFromCharIndex(after);
+        int from = ends.Y == where.Y ? ends.X : where.X;   // a wrapped line: give up and fill
+
+        System::Drawing::Point corner =
+            PointToClient(text_->PointToScreen(System::Drawing::Point(from, where.Y)));
+        int width = text_->ClientSize.Width - from;
+        if (width <= 0) { stopBar_->Visible = false; return; }
+
+        stopBar_->SetBounds(corner.X, corner.Y, width, height);
+        stopBar_->Visible = true;
+        stopBar_->BringToFront();
     }
 
     void Recolour() {
@@ -2849,6 +2992,7 @@ private:
         if (built_ != nullptr) { ed1_program_free(built_); built_ = nullptr; }
         stopFile_ = nullptr;
         stopLine_ = 0;
+        ShowStoppedLine(-1);   // the bar goes with the arrow
         Current()->gutter->Invalidate();
     }
 
@@ -2880,6 +3024,7 @@ private:
         if (path_ != nullptr && stopLine_ > 0 &&
             System::IO::Path::GetFileName(stopFile_) == System::IO::Path::GetFileName(path_)) {
             GoTo(stopLine_, 1);
+            ShowStoppedLine(stopLine_ - 1);
         }
 
         System::Text::StringBuilder^ said = gcnew System::Text::StringBuilder();

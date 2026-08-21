@@ -112,6 +112,14 @@ general one.
 cdb comes with the Windows SDK's debugging tools and is not installed by
 default; when it is missing the editor says that too, and names it.
 
+**The line the program is standing on wears a bar** across the whole width of
+the edit view, light blue, with an arrow beside it in the gutter. It is in two
+halves and has to be: a RichTextBox colours the background of *characters*, so
+that half stops where the code stops, and a panel of our own fills the rest of
+the line out to the edge. Three tidier answers were tried first and none of them
+draws - the notes are above `PaintRow` and `MakeStopBar`, so nobody spends the
+afternoon again.
+
 Both front ends have it, from that same core: the window has a Debug menu with
 the same keys, a red dot in its gutter where a breakpoint is and an arrow where
 the program is standing, and the same words in its Debug tab. There is an

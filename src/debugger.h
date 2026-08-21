@@ -111,6 +111,7 @@ private:
 
     Process child_;
     DebuggerKind kind_;
+    bool onConsole_;    // it was given a console, so it echoes and writes escapes
     std::string executable_;
 
     // Where it was standing before this move, so that a debugger which reports
@@ -122,6 +123,17 @@ private:
 // line is a fiddly thing to parse and it should not need a live debugger and a
 // built program to check that it is parsed right.
 Stop dbg_readStop(DebuggerKind kind, const std::string& said);
+// What a console adds to what a debugger says, and how it is taken back out.
+//
+// On Windows cdb is given a pseudo-console rather than a pipe, so that the
+// program it debugs is not full-buffered by its runtime - see
+// Process::startOnConsole. A console is a terminal: it writes escape
+// sequences, and it echoes what is typed at it. Neither is the debugger's
+// words, and both would otherwise be read as though they were.
+std::string dbg_withoutEscapes(const std::string& text);
+std::string dbg_withoutEcho(const std::string& said, const std::string& asked,
+                            const std::string& marker);
+
 // What the program itself printed, taken out of a debugger's transcript.
 //
 // A debugged program writes down the same pipe the debugger talks on - which

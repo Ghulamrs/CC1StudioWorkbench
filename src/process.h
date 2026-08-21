@@ -27,6 +27,26 @@ public:
     // True when the child started. Nothing else here does anything useful
     // until it has.
     bool start(const std::string& command);
+
+    // The same, but with a console of its own rather than a pipe - which is
+    // not about the child at all but about the child's own children.
+    //
+    // A Windows program writing to a pipe is full-buffered by its runtime, so
+    // a program under a debugger says nothing until it exits and stepping over
+    // a line that prints shows nothing. Given a console it is not buffered.
+    // The debugger's console is the one its program inherits, so putting the
+    // debugger on a pseudo-console puts the program on one too.
+    //
+    // What comes back is a terminal's stream rather than a pipe's: the console
+    // echoes what is written to it, and there are escape sequences at the
+    // start. Callers get the text as it arrives and deal with both - see
+    // dbg_readCdbStop and sayMarker, which is why cdb's marker is split.
+    //
+    // False everywhere but Windows, where there is no such thing and nothing
+    // needs one: lldb gives its program a pseudo-terminal already, and gdb is
+    // told to run it through stdbuf.
+    bool startOnConsole(const std::string& command);
+
     bool running() const { return running_; }
 
     // A line to the child, with the newline added. False when the child has

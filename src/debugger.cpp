@@ -27,17 +27,22 @@ const char* const kMarker = "<<ed1-done>>";
 // given one, because it prints its prompt between them. Split across two
 // commands the marker arrives as "<<ed1(gdb) -done>>" and is never seen whole,
 // which is a debugger that appears never to start.
-void sayMarker(Process& child, DebuggerKind kind) {
-    if (kind == DebuggerGdb) {
-        child.say("echo <<ed1-done>>\\n");
-        return;
-    }
+std::string markerCommand(DebuggerKind kind) {
+    if (kind == DebuggerGdb) return "echo <<ed1-done>>\\n";
     if (kind == DebuggerCdb) {
-        // cdb does not echo commands either, so one .echo is enough.
-        child.say(".echo <<ed1-done>>");
-        return;
+        // Assembled from a character code, so that the marker is not in the
+        // command. cdb by itself echoes nothing and ".echo <<ed1-done>>" was
+        // enough - but on a console it is the console that echoes, and the
+        // echo arrived before the answer and was read as it. That is the same
+        // fault the lldb spelling above exists to avoid, reaching cdb by a
+        // different road once it was given a console to be unbuffered on.
+        return ".printf \"<<ed1%cdone>>\\n\", 0x2d";
     }
-    child.say("script print(\"<<ed1\" + \"-done>>\")");
+    return "script print(\"<<ed1\" + \"-done>>\")";
+}
+
+void sayMarker(Process& child, DebuggerKind kind) {
+    child.say(markerCommand(kind));
 }
 
 // Whether a program of this name is on PATH. Asked rather than assumed,
@@ -157,8 +162,12 @@ std::string withoutPrompt(const std::string& line) {
             if (i == 0 || i >= out.size() || out[i] != ':') break;
             size_t j = i + 1;
             while (j < out.size() && std::isxdigit(static_cast<unsigned char>(out[j]))) ++j;
-            if (j == i + 1 || out.compare(j, 2, "> ") != 0) break;
-            at = j + 2;
+            // "0:000> " when it is about to say something, and "0:000>" when
+            // what follows was typed at it - a console puts the echo hard
+            // against the prompt. Both are the prompt.
+            if (j == i + 1 || out.compare(j, 1, ">") != 0) break;
+            at = j + 1;
+            if (at < out.size() && out[at] == ' ') ++at;
         }
         out = out.substr(at);
     }
@@ -243,8 +252,28 @@ bool gdbOwn(const std::string& line) {
     return false;
 }
 
+// What this editor says to cdb. A console echoes what is typed at it, and an
+// echo is not the program talking - so these come out of what the console is
+// shown. They are listed rather than guessed at because they are ours: every
+// one of them is sent from this file or from Debugger's moves.
+//
+// A program that prints one of these words alone loses that line. They are
+// short and the loss is real, which is why the list is exactly what is sent
+// and not a shape that might match more.
+bool ourCommand(const std::string& bare) {
+    static const char* const said[] = {
+        "g", "p", "t", "gu", "k", "q", "ln", "dv", "l+t", "n 10",
+        ".lines -e", ".lastevent", ".echo", ".printf"
+    };
+    for (size_t i = 0; i < sizeof said / sizeof said[0]; ++i)
+        if (bare == said[i]) return true;
+    return startsWith(bare, "bp ") || startsWith(bare, "bu ") ||
+           startsWith(bare, "bc ") || startsWith(bare, ".printf ");
+}
+
 bool cdbOwn(const std::string& line) {
     const std::string bare = trimmed(line);
+    if (ourCommand(bare)) return true;
     if (startsWith(bare, "Breakpoint ")) return true;
     if (startsWith(bare, "Last event:")) return true;
     if (startsWith(bare, "debugger time:")) return true;
@@ -293,6 +322,51 @@ std::string dbg_programOutput(DebuggerKind kind, const std::string& said) {
         if (kind == DebuggerCdb && cdbOwn(line)) continue;
 
         out += line;
+        out += "\n";
+    }
+    return out;
+}
+
+// A console writes escape sequences as well as text - CSI to move the cursor
+// and set colour, OSC to name the window. None of them are the debugger's
+// words, and left in they reach the stop-reading as though they were.
+std::string dbg_withoutEscapes(const std::string& text) {
+    std::string out;
+    out.reserve(text.size());
+    for (size_t i = 0; i < text.size(); ++i) {
+        if (text[i] != '\x1b') { out += text[i]; continue; }
+        if (i + 1 >= text.size()) break;
+        const char kind = text[i + 1];
+        if (kind == '[') {                       // CSI: ends at its final byte
+            size_t at = i + 2;
+            while (at < text.size() && !(text[at] >= '@' && text[at] <= '~')) ++at;
+            i = at;
+        } else if (kind == ']') {                // OSC: ends at BEL, or ESC-backslash
+            size_t at = i + 2;
+            while (at < text.size() && text[at] != '\x07' &&
+                   !(text[at] == '\x1b' && at + 1 < text.size() && text[at + 1] == '\\')) ++at;
+            if (at < text.size() && text[at] == '\x1b') ++at;
+            i = at;
+        } else {
+            ++i;                                  // a two-character sequence
+        }
+    }
+    return out;
+}
+
+// A console echoes what is typed at it, so an answer begins with the question.
+// Taken out by name rather than by pattern: what was said is known here, and
+// only the first line matching it is the echo.
+std::string dbg_withoutEcho(const std::string& said, const std::string& asked,
+                            const std::string& marker) {
+    std::vector<std::string> all = lines(said);
+    bool droppedAsked = false, droppedMarker = false;
+    std::string out;
+    for (size_t i = 0; i < all.size(); ++i) {
+        const std::string bare = trimmed(all[i]);
+        if (!droppedAsked && bare == trimmed(asked)) { droppedAsked = true; continue; }
+        if (!droppedMarker && bare == trimmed(marker)) { droppedMarker = true; continue; }
+        out += all[i];
         out += "\n";
     }
     return out;
@@ -605,7 +679,7 @@ std::vector<Variable> dbg_readVariables(DebuggerKind kind, const std::string& sa
 
 // ---- the conversation ------------------------------------------------------
 
-Debugger::Debugger() : kind_(DebuggerNone) {}
+Debugger::Debugger() : kind_(DebuggerNone), onConsole_(false) {}
 Debugger::~Debugger() { stop(); }
 
 bool Debugger::start(DebuggerKind kind, const std::string& executable,
@@ -627,7 +701,21 @@ bool Debugger::start(DebuggerKind kind, const std::string& executable,
                   " " + quoted(executable);
     }
 
-    if (!child_.start(command)) {
+    // cdb gets a console rather than a pipe, because the console is what its
+    // program inherits: on a pipe the program's runtime full-buffers what it
+    // prints and nothing arrives until it exits, so stepping over a line that
+    // prints shows nothing. Measured on all three machines - lldb hands its
+    // program a pseudo-terminal already and gdb is told to use stdbuf, so this
+    // is Windows's share of the same fix.
+    //
+    // If there is no console to be had - an older Windows, or anything else -
+    // it falls back to the pipe it always used, and the output arrives at the
+    // end as it did before. Being unable to unbuffer is not a reason to be
+    // unable to debug.
+    onConsole_ = false;
+    if (kind_ == DebuggerCdb && child_.startOnConsole(command)) {
+        onConsole_ = true;
+    } else if (!child_.start(command)) {
         kind_ = DebuggerNone;
         return false;
     }
@@ -665,6 +753,11 @@ std::string Debugger::ask(const std::string& command) {
     bool found = false;
     std::string said = child_.readUntil(kMarker, &found);
     if (!found) child_.stop();
+
+    // What a console adds, and only a console: the escape sequences it writes,
+    // and its echo of what was just typed at it. Both would otherwise reach
+    // the stop-reading and the console as though the debugger had said them.
+    if (onConsole_) said = dbg_withoutEcho(dbg_withoutEscapes(said), command, markerCommand(kind_));
     return said;
 }
 

@@ -1578,6 +1578,41 @@ void debuggingForReal() {
     editor::path::removeTree(dir);
 }
 
+// What a console puts around what a debugger says. The escape sequences below
+// are real: captured from a pseudo-console the first time cdb was given one.
+void whatAConsoleAdds() {
+    std::printf("a console's own marks, taken back off\n");
+
+    // The burst a console writes before the first word of output: hide the
+    // cursor, clear, reset colour, go home - then the text, then a window
+    // title in an OSC sequence ended by a bell, then show the cursor.
+    const std::string dressed =
+        "\x1b[?9001h\x1b[?1004h\x1b[?25l\x1b[2J\x1b[m\x1b[HLINE-ONE\r\n"
+        "\x1b]0;C:\\Temp\\slowtalk.exe\x07\x1b[?25hLINE-TWO\r\n";
+    checkEqual(editor::dbg_withoutEscapes(dressed), "LINE-ONE\r\nLINE-TWO\r\n",
+               "the console's escape sequences come off and the words stay");
+
+    checkEqual(editor::dbg_withoutEscapes("plain text"), "plain text",
+               "text with none of them is left exactly as it is");
+    checkEqual(editor::dbg_withoutEscapes(""), "", "and nothing is nothing");
+
+    // A sequence cut off at the end of what has been read so far must not take
+    // the reader past the end of it.
+    checkEqual(editor::dbg_withoutEscapes("done\x1b["), "done",
+               "an unfinished sequence ends the text rather than running off it");
+
+    // The echo: a console gives back what was typed at it, so an answer starts
+    // with its own question. Only the first line matching goes - a program
+    // that prints the same word keeps it.
+    const std::string echoed = "p\r\nx = 3\r\n.printf \"<<ed1%cdone>>\\n\", 0x2d\r\n";
+    checkEqual(editor::dbg_withoutEcho(echoed, "p", ".printf \"<<ed1%cdone>>\\n\", 0x2d"),
+               "x = 3\n", "the question and the marker command come off the answer");
+
+    const std::string twice = "g\r\ng\r\ng\r\n";
+    checkEqual(editor::dbg_withoutEcho(twice, "g", "marker"), "g\ng\n",
+               "and only the first of them, since the rest are the program's");
+}
+
 // Taking the program's words out of a debugger's transcript.
 //
 // The three fixtures below are real: each was captured from the debugger it
@@ -1661,6 +1696,18 @@ void whatTheProgramSaid() {
         "(gdb) \n";
     checkEqual(editor::dbg_programOutput(editor::DebuggerGdb, gdbLive), "MARKER-TWO 2\n",
                "gdb: output printed after its prompt is the program's, not gdb's");
+
+    // cdb on a console gives back what the editor typed at it, hard against
+    // the prompt. Captured from the window the first time it stepped with the
+    // console in place, where these three lines sat in among the program's.
+    const std::string echoedBack =
+        "\n0:000>p\n"
+        "Counter(100) made\n"
+        "0:000>ln\n"
+        ".lastevent\n";
+    checkEqual(editor::dbg_programOutput(editor::DebuggerCdb, echoedBack),
+               "Counter(100) made\n",
+               "cdb: the editor's own commands, echoed by the console, are not output");
 
     // What is not recognised is kept. A debugger line nobody has taught this
     // about is a smaller fault in the console than a line of output that never
@@ -2349,6 +2396,7 @@ int main(int argc, char** argv) {
     whereTheProgramIs(argc > 0 ? argv[0] : 0);
     whatTheDebuggerHeard();
     whatTheProgramSaid();
+    whatAConsoleAdds();
     aProjectMadeFromWhatIsThere();
     whatItRemembers();
     talkingToAChild();

@@ -18,12 +18,35 @@ namespace editor {
 
 #ifdef _WIN32
 
+// The pseudo-console entry points are asked for by name rather than linked
+// against, so that this still builds with a toolchain whose headers predate
+// them - and answers "no console" at run time on a Windows that has none.
+// PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE is a number, and is one here for the
+// same reason.
+#ifndef PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE
+#define PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE 0x00020016
+#endif
+
+typedef HRESULT (WINAPI *MakeConsole)(COORD, HANDLE, HANDLE, DWORD, void**);
+typedef void (WINAPI *DropConsole)(void*);
+
+MakeConsole makeConsole() {
+    HMODULE kernel = GetModuleHandleA("kernel32.dll");
+    return kernel ? (MakeConsole)GetProcAddress(kernel, "CreatePseudoConsole") : 0;
+}
+
+DropConsole dropConsole() {
+    HMODULE kernel = GetModuleHandleA("kernel32.dll");
+    return kernel ? (DropConsole)GetProcAddress(kernel, "ClosePseudoConsole") : 0;
+}
+
 struct Process::Held {
     HANDLE toChild;
     HANDLE fromChild;
     HANDLE child;
+    void* console;      // the pseudo-console, when the child was given one
 
-    Held() : toChild(NULL), fromChild(NULL), child(NULL) {}
+    Held() : toChild(NULL), fromChild(NULL), child(NULL), console(NULL) {}
 };
 
 #else
@@ -109,9 +132,125 @@ bool Process::start(const std::string& command) {
     return true;
 }
 
+bool Process::startOnConsole(const std::string& command) {
+    if (running_) return false;
+
+    MakeConsole make = makeConsole();
+    if (!make) return false;
+
+    // The console owns one end of each pipe and this process the other. They
+    // are not inheritable: what the child gets is the console, not these.
+    HANDLE consoleReads = NULL, weWrite = NULL, weRead = NULL, consoleWrites = NULL;
+    if (!CreatePipe(&consoleReads, &weWrite, NULL, 0)) return false;
+    if (!CreatePipe(&weRead, &consoleWrites, NULL, 0)) {
+        CloseHandle(consoleReads);
+        CloseHandle(weWrite);
+        return false;
+    }
+
+    // Wide on purpose. A console wraps what is written to it at its own width,
+    // and a wrapped line is a line the stop-reading cannot parse - the same
+    // fault "set width unlimited" exists to prevent in gdb, arriving here by a
+    // different road.
+    COORD size;
+    size.X = 500;
+    size.Y = 50;
+    void* console = NULL;
+    if (FAILED(make(size, consoleReads, consoleWrites, 0, &console))) {
+        CloseHandle(consoleReads);
+        CloseHandle(consoleWrites);
+        CloseHandle(weWrite);
+        CloseHandle(weRead);
+        return false;
+    }
+
+    STARTUPINFOEXA startup;
+    std::memset(&startup, 0, sizeof startup);
+    startup.StartupInfo.cb = sizeof startup;
+
+    SIZE_T room = 0;
+    InitializeProcThreadAttributeList(NULL, 1, 0, &room);
+    std::vector<char> attributes(room);
+    startup.lpAttributeList =
+        reinterpret_cast<LPPROC_THREAD_ATTRIBUTE_LIST>(room ? &attributes[0] : 0);
+    if (!InitializeProcThreadAttributeList(startup.lpAttributeList, 1, 0, &room) ||
+        !UpdateProcThreadAttribute(startup.lpAttributeList, 0,
+                                   PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE,
+                                   console, sizeof console, NULL, NULL)) {
+        DropConsole drop = dropConsole();
+        if (drop) drop(console);
+        CloseHandle(consoleReads);
+        CloseHandle(consoleWrites);
+        CloseHandle(weWrite);
+        CloseHandle(weRead);
+        return false;
+    }
+
+    // Straight to the program, with no cmd in front of it. start() goes
+    // through cmd because a pipe-fed child wants its quoting rules; a console
+    // does not need them - CreateProcess takes a quoted program itself - and
+    // cmd in the middle of a pseudo-console is a second console client between
+    // the debugger and the terminal, which is one too many.
+    std::vector<char> writable(command.begin(), command.end());
+    writable.push_back('\0');
+
+    // Even with inheritance off, a child is handed this process's own standard
+    // handles through its process parameters - and this process's are a pipe,
+    // because the editor is itself started from one. The child then writes to
+    // that pipe instead of to the console it was given, which is not a subtle
+    // failure: the first version of this wrote the program's output into the
+    // editor's own stdout and nothing came back at all. Cleared across the
+    // call, so the console is the only thing there is to write to.
+    HANDLE keepIn = GetStdHandle(STD_INPUT_HANDLE);
+    HANDLE keepOut = GetStdHandle(STD_OUTPUT_HANDLE);
+    HANDLE keepErr = GetStdHandle(STD_ERROR_HANDLE);
+    SetStdHandle(STD_INPUT_HANDLE, NULL);
+    SetStdHandle(STD_OUTPUT_HANDLE, NULL);
+    SetStdHandle(STD_ERROR_HANDLE, NULL);
+
+    PROCESS_INFORMATION made;
+    std::memset(&made, 0, sizeof made);
+    // No CREATE_NO_WINDOW here, though start() uses it. That flag says "a
+    // console program with no console", and it wins: given both, the child got
+    // no console at all and said nothing whatever - not one byte, which is
+    // what sent this looking in the wrong place first. A pseudo-console shows
+    // no window anyway; there is nothing for the flag to prevent.
+    BOOL ok = CreateProcessA(NULL, &writable[0], NULL, NULL, FALSE,
+                             EXTENDED_STARTUPINFO_PRESENT,
+                             NULL, NULL, &startup.StartupInfo, &made);
+
+    SetStdHandle(STD_INPUT_HANDLE, keepIn);
+    SetStdHandle(STD_OUTPUT_HANDLE, keepOut);
+    SetStdHandle(STD_ERROR_HANDLE, keepErr);
+
+    DeleteProcThreadAttributeList(startup.lpAttributeList);
+    CloseHandle(consoleReads);
+    CloseHandle(consoleWrites);
+
+    if (!ok) {
+        DropConsole drop = dropConsole();
+        if (drop) drop(console);
+        CloseHandle(weWrite);
+        CloseHandle(weRead);
+        return false;
+    }
+    CloseHandle(made.hThread);
+
+    held_->toChild = weWrite;
+    held_->fromChild = weRead;
+    held_->child = made.hProcess;
+    held_->console = console;
+    running_ = true;
+    return true;
+}
+
 bool Process::say(const std::string& line) {
     if (!running_) return false;
-    std::string out = line + "\n";
+    // A console is a terminal: it is reading keystrokes, and the key that ends
+    // a line there is Return. A bare newline is not that key, so a child on a
+    // console sat waiting for the rest of a line that had already been sent -
+    // which reads as a debugger that would not start.
+    std::string out = line + (held_->console ? "\r\n" : "\n");
     DWORD written = 0;
     if (!WriteFile(held_->toChild, out.data(), static_cast<DWORD>(out.size()), &written, NULL))
         return false;
@@ -128,6 +267,14 @@ void Process::stop() {
     // its own child to take with it.
     if (WaitForSingleObject(held_->child, 2000) == WAIT_TIMEOUT)
         TerminateProcess(held_->child, 1);
+
+    // The console holds the write end itself, so while it is open a read has
+    // something to wait for however dead the child is.
+    if (held_->console) {
+        DropConsole drop = dropConsole();
+        if (drop) drop(held_->console);
+        held_->console = NULL;
+    }
 
     if (held_->fromChild) { CloseHandle(held_->fromChild); held_->fromChild = NULL; }
     CloseHandle(held_->child);
@@ -162,6 +309,12 @@ int readSome(void* from, char* into, size_t room, size_t& got, int timeoutMs) {
 }  // namespace
 
 #else
+
+// Nothing to do here: lldb gives its program a pseudo-terminal of its own, and
+// gdb is told to run it through stdbuf, so neither is buffered the way a
+// Windows program writing down a pipe is. Saying so plainly beats a second way
+// of starting a child that no caller on this machine would ever want.
+bool Process::startOnConsole(const std::string&) { return false; }
 
 bool Process::start(const std::string& command) {
     if (running_) return false;

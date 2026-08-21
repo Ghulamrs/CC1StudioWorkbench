@@ -282,11 +282,10 @@ private:
         project_ = ed1_project_new();
         arch_ = "x86_64-windows";
 
-        // The bare names are looked for on PATH, and beside the editor when it
-        // was started from its own directory - which is where the product puts
-        // cc1.exe. $CC1 and $CL name one outright, as they do for the terminal
-        // half: it reads them and this did not, so the same machine could
-        // build from one and not from the other.
+        // Beside the editor first, which is where the product puts cc1.exe,
+        // and then PATH. $CC1 and $CL name one outright, as they do for the
+        // terminal half: it reads them and this did not, so the same machine
+        // could build from one and not from the other.
         cc1_ = Named("CC1", "cc1");
         cl_ = Named("CL", "cl");
         toolKind_ = ED1_TOOL_AUTO;
@@ -783,10 +782,25 @@ private:
         console_->ScrollToCaret();
     }
 
-    // What the environment says a compiler is, or the bare name to look for.
+    // What the environment says a compiler is; failing that the one sitting
+    // beside the editor; failing that the bare name, for PATH to answer.
+    //
+    // The middle one is why this is more than a getenv. The product directory
+    // holds ed1gui.exe and cc1.exe side by side, and this used to reach that
+    // cc1.exe only when the editor happened to have been started in that
+    // directory - so the installed copy, started from a shortcut or the Start
+    // menu, reported a compiler that was standing right next to it. Beside the
+    // editor is looked at before PATH on purpose: a compiler shipped with this
+    // copy of the editor is the one that copy is meant to drive.
     static String^ Named(String^ variable, String^ orElse) {
         String^ said = Environment::GetEnvironmentVariable(variable);
-        return (said == nullptr || said->Length == 0) ? orElse : said;
+        if (said != nullptr && said->Length != 0) return said;
+        String^ here = Application::StartupPath;
+        if (here != nullptr && here->Length != 0) {
+            String^ beside = System::IO::Path::Combine(here, orElse + ".exe");
+            if (System::IO::File::Exists(beside)) return beside;
+        }
+        return orElse;
     }
 
     // A menu item with its key, since there are a dozen of them now. The

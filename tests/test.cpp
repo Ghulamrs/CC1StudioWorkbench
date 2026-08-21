@@ -1578,6 +1578,97 @@ void debuggingForReal() {
     editor::path::removeTree(dir);
 }
 
+// Taking the program's words out of a debugger's transcript.
+//
+// The three fixtures below are real: each was captured from the debugger it
+// names, driving a program that prints a marker, flushes, stops, and prints
+// another on the way out. They are kept here verbatim so that the filter is
+// checked against all three shapes on every machine, rather than only against
+// the one whose debugger happens to be installed.
+void whatTheProgramSaid() {
+    std::printf("the program's words, out of the debugger's transcript\n");
+
+    // lldb. Note the source echo: it prints the lines around the stop, and
+    // those lines contain the program's own string literals - which is why
+    // looking for the program's output rather than removing the debugger's
+    // cannot work.
+    const std::string lldbSaid =
+        "\n(lldb) run\n"
+        "MARKER-ONE\n"
+        "Process 10488 launched: '/var/folders/sb/T/ed1-run-10477' (arm64)\n"
+        "Process 10488 stopped\n"
+        "* thread #1, queue = 'com.apple.main-thread', stop reason = breakpoint 1.1\n"
+        "    frame #0: 0x0000000100000470 ed1-run-10477`main at talker.c:8:5\n"
+        "   5   \tprintf(\"MARKER-ONE\\n\");\n"
+        "   6   \tfflush(stdout);\n"
+        "   7   \tint x = 1;\n"
+        "-> 8   \tx = x + 1;\n"
+        "    \t    ^\n"
+        "   9   \tprintf(\"MARKER-TWO %d\\n\", x);\n"
+        "Target 0: (ed1-run-10477) stopped.\n"
+        "(lldb) script print(\"<<ed1\" + \"-done>>\")\n";
+    checkEqual(editor::dbg_programOutput(editor::DebuggerLldb, lldbSaid), "MARKER-ONE\n",
+               "lldb: the program's line, and none of the source it echoed");
+
+    // gdb. Its prompt carries its own words after it, so the whole line goes.
+    const std::string gdbSaid =
+        "\n(gdb) Starting program: /tmp/ed1-run-2546618 < /dev/null\n"
+        "[Thread debugging using libthread_db enabled]\n"
+        "Using host libthread_db library \"/lib64/libthread_db.so.1\".\n"
+        "MARKER-ONE\n"
+        "\n"
+        "Breakpoint 1, main () at /tmp/ed1-said-probe/talker.c:8\n"
+        "8\t    x = x + 1;\n"
+        "Missing rpms, try: dnf --enablerepo='*debug*' install glibc-debuginfo\n"
+        "(gdb) \n";
+    checkEqual(editor::dbg_programOutput(editor::DebuggerGdb, gdbSaid), "MARKER-ONE\n",
+               "gdb: the program's line, without the thread and debuginfo chatter");
+
+    // cdb, where the program's output arrives after the prompt on the prompt's
+    // own line - so there the prompt is taken off and the rest is kept.
+    const std::string cdbSaid =
+        "\n0:000> MARKER-ONE\n"
+        "Breakpoint 0 hit\n"
+        "ed1_run_4116!main+0x2a:\n"
+        "00007ff6`08a8718a 8b442420        mov     eax,dword ptr [rsp+20h]\n"
+        "0:000> \n"
+        "\n0:000> Last event: 2b0c.34b8: Hit breakpoint 0\n"
+        "  debugger time: Fri Aug 21 18:06:58.745 2026 (UTC + 5:00)\n"
+        "0:000> \n"
+        "\n0:000> C:\\Users\\G_R_AKHTAR\\AppData\\Local\\Temp\\talker.cpp(8)\n"
+        "(00007ff6`08a87160)   ed1_run_4116!main+0x2a   |  (00007ff6`08a871e0)   ed1_run!printf\n"
+        "0:000> \n";
+    checkEqual(editor::dbg_programOutput(editor::DebuggerCdb, cdbSaid), "MARKER-ONE\n",
+               "cdb: the line after its prompt is the program's, and is kept");
+
+    const std::string cdbExit =
+        "\n0:000> MARKER-TWO 2\n"
+        "ModLoad: 00007ffb`d2200000 00007ffb`d221b000   C:\\WINDOWS\\SYSTEM32\\kernel.appcore.dll\n"
+        "ntdll!NtTerminateProcess+0x14:\n"
+        "00007ffb`d6460904 c3              ret\n"
+        "0:000> \n"
+        "\n0:000> Last event: 2b0c.34b8: Exit process 0:2b0c, code 0\n";
+    checkEqual(editor::dbg_programOutput(editor::DebuggerCdb, cdbExit), "MARKER-TWO 2\n",
+               "and what it printed on the way out comes through the same way");
+
+    // What is not recognised is kept. A debugger line nobody has taught this
+    // about is a smaller fault in the console than a line of output that never
+    // arrives, and this says which way that trade goes.
+    const std::string strange = "\n(gdb) Continuing.\nsomething nobody has seen before\n(gdb) \n";
+    checkEqual(editor::dbg_programOutput(editor::DebuggerGdb, strange),
+               "something nobody has seen before\n",
+               "a line the filter does not know is kept rather than dropped");
+
+    // A program that prints something shaped like a source echo keeps it: the
+    // tab is what makes an echo an echo.
+    const std::string counting = "\n(gdb) Continuing.\n8 apples\n(gdb) \n";
+    checkEqual(editor::dbg_programOutput(editor::DebuggerGdb, counting), "8 apples\n",
+               "and a number at the start of a line is not a source echo without the tab");
+
+    checkEqual(editor::dbg_programOutput(editor::DebuggerLldb, ""), "",
+               "nothing said is nothing printed");
+}
+
 // What the debugger said, across the seam the window uses.
 //
 // A debugged program writes down the debugger's own stream, so what it printed
@@ -2246,6 +2337,7 @@ int main(int argc, char** argv) {
     paths();
     whereTheProgramIs(argc > 0 ? argv[0] : 0);
     whatTheDebuggerHeard();
+    whatTheProgramSaid();
     aProjectMadeFromWhatIsThere();
     whatItRemembers();
     talkingToAChild();

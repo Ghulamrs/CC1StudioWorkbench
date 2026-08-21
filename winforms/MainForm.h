@@ -3106,6 +3106,16 @@ private:
     }
 
     void ShowStop() {
+        // What the program printed on its way here belongs in the console,
+        // which is where its output goes when it is run without a debugger.
+        // The debugger's own words are taken out on the native side, so this
+        // and the terminal half show the same thing.
+        String^ printed = Lines(FromUtf8(ed1_stop_output(debugger_)));
+        if (!String::IsNullOrEmpty(printed)) {
+            console_->AppendText(printed);
+            ShowConsoleEnd();
+        }
+
         panel_->SelectedIndex = 1;   // the Debug tab
 
         if (ed1_stop_exited(debugger_) != 0) {

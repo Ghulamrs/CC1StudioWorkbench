@@ -344,6 +344,12 @@ const char* ed1_stop_function(Ed1Debugger* debugger);
    printed what had actually been said. */
 const char* ed1_stop_said(Ed1Debugger* debugger);
 
+/* And the same thing with the debugger's own words taken out: what the program
+   printed on its way to this stop, for the console. Empty when it printed
+   nothing. The filtering is dbg_programOutput's, on the native side, so both
+   front ends show the same thing. */
+const char* ed1_stop_output(Ed1Debugger* debugger);
+
 /* What is in scope where it stopped, read after a move. */
 int ed1_locals_count(Ed1Debugger* debugger);
 const char* ed1_local_name(Ed1Debugger* debugger, int index);

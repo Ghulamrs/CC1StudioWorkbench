@@ -2,6 +2,7 @@
 
 #include <cctype>
 #include <cstdlib>
+#include <cstring>
 
 #include "path.h"
 
@@ -143,7 +144,115 @@ size_t number(const std::string& text) {
     return static_cast<size_t>(std::strtoul(text.c_str(), 0, 10));
 }
 
+bool startsWith(const std::string& text, const char* prefix) {
+    const size_t n = std::strlen(prefix);
+    return text.size() >= n && text.compare(0, n, prefix) == 0;
+}
+
+bool endsWith(const std::string& text, char c) {
+    return !text.empty() && text[text.size() - 1] == c;
+}
+
+// A prompt at the start of the line, and what it was.
+DebuggerKind promptOn(const std::string& line) {
+    if (startsWith(line, "(gdb)")) return DebuggerGdb;
+    if (startsWith(line, "(lldb)")) return DebuggerLldb;
+    size_t i = 0;
+    while (i < line.size() && line[i] >= '0' && line[i] <= '9') ++i;
+    if (i == 0 || i >= line.size() || line[i] != ':') return DebuggerNone;
+    size_t j = i + 1;
+    while (j < line.size() && std::isxdigit(static_cast<unsigned char>(line[j]))) ++j;
+    if (j == i + 1 || line.compare(j, 1, ">") != 0) return DebuggerNone;
+    return DebuggerCdb;
+}
+
+// A source line as a debugger echoes it: a number, then the line itself after
+// a tab. gdb writes "8\tx = x + 1;" and lldb "   8   \tx = x + 1;", marking
+// the one it is on with "-> ". The tab is required rather than assumed, so
+// that a program printing "8 apples" keeps its output.
+bool sourceEcho(const std::string& line) {
+    std::string rest = trimmed(line);
+    if (startsWith(rest, "-> ")) rest = trimmed(rest.substr(3));
+    size_t i = 0;
+    while (i < rest.size() && rest[i] >= '0' && rest[i] <= '9') ++i;
+    if (i == 0) return false;
+    while (i < rest.size() && rest[i] == ' ') ++i;
+    return i < rest.size() && rest[i] == '\t';
+}
+
+bool lldbOwn(const std::string& line) {
+    const std::string bare = trimmed(line);
+    if (startsWith(bare, "* thread #")) return true;
+    if (startsWith(bare, "frame #")) return true;
+    if (bare == "^") return true;                       // under the source echo
+    if (startsWith(line, "Process ") || startsWith(line, "Target ")) return true;
+    return false;
+}
+
+bool gdbOwn(const std::string& line) {
+    if (startsWith(line, "Starting program:")) return true;
+    if (startsWith(line, "Continuing.")) return true;
+    if (startsWith(line, "Breakpoint ")) return true;   // "Breakpoint 1, main () at f:8"
+    if (startsWith(line, "[")) return true;             // threads, and the exit report
+    if (startsWith(line, "Using host ")) return true;
+    if (startsWith(line, "Reading symbols")) return true;
+    // Its stock complaint about debuginfo, which is about the machine rather
+    // than about the program and turns up at every stop on some of them.
+    if (startsWith(line, "Missing ") &&
+        (line.find("debuginfo") != std::string::npos || line.find("try:") != std::string::npos))
+        return true;
+    return false;
+}
+
+bool cdbOwn(const std::string& line) {
+    const std::string bare = trimmed(line);
+    if (startsWith(bare, "Breakpoint ")) return true;
+    if (startsWith(bare, "Last event:")) return true;
+    if (startsWith(bare, "debugger time:")) return true;
+    if (startsWith(bare, "ModLoad:")) return true;
+    // "ed1_run_4116!main+0x2a:" - where it is, named by symbol.
+    if (bare.find('!') != std::string::npos && endsWith(bare, ':')) return true;
+    // "(00007ff6`...)   ed1_run!main+0x2a   |  (...)" - the frame either side.
+    if (startsWith(bare, "(") && bare.find('!') != std::string::npos) return true;
+    // "00007ff6`08a8718a 8b442420  mov  eax,..." - an instruction, which is
+    // known by the backtick in the address cdb writes and nothing else does.
+    if (bare.find('`') != std::string::npos &&
+        std::isxdigit(static_cast<unsigned char>(bare[0]))) return true;
+    // "C:\...\talker.cpp(8)" - the source position, on its own line.
+    if (endsWith(bare, ')') &&
+        (bare.find(".c(") != std::string::npos || bare.find(".cpp(") != std::string::npos ||
+         bare.find(".h(") != std::string::npos)) return true;
+    return false;
+}
+
 }  // namespace
+
+std::string dbg_programOutput(DebuggerKind kind, const std::string& said) {
+    const std::vector<std::string> all = lines(said);
+    std::string out;
+
+    for (size_t i = 0; i < all.size(); ++i) {
+        std::string line = all[i];
+
+        // Where the prompt is the debugger's own line, it takes the line with
+        // it; where the program writes after it, only the prompt goes.
+        const DebuggerKind prompt = promptOn(line);
+        if (prompt == DebuggerGdb || prompt == DebuggerLldb) continue;
+        if (prompt != DebuggerNone) line = withoutPrompt(line);
+
+        if (trimmed(line).empty()) continue;
+        if (line.find("<<ed1") != std::string::npos) continue;   // the marker, and asking for it
+        if (sourceEcho(line)) continue;
+
+        if (kind == DebuggerLldb && lldbOwn(line)) continue;
+        if (kind == DebuggerGdb && gdbOwn(line)) continue;
+        if (kind == DebuggerCdb && cdbOwn(line)) continue;
+
+        out += line;
+        out += "\n";
+    }
+    return out;
+}
 
 DebuggerKind dbg_here() {
 #if defined(_WIN32)

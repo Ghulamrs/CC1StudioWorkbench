@@ -122,6 +122,31 @@ private:
 // line is a fiddly thing to parse and it should not need a live debugger and a
 // built program to check that it is parsed right.
 Stop dbg_readStop(DebuggerKind kind, const std::string& said);
+// What the program itself printed, taken out of a debugger's transcript.
+//
+// A debugged program writes down the same pipe the debugger talks on - which
+// is why kMarker exists - so `said` holds the two mixed together. This takes
+// the debugger's own words out and leaves the program's.
+//
+// It works by removing what is recognisably the debugger's rather than by
+// looking for what might be the program's, because the program's output has no
+// shape at all: lldb echoes the source lines around a stop, so a file that
+// prints "hello" has a debugger line containing "hello" in every transcript
+// where it stops nearby. Anything not recognised is kept - a stray debugger
+// line in the console is a smaller fault than a line of the program's output
+// that never arrives.
+//
+// The three differ in one way that matters here. gdb and lldb print their
+// prompt and then their own words after it, so a line beginning with a prompt
+// is theirs entire. cdb prints its prompt and the program's output arrives
+// after it on the same line, so there the prompt is taken off and what is left
+// is weighed on its own.
+//
+// Blank lines go. A transcript is mostly blank lines, and a program whose
+// output has them loses them, which is the one thing here that is a real loss
+// rather than a tidying.
+std::string dbg_programOutput(DebuggerKind kind, const std::string& said);
+
 std::vector<Variable> dbg_readVariables(DebuggerKind kind, const std::string& said);
 
 }  // namespace editor

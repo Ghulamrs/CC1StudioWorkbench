@@ -2075,6 +2075,14 @@ void Editor::showStop(const Stop& where) {
     panelOff_ = 0;
     debug_.clear();
 
+    // What the program printed on its way here goes to the console, where the
+    // program's output goes when it is run without a debugger. It arrives on
+    // the debugger's own stream mixed with the debugger's words, so it has to
+    // be taken out of them - see dbg_programOutput. Stepping over a printf now
+    // shows the line it printed, which is most of what stepping is for.
+    const std::string printed = dbg_programOutput(debugger_.kind(), where.said);
+    if (!printed.empty()) sayLines(console_, printed);
+
     if (where.exited) {
         stopFile_.clear();
         stopLine_ = 0;

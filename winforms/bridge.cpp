@@ -221,6 +221,7 @@ struct Ed1Debugger {
     editor::Stop stop;
     std::vector<editor::Variable> locals;
     std::string answer;
+    std::string output;   // the program's own words, kept for the same reason
 };
 
 extern "C" {
@@ -730,6 +731,13 @@ const char* ed1_stop_file(Ed1Debugger* debugger) { return debugger->stop.file.c_
 int ed1_stop_line(Ed1Debugger* debugger) { return static_cast<int>(debugger->stop.line); }
 const char* ed1_stop_function(Ed1Debugger* debugger) { return debugger->stop.function.c_str(); }
 const char* ed1_stop_said(Ed1Debugger* debugger) { return debugger->stop.said.c_str(); }
+
+const char* ed1_stop_output(Ed1Debugger* debugger) {
+    // Worked out here and kept, rather than handed back from a temporary: the
+    // managed side reads these one string at a time and holds none of them.
+    debugger->output = editor::dbg_programOutput(debugger->debugger.kind(), debugger->stop.said);
+    return debugger->output.c_str();
+}
 
 int ed1_locals_count(Ed1Debugger* debugger) {
     return static_cast<int>(debugger->locals.size());

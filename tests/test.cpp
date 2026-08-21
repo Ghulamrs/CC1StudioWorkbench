@@ -1570,6 +1570,23 @@ void whatACallStackLooksLike() {
           "and the line it wrote is read back as that frame");
     check(editor::dbg_frameOnLine(two, "  main   stepped.c:11  ") == 1,
           "with what the tab pads it with taken off");
+
+    // The frame being looked at wears a mark, and is still that frame when the
+    // line is read back - which is what lets enter on it be pressed twice.
+    checkEqual(editor::dbg_frameLine(one, true), "> main   stepped.c:11",
+               "the frame being looked at is written with a mark");
+    check(editor::dbg_frameOnLine(two, editor::dbg_frameLine(one, true)) == 1,
+          "and is read back as the frame it marks");
+    checkEqual(editor::dbg_lookingAt(one), "the variables are main's, at stepped.c:11",
+               "and the tab says whose variables it is showing");
+
+    // The tab's first line names frame 0, and is written here because pressing
+    // enter on it is how either front end goes back to the stop.
+    checkEqual(editor::dbg_stopLine("/home/me/work/stepped.c", 3, "twice"),
+               "stopped at stepped.c:3 in twice", "the tab's top line names where it stopped");
+    checkEqual(editor::dbg_stopLine("/home/me/work/stepped.c", 3, ""),
+               "stopped at stepped.c:3",
+               "and says only where when the debugger named no function");
     check(editor::dbg_frameOnLine(two, "  total = 0   [int]") == two.size(),
           "a line that is not a frame is not read as one");
     check(editor::dbg_frameOnLine(two, "called from") == two.size(),
@@ -1681,6 +1698,25 @@ void debuggingForReal() {
         checkEqual(stack[1].function, "main", "called from the one that called it");
         check(stack[1].line == 11, "on the line that is waiting for it to come back");
     }
+
+    // And the caller's own variables, which is what selecting a frame is for:
+    // total and i belong to main and are not in scope in twice at all.
+    check(debugger.selectFrame(1), "the debugger goes to the frame that called it");
+    std::vector<editor::Variable> caller = debugger.locals();
+    bool sawCallersTotal = false, sawInner = false;
+    for (size_t i = 0; i < caller.size(); ++i) {
+        if (caller[i].name == "total") sawCallersTotal = true;
+        if (caller[i].name == "doubled") sawInner = true;
+    }
+    check(sawCallersTotal, "and the variables read there are the caller's");
+    check(!sawInner, "with nothing of the frame it was called from still in the list");
+
+    check(debugger.selectFrame(0), "and it goes back to the frame it stopped in");
+    std::vector<editor::Variable> back = debugger.locals();
+    bool sawArgument = false;
+    for (size_t i = 0; i < back.size(); ++i)
+        if (back[i].name == "n") sawArgument = true;
+    check(sawArgument, "where the argument is in scope again");
 
     editor::Stop out = debugger.stepOut();
     check(out.stopped && out.function == "main", "and stepping out comes back");
@@ -2018,6 +2054,23 @@ void debuggingCppForReal() {
         check(stack[1].line == 10, "on the line that is waiting for it to come back");
     }
 
+    // And that frame's variables, which is cdb's .frame rather than lldb's
+    // frame select or gdb's frame. The three spell it differently and only one
+    // machine can say whether this one is spelled right.
+    check(debugger.selectFrame(1), "the debugger goes to the frame that called it");
+    std::vector<editor::Variable> caller = debugger.locals();
+    bool sawCallersTotal = false;
+    for (size_t i = 0; i < caller.size(); ++i)
+        if (caller[i].name == "total") sawCallersTotal = true;
+    check(sawCallersTotal, "and the variables read there are the caller's");
+
+    check(debugger.selectFrame(0), "and it goes back to the frame it stopped in");
+    std::vector<editor::Variable> back = debugger.locals();
+    bool sawArgument = false;
+    for (size_t i = 0; i < back.size(); ++i)
+        if (back[i].name == "n") sawArgument = true;
+    check(sawArgument, "where the argument is in scope again");
+
     editor::Stop out = debugger.stepOut();
     check(out.stopped && out.function == "main", "and stepping out comes back");
 
@@ -2196,6 +2249,32 @@ void theSeamTheWindowUses() {
           "and reads it back as the frame it was written for");
     check(ed1_stack_on_line(debugger, "  (nothing in scope here)") == -1,
           "while a row that is not a frame answers -1 rather than a frame");
+
+    // Looking at a caller through the seam: the locals the window reads
+    // afterwards are that frame's, and the line it writes for it is marked.
+    check(ed1_looking_at(debugger) == 0, "the window starts at the frame it stopped in");
+    check(ed1_debugger_look_at(debugger, 1) != 0, "and can be told to look at the caller");
+    check(ed1_looking_at(debugger) == 1, "which is where it says it is looking");
+    check(std::string(ed1_looking_text(debugger)).find("main's") != std::string::npos,
+          "with a line saying whose variables these now are");
+    check(std::string(ed1_stack_text(debugger, 1)).compare(0, 1, ">") == 0,
+          "and that frame written with its mark");
+
+    bool sawCaller = false;
+    for (int i = 0; i < ed1_locals_count(debugger); ++i)
+        if (std::string(ed1_local_name(debugger, i)) == "total") sawCaller = true;
+    check(sawCaller, "the variables read through the seam are the caller's");
+
+    check(ed1_debugger_look_at(debugger, 0) != 0, "and it goes back to the stop");
+    check(std::string(ed1_looking_text(debugger)).empty(),
+          "where nothing is said about whose variables they are, the top line saying it");
+    check(ed1_debugger_look_at(debugger, 9) == 0,
+          "a frame that is not there is refused rather than answered with another's");
+
+    // And the line the window writes at the top, which it compares a clicked
+    // row against to know that the row means the frame it stopped in.
+    checkEqual(std::string(ed1_stop_line_text("/tmp/seam.c", 10, "main")),
+               "stopped at seam.c:10 in main", "the window is given that line too");
 
     ed1_debugger_step_out(debugger);
     check(std::string(ed1_stop_function(debugger)) == "main", "and stepping out comes back");

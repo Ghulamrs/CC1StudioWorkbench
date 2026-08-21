@@ -376,6 +376,22 @@ int ed1_stack_line(Ed1Debugger* debugger, int index);
 const char* ed1_stack_text(Ed1Debugger* debugger, int index);
 int ed1_stack_on_line(Ed1Debugger* debugger, const char* line);
 
+// Which frame the variables are to be read from. All three debuggers keep a
+// current frame and answer with its variables, so this is what makes a
+// caller's locals readable at all; ed1_locals_* answer from it afterwards.
+// Every move puts it back to 0, the frame the program stopped in.
+//
+// ed1_looking_text is the line that says whose they are, empty at frame 0
+// where the stop's own line already says it.
+int ed1_debugger_look_at(Ed1Debugger* debugger, int which);
+
+// The tab's first line, which names the frame the program stopped in. The
+// window writes it with this and compares a clicked row against it, so that
+// enter on that row is enter on frame 0 - see dbg_stopLine.
+const char* ed1_stop_line_text(const char* file, int line, const char* function);
+int ed1_looking_at(Ed1Debugger* debugger);
+const char* ed1_looking_text(Ed1Debugger* debugger);
+
 #ifdef __cplusplus
 }
 #endif

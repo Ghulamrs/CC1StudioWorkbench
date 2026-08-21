@@ -1243,6 +1243,23 @@ void stoppingAndStepping(const std::string& ed1, const std::string& cc1) {
     check(onScreen(went, "11/14"), "putting the caret on the line that is waiting");
     check(onScreen(went, "[text]"), "and the keyboard back in the text");
 
+    // And the variables are that frame's: total and i belong to main and are
+    // not in scope in twice at all. The tab says whose they are, since the
+    // line above them still says the program stopped in twice.
+    check(onScreen(went, "the variables are main's"), "the tab says whose variables it shows");
+    check(onScreen(went, "total = 0"), "and they are the caller's own");
+    check(!onScreen(went, "n = 1"), "with nothing left of the frame it stopped in");
+
+    // The way back is the top line, which names that frame - and the cursor is
+    // already standing on it, the tab having come back to the top.
+    const std::string andBack = ctrl('w') + ctrl('w') + kEnter;
+    Screen backAgain = drive(
+        ed1, withCc1, toLoopBody + kF9 + kF8 + kF6 + toTheFrame + andBack + ctrl('q'), dir);
+    check(wasShown(backAgain, "back where it stopped"), "enter on the top line goes back");
+    check(onScreen(backAgain, "n = 1"), "and the variables are the stopped frame's again");
+    check(!onScreen(backAgain, "the variables are main's"),
+          "with nothing said about whose they are, the top line saying it");
+
     // The program has not moved: going to a line is not stepping, and the
     // arrow in the gutter still marks where it is standing.
     // "> 3", not ">3": the number is right-aligned in the gutter and the marker

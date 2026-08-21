@@ -221,9 +221,13 @@ struct Ed1Debugger {
     editor::Stop stop;
     std::vector<editor::Variable> locals;
     std::vector<editor::StackFrame> stack;
+    size_t looking;          // which frame the variables belong to; 0 is the stop
     std::string frameLine;   // one frame as the Debug tab spells it
+    std::string lookingLine;
     std::string answer;
     std::string output;   // the program's own words, kept for the same reason
+
+    Ed1Debugger() : looking(0) {}
 };
 
 extern "C" {
@@ -688,6 +692,7 @@ int ed1_debugger_start(Ed1Debugger* debugger, int debuggerKind, const char* prog
     debugger->stop = editor::Stop();
     debugger->locals.clear();
     debugger->stack.clear();
+    debugger->looking = 0;
     return debugger->debugger.start(static_cast<editor::DebuggerKind>(debuggerKind),
                                     program ? program : "") ? 1 : 0;
 }
@@ -701,6 +706,7 @@ void ed1_debugger_stop(Ed1Debugger* debugger) {
     debugger->stop = editor::Stop();
     debugger->locals.clear();
     debugger->stack.clear();
+    debugger->looking = 0;
 }
 
 int ed1_debugger_break(Ed1Debugger* debugger, const char* file, int line) {
@@ -719,6 +725,7 @@ void afterMoving(Ed1Debugger* debugger, const editor::Stop& stop) {
     debugger->stop = stop;
     debugger->locals.clear();
     debugger->stack.clear();
+    debugger->looking = 0;   // every stop starts at the frame it stopped in
     if (!stop.stopped) return;
     debugger->locals = debugger->debugger.locals();
     debugger->stack = debugger->debugger.frames();
@@ -792,11 +799,45 @@ int ed1_stack_line(Ed1Debugger* debugger, int index) {
 
 const char* ed1_stack_text(Ed1Debugger* debugger, int index) {
     // Worked out here and kept, as the program's output is: the managed side
-    // reads these one string at a time and holds none of them.
-    debugger->frameLine = reaches(debugger, index)
-                              ? editor::dbg_frameLine(debugger->stack[index])
-                              : std::string();
+    // reads these one string at a time and holds none of them. The frame being
+    // looked at is written with its mark, which is why this takes no flag of
+    // its own - which frame that is, is known here.
+    debugger->frameLine =
+        reaches(debugger, index)
+            ? editor::dbg_frameLine(debugger->stack[index],
+                                    static_cast<size_t>(index) == debugger->looking)
+            : std::string();
     return debugger->frameLine.c_str();
+}
+
+int ed1_debugger_look_at(Ed1Debugger* debugger, int which) {
+    if (!reaches(debugger, which)) return 0;
+    if (!debugger->debugger.selectFrame(static_cast<size_t>(which))) return 0;
+
+    debugger->looking = static_cast<size_t>(which);
+    debugger->locals = debugger->debugger.locals();
+    return 1;
+}
+
+const char* ed1_stop_line_text(const char* file, int line, const char* function) {
+    // No debugger handle: this is the spelling of a line, not a question about
+    // a running one, and the window asks it while writing the tab.
+    scratch() = editor::dbg_stopLine(file ? file : "",
+                                     static_cast<size_t>(line < 0 ? 0 : line),
+                                     function ? function : "");
+    return scratch().c_str();
+}
+
+int ed1_looking_at(Ed1Debugger* debugger) {
+    return static_cast<int>(debugger->looking);
+}
+
+const char* ed1_looking_text(Ed1Debugger* debugger) {
+    debugger->lookingLine =
+        (debugger->looking > 0 && debugger->looking < debugger->stack.size())
+            ? editor::dbg_lookingAt(debugger->stack[debugger->looking])
+            : std::string();
+    return debugger->lookingLine.c_str();
 }
 
 int ed1_stack_on_line(Ed1Debugger* debugger, const char* line) {

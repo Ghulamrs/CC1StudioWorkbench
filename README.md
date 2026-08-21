@@ -112,11 +112,33 @@ called from
 enter on it - `Ctrl-W` twice puts the cursor in the panel in the terminal, and
 the line it is standing on is the panel's top line. The caret goes to the line
 that is waiting for the call to come back, opening that file if the call came
-from another one.
+from another one, and the variables become that frame's:
 
-It goes there and no further. The program is still standing where it stopped,
-the arrow in the gutter still marks that line, and the variables are still that
-frame's: going to a line is not stepping.
+```
+stopped at stepped.c:3 in twice
+
+the variables are main's, at stepped.c:11
+
+  total = 0   [int]
+  i = 1   [int]
+
+called from
+> main   stepped.c:11
+```
+
+`total` and `i` are main's and are not in scope in `twice` at all. All three
+debuggers keep a current frame and answer with its variables, so this is
+`frame select` to lldb, `frame` to gdb and `.frame` to cdb, and the reading
+after it is unchanged. The line above the list says whose they are, because
+`stopped at stepped.c:3 in twice` is still true and would otherwise be standing
+over another function's locals.
+
+The way back is the top line: it names the frame the program stopped in, and
+pressing enter on it goes there. Any step goes back too - every stop starts at
+the frame it stopped in.
+
+The program has not moved through any of this. The arrow in the gutter still
+marks the line it is standing on: looking at a frame is not stepping.
 
 The stack stops at `main`. Below main is the code that started the program,
 which was not compiled here and has no source to go to - the same place a step

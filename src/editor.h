@@ -184,6 +184,7 @@ private:
     void openSelected();
     void goToProblem();
     void goToFrame();
+    void writeDebugTab();
 
     void refreshTree();
     void applyProject();
@@ -272,6 +273,8 @@ private:
     size_t stopLine_;            // 0 when the program is not standing still
     std::vector<Variable> locals_;
     std::vector<StackFrame> stack_;   // and how it got to where it is standing
+    std::string stopFunction_;        // what it stopped in, for writing the tab again
+    size_t looking_;                  // which frame the variables belong to; 0 is the stop
 
     bool marked_;             // whether one end of a selection has been put down
     size_t markRow_, markCol_;

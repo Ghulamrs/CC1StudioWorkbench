@@ -239,6 +239,7 @@ Editor::Editor()
       panelOff_(0), panelOpen_(true), tab_(TabConsole),
       focus_(FocusText), lang_(LangPlain), config_(ConfigDebug), arch_(0), numbers_(true), needsDraw_(true), debugTemporary_(true),
       stopLine_(0),
+      looking_(0),
       marked_(false), markRow_(0), markCol_(0),
       quitConfirm_(0), running_(true),
       screenRows_(24), screenCols_(80),
@@ -1745,10 +1746,27 @@ void Editor::goToFrame() {
     if (panelOff_ >= lines.size()) { say("there is nothing on that line"); return; }
 
     size_t which = dbg_frameOnLine(stack_, lines[panelOff_]);
+
+    // The top line names the frame the program stopped in, which is the way
+    // back from a caller: enter on it is enter on frame 0, and it is where the
+    // cursor is already standing once a frame has been looked at.
+    if (which >= stack_.size() && !stack_.empty() &&
+        lines[panelOff_] == dbg_stopLine(stopFile_, stopLine_, stopFunction_))
+        which = 0;
+
     if (which >= stack_.size()) {
         say("that line is not a frame - the cursor is on the panel's top line");
         return;
     }
+
+    if (!debugger_.selectFrame(which)) {
+        say("the debugger would not go to that frame");
+        return;
+    }
+    looking_ = which;
+    locals_ = debugger_.locals();
+    writeDebugTab();
+    panelOff_ = 0;
 
     const StackFrame& frame = stack_[which];
     if (!frame.file.empty() && path::filename(frame.file) != path::filename(buf_.path())) {
@@ -1767,8 +1785,10 @@ void Editor::goToFrame() {
         clampCursor();
     }
     focus_ = FocusText;
-    say(path::filename(frame.file) + ":" + number(frame.line) + " in " + frame.function +
-        " - where the call came from");
+    say(which == 0 ? path::filename(frame.file) + ":" + number(frame.line) + " in " +
+                         frame.function + " - back where it stopped"
+                   : path::filename(frame.file) + ":" + number(frame.line) + " in " +
+                         frame.function + " - where the call came from");
 }
 
 void Editor::goToProblem() {
@@ -2128,6 +2148,7 @@ void Editor::showStop(const Stop& where) {
         stopLine_ = 0;
         locals_.clear();
         stack_.clear();
+        looking_ = 0;
         debug_.push_back("the program ran to the end and returned " + number(static_cast<size_t>(where.status)));
         debug_.push_back("");
         debug_.push_back("F8 starts it again. The breakpoints are still where you put them.");
@@ -2146,7 +2167,8 @@ void Editor::showStop(const Stop& where) {
             stopFile_.clear();
             stopLine_ = 0;
             locals_.clear();
-        stack_.clear();
+            stack_.clear();
+            looking_ = 0;
             debug_.push_back("stopped where there is no source to show");
             debug_.push_back("");
             debug_.push_back("Stepping past the end of main arrives in the code that");
@@ -2194,9 +2216,30 @@ void Editor::showStop(const Stop& where) {
         focus_ = FocusText;
     }
 
-    debug_.push_back("stopped at " + path::filename(where.file) + ":" + number(where.line) +
-                     (where.function.empty() ? std::string() : " in " + where.function));
+    stopFunction_ = where.function;
+    looking_ = 0;
+    writeDebugTab();
+
+    say(path::filename(where.file) + ":" + number(where.line) +
+        (where.function.empty() ? std::string() : " in " + where.function));
+}
+
+// The Debug tab, written from what is known about the stop rather than from
+// the stop itself - so that it can be written again when the frame being
+// looked at changes, without the program having moved.
+void Editor::writeDebugTab() {
+    debug_.clear();
+    debug_.push_back(dbg_stopLine(stopFile_, stopLine_, stopFunction_));
     debug_.push_back("");
+
+    // Whose variables these are, when they are not the ones the program
+    // stopped among. Without it the line above stands over another function's
+    // locals and the two contradict each other.
+    if (looking_ > 0 && looking_ < stack_.size()) {
+        debug_.push_back(dbg_lookingAt(stack_[looking_]));
+        debug_.push_back("");
+    }
+
     if (locals_.empty()) {
         debug_.push_back("  (nothing in scope here)");
     } else {
@@ -2213,16 +2256,16 @@ void Editor::showStop(const Stop& where) {
     if (stack_.size() > 1) {
         debug_.push_back("");
         debug_.push_back("called from");
-        for (size_t i = 1; i < stack_.size(); ++i) debug_.push_back(dbg_frameLine(stack_[i]));
+        for (size_t i = 1; i < stack_.size(); ++i)
+            debug_.push_back(dbg_frameLine(stack_[i], i == looking_));
     }
 
     debug_.push_back("");
     debug_.push_back("F8 carries on   F7 steps over   F6 steps into   F9 sets a breakpoint");
-    if (stack_.size() > 1)
-        debug_.push_back("Ctrl-W puts the cursor in the panel; Enter on a frame goes to it");
-
-    say(path::filename(where.file) + ":" + number(where.line) +
-        (where.function.empty() ? std::string() : " in " + where.function));
+    if (stack_.size() > 1) {
+        debug_.push_back("Ctrl-W puts the cursor in the panel; Enter on a frame looks at it");
+        debug_.push_back("Enter on the top line goes back to where the program stopped");
+    }
 }
 
 void Editor::debug(bool project) {
@@ -2349,6 +2392,7 @@ void Editor::debugStop() {
     stopLine_ = 0;
     locals_.clear();
     stack_.clear();
+    looking_ = 0;
 }
 
 void Editor::showAbout() {

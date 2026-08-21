@@ -117,6 +117,14 @@ public:
     // ordinary case and is not worth saying.
     std::vector<StackFrame> frames();
 
+    // Which of those frames the questions after this are about. All three keep
+    // a current frame and answer `locals` from it, so this is what makes the
+    // variables of a caller readable at all.
+    //
+    // A move resets it: every stop starts at frame 0, which is where the
+    // program is standing. Nothing here has to put it back.
+    bool selectFrame(size_t which);
+
     // Anything else, for the console: what was typed, answered as it came.
     std::string ask(const std::string& command);
 
@@ -219,8 +227,26 @@ std::vector<StackFrame> dbg_readFrames(DebuggerKind kind, const std::string& sai
 // the heading, a variable, the hint at the bottom. A recursive call writes the
 // same line twice and the first of them is answered, which is right for going
 // to it: the two name the same place in the same file.
-std::string dbg_frameLine(const StackFrame& frame);
+// The frame being looked at wears a > where the others have a space, in the
+// manner of the gutter's own marks. dbg_frameOnLine answers a line written
+// either way, since it matches what dbg_frameLine writes rather than what a
+// caller thinks it wrote.
+std::string dbg_frameLine(const StackFrame& frame, bool looking = false);
 size_t dbg_frameOnLine(const std::vector<StackFrame>& stack, const std::string& line);
+
+// Whose variables are being shown, when they are not the ones belonging to the
+// frame the program stopped in. The tab says this above them rather than
+// leaving "stopped at stepped.c:3 in twice" standing over another function's
+// locals, which is a sentence and a list that contradict each other.
+std::string dbg_lookingAt(const StackFrame& frame);
+
+// The first line of the tab, which names the frame the program stopped in -
+// frame 0, the one the stack is counted from. It is written here for the
+// reason the frame lines are: both front ends compose that tab separately, and
+// pressing enter on this line is how either of them goes back to the stop
+// after looking at a caller. Written by one function and compared against it,
+// they cannot disagree about which line that is.
+std::string dbg_stopLine(const std::string& file, size_t line, const std::string& function);
 
 }  // namespace editor
 

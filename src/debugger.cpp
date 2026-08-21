@@ -800,18 +800,34 @@ std::vector<StackFrame> dbg_readFrames(DebuggerKind kind, const std::string& sai
     return found;
 }
 
-std::string dbg_frameLine(const StackFrame& frame) {
+std::string dbg_frameLine(const StackFrame& frame, bool looking) {
     // std::to_string rather than the number() above it, which reads a number
     // out of a string and is the traffic going the other way.
-    return "  " + frame.function + "   " + path::filename(frame.file) + ":" +
-           std::to_string(frame.line);
+    return std::string(looking ? "> " : "  ") + frame.function + "   " +
+           path::filename(frame.file) + ":" + std::to_string(frame.line);
 }
 
 size_t dbg_frameOnLine(const std::vector<StackFrame>& stack, const std::string& line) {
     const std::string bare = trimmed(line);
-    for (size_t i = 0; i < stack.size(); ++i)
-        if (trimmed(dbg_frameLine(stack[i])) == bare) return i;
+    for (size_t i = 0; i < stack.size(); ++i) {
+        // Both spellings, because the one being looked at is written with its
+        // mark and is the one most likely to be pressed enter on again.
+        if (trimmed(dbg_frameLine(stack[i], false)) == bare) return i;
+        if (trimmed(dbg_frameLine(stack[i], true)) == bare) return i;
+    }
     return stack.size();
+}
+
+std::string dbg_stopLine(const std::string& file, size_t line,
+                         const std::string& function) {
+    return "stopped at " + path::filename(file) + ":" + std::to_string(line) +
+           (function.empty() ? std::string() : " in " + function);
+}
+
+std::string dbg_lookingAt(const StackFrame& frame) {
+    std::string where = path::filename(frame.file) + ":" + std::to_string(frame.line);
+    if (frame.function.empty()) return "the variables are those of " + where;
+    return "the variables are " + frame.function + "'s, at " + where;
 }
 
 // ---- the conversation ------------------------------------------------------
@@ -987,6 +1003,30 @@ std::vector<Variable> Debugger::locals() {
     std::vector<Variable> locals = dbg_readVariables(kind_, ask("info locals"));
     for (size_t i = 0; i < locals.size(); ++i) found.push_back(locals[i]);
     return found;
+}
+
+bool Debugger::selectFrame(size_t which) {
+    if (!running()) return false;
+
+    const std::string number = std::to_string(which);
+    std::string said;
+    if (kind_ == DebuggerCdb) {
+        // .frame, and the numbers are decimal because `n 10` was said when it
+        // started.
+        said = ask(".frame " + number);
+    } else if (kind_ == DebuggerGdb) {
+        said = ask("frame " + number);
+    } else {
+        said = ask("frame select " + number);
+    }
+
+    // Each of them refuses a frame that is not there in its own words, and all
+    // three then leave the current frame where it was - which would show one
+    // frame's variables under another's name. Better to say it did not work.
+    if (said.find("error:") != std::string::npos) return false;
+    if (said.find("No frame at level") != std::string::npos) return false;
+    if (said.find("Invalid frame") != std::string::npos) return false;
+    return true;
 }
 
 std::vector<StackFrame> Debugger::frames() {

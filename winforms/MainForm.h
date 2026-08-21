@@ -176,6 +176,7 @@ private:
     String^ errorMessage_;
     String^ errorFile_;
     String^ stopFile_;
+    String^ stopFunction_;   // what it stopped in, for writing the tab again
     int stopLine_;
     // The row wearing the stopped-here bar, so it can be taken off again. -1
     // when no line has one.
@@ -3178,37 +3179,8 @@ private:
             ShowStoppedLine(stopLine_ - 1);
         }
 
-        System::Text::StringBuilder^ said = gcnew System::Text::StringBuilder();
-        said->AppendFormat("stopped at {0}:{1}",
-                           System::IO::Path::GetFileName(stopFile_), stopLine_);
-        if (!String::IsNullOrEmpty(function)) said->AppendFormat(" in {0}", function);
-        said->Append("\r\n\r\n");
-
-        int howMany = ed1_locals_count(debugger_);
-        if (howMany == 0) {
-            said->Append("  (nothing in scope here)\r\n");
-        } else {
-            for (int i = 0; i < howMany; ++i) {
-                String^ type = FromUtf8(ed1_local_type(debugger_, i));
-                said->AppendFormat("  {0} = {1}", FromUtf8(ed1_local_name(debugger_, i)),
-                                   FromUtf8(ed1_local_value(debugger_, i)));
-                if (!String::IsNullOrEmpty(type)) said->AppendFormat("   [{0}]", type);
-                said->Append("\r\n");
-            }
-        }
-        // Who is waiting for it. The first frame is where it is standing and
-        // the line at the top already says that, so what is worth showing is
-        // what is above it - and a program in main has nothing above it.
-        int deep = ed1_stack_count(debugger_);
-        if (deep > 1) {
-            said->Append("\r\ncalled from\r\n");
-            for (int i = 1; i < deep; ++i)
-                said->AppendFormat("{0}\r\n", FromUtf8(ed1_stack_text(debugger_, i)));
-        }
-
-        said->Append("\r\nF8 carries on   F7 steps over   F6 steps into   F9 sets a breakpoint");
-        if (deep > 1) said->Append("\r\nDouble-click a frame, or press enter on it, to go there");
-        debug_->Text = said->ToString();
+        stopFunction_ = function;
+        WriteDebugTab();
 
         Current()->gutter->Invalidate();
         what_->Text = String::Format("{0}:{1}{2}", System::IO::Path::GetFileName(stopFile_),
@@ -3255,6 +3227,59 @@ private:
 
     void OnConsoleDoubleClick(Object^, EventArgs^) { GoToError(); }
 
+    // The Debug tab, written from what is known about the stop rather than from
+    // the stop itself - so that it can be written again when the frame being
+    // looked at changes, without the program having moved.
+    void WriteDebugTab() {
+        System::Text::StringBuilder^ said = gcnew System::Text::StringBuilder();
+        said->AppendFormat("{0}\r\n\r\n", StopLine());
+
+        // Whose variables these are, when they are not the ones the program
+        // stopped among. Without it the line above stands over another
+        // function's locals and the two contradict each other.
+        String^ looking = FromUtf8(ed1_looking_text(debugger_));
+        if (looking->Length > 0) said->AppendFormat("{0}\r\n\r\n", looking);
+
+        int howMany = ed1_locals_count(debugger_);
+        if (howMany == 0) {
+            said->Append("  (nothing in scope here)\r\n");
+        } else {
+            for (int i = 0; i < howMany; ++i) {
+                String^ type = FromUtf8(ed1_local_type(debugger_, i));
+                said->AppendFormat("  {0} = {1}", FromUtf8(ed1_local_name(debugger_, i)),
+                                   FromUtf8(ed1_local_value(debugger_, i)));
+                if (!String::IsNullOrEmpty(type)) said->AppendFormat("   [{0}]", type);
+                said->Append("\r\n");
+            }
+        }
+        // Who is waiting for it. The first frame is where it is standing and
+        // the line at the top already says that, so what is worth showing is
+        // what is above it - and a program in main has nothing above it.
+        int deep = ed1_stack_count(debugger_);
+        if (deep > 1) {
+            said->Append("\r\ncalled from\r\n");
+            for (int i = 1; i < deep; ++i)
+                said->AppendFormat("{0}\r\n", FromUtf8(ed1_stack_text(debugger_, i)));
+        }
+
+        said->Append("\r\nF8 carries on   F7 steps over   F6 steps into   F9 sets a breakpoint");
+        if (deep > 1) {
+            said->Append("\r\nDouble-click a frame, or press enter on it, to look at it");
+            said->Append("\r\nThe top line goes back to where the program stopped");
+        }
+        debug_->Text = said->ToString();
+    }
+
+    // The tab's first line, which names the frame the program stopped in. From
+    // the core, because pressing enter on it is how the tab goes back to that
+    // frame and the line acted on has to be the line the core wrote.
+    String^ StopLine() {
+        pin_ptr<Byte> file = &Utf8Of(stopFile_)[0];
+        pin_ptr<Byte> function = &Utf8Of(stopFunction_)[0];
+        return FromUtf8(ed1_stop_line_text(reinterpret_cast<const char*>(file), stopLine_,
+                                           reinterpret_cast<const char*>(function)));
+    }
+
     void OnDebugKey(Object^, KeyEventArgs^ e) {
         if (e->KeyCode != Keys::Enter) return;
         e->SuppressKeyPress = true;   // a read-only box would beep at it
@@ -3276,21 +3301,40 @@ private:
         int row = debug_->GetLineFromCharIndex(debug_->SelectionStart);
         if (row < 0 || row >= debug_->Lines->Length) return;
 
-        pin_ptr<Byte> line = &Utf8Of(debug_->Lines[row])[0];
+        String^ row_text = debug_->Lines[row];
+        pin_ptr<Byte> line = &Utf8Of(row_text)[0];
         int which = ed1_stack_on_line(debugger_, reinterpret_cast<const char*>(line));
+
+        // The top line names the frame the program stopped in, which is the
+        // way back from a caller: enter or a double-click on it is enter on
+        // frame 0.
+        if (which < 0 && ed1_stack_count(debugger_) > 0 && row_text == StopLine()) which = 0;
+
         if (which < 0) {
             what_->Text = "that line is not a frame - a frame is one under \"called from\"";
             return;
         }
+
+        if (ed1_debugger_look_at(debugger_, which) == 0) {
+            what_->Text = "the debugger would not go to that frame";
+            return;
+        }
+        // The variables are what was asked for, so the tab comes back to the
+        // top where they are - and where the line that goes back is.
+        WriteDebugTab();
+        debug_->SelectionStart = 0;
+        debug_->SelectionLength = 0;
 
         String^ file = FromUtf8(ed1_stack_file(debugger_, which));
         int at = ed1_stack_line(debugger_, which);
         if (file->Length > 0 && !SamePath(path_, file) && System::IO::File::Exists(file))
             OpenPath(file);
         GoTo(at, 1);
-        what_->Text = String::Format("{0}:{1} in {2} - where the call came from",
+        what_->Text = String::Format("{0}:{1} in {2} - {3}",
                                      System::IO::Path::GetFileName(file), at,
-                                     FromUtf8(ed1_stack_function(debugger_, which)));
+                                     FromUtf8(ed1_stack_function(debugger_, which)),
+                                     which == 0 ? "back where it stopped"
+                                                : "where the call came from");
     }
 
     void GoTo(int line, int column) {

@@ -159,6 +159,15 @@ private:
     System::Collections::Generic::Dictionary<String^,
         System::Collections::Generic::List<int>^>^ breaks_;
     System::Collections::Generic::Dictionary<String^, String^>^ breakNames_;
+    // The last error a build reported, kept so it can be gone back to. The
+    // window already jumps there when the build fails; this is for afterwards,
+    // once you have moved away - which is what Enter on the console does in the
+    // terminal. errorFile_ is null when the error is in the file that was
+    // built, and named when a project build found it somewhere else.
+    int errorLine_;
+    int errorColumn_;
+    String^ errorMessage_;
+    String^ errorFile_;
     String^ stopFile_;
     int stopLine_;          // 0 when the program is not standing still
 
@@ -275,6 +284,7 @@ private:
         stopFile_ = nullptr;
         stopLine_ = 0;
         numbers_ = true;
+        ForgetError();
         indentWidth_ = 4;
         indentTabs_ = 0;
         indentCase_ = 0;
@@ -585,6 +595,11 @@ private:
         panel_->Dock = DockStyle::Fill;
 
         console_ = ReadOnlyBox();
+        // Enter on the compiler's words goes to what they are about, as Enter
+        // on the terminal's console does. Double-click for the same, since a
+        // console is a thing people click at.
+        console_->KeyDown += gcnew KeyEventHandler(this, &MainForm::OnConsoleKey);
+        console_->DoubleClick += gcnew EventHandler(this, &MainForm::OnConsoleDoubleClick);
         debug_ = ReadOnlyBox();
         assembly_ = gcnew RichTextBox();
         assembly_->Dock = DockStyle::Fill;
@@ -2203,6 +2218,7 @@ private:
         // the text box - a menu shortcut on Tab would take it away from typing.
         table->Append("Editing\r\n");
         table->Append("  Tab               lay this line out, in the leading space\r\n");
+        table->Append("  Enter             on the Console, go to the error it is about\r\n");
 
         Form^ box = gcnew Form();
         box->Text = "Keys";
@@ -2247,6 +2263,7 @@ private:
 
     void OnCompile(Object^, EventArgs^) {
         if (busy_) { what_->Text = "still working - give it a moment"; return; }
+        ForgetError();
         if (path_ == nullptr) {
             what_->Text = "open a file first";
             return;
@@ -2293,6 +2310,7 @@ private:
             String^ message = FromUtf8(ed1_build_error_message(built));
             ed1_build_free(built);
 
+            RememberError(line, column, message, nullptr);
             GoTo(line, column);
             panel_->SelectedIndex = 0;   // the compiler's words are on the Console
             what_->Text = String::Format("{0}:{1}: error: {2}", line, column, message);
@@ -2321,6 +2339,7 @@ private:
     // as the terminal front end, from the same core.
     void OnRun(Object^, EventArgs^) {
         if (busy_) { what_->Text = "still working - give it a moment"; return; }
+        ForgetError();
         if (path_ == nullptr) {
             what_->Text = "open a file first";
             return;
@@ -2372,6 +2391,7 @@ private:
             String^ message = FromUtf8(ed1_ran_error_message(ran));
             ed1_run_free(ran);
 
+            RememberError(line, column, message, nullptr);
             GoTo(line, column);
             panel_->SelectedIndex = 0;   // the compiler's words are on the Console
             what_->Text = String::Format("{0}:{1}: error: {2}", line, column, message);
@@ -2402,6 +2422,7 @@ private:
     // the same thing here as F4 says in the terminal.
     void BuildProject(bool andRun) {
         if (busy_) { what_->Text = "still working - give it a moment"; return; }
+        ForgetError();
 
         if (ed1_project_target_ready(project_) == 0) {
             String^ why = FromUtf8(ed1_project_target_why(project_));
@@ -2476,6 +2497,7 @@ private:
                 if (System::IO::File::Exists(where)) OpenPath(where);
             }
 
+            RememberError(line, column, message, where);
             GoTo(line, column);
             panel_->SelectedIndex = 0;
             what_->Text = String::Format("{0}:{1}:{2}: error: {3}",
@@ -2684,6 +2706,7 @@ private:
         }
 
         if (path_ == nullptr) { what_->Text = "open a file first"; return; }
+        ForgetError();   // this build is about to say its own
         OnSave(nullptr, nullptr);
 
         int language = LanguageNow();
@@ -2736,6 +2759,7 @@ private:
                 int line = ed1_program_error_line(built_);
                 int column = ed1_program_error_column(built_);
                 String^ message = FromUtf8(ed1_program_error_message(built_));
+                RememberError(line, column, message, nullptr);
                 GoTo(line, column);
                 panel_->SelectedIndex = 0;   // the compiler's words are on the Console
                 what_->Text = String::Format("{0}:{1}: error: {2}", line, column, message);
@@ -2856,6 +2880,40 @@ private:
     // silently undid the fourth, which goes to the line a program stopped on
     // and had just brought the Debug tab forward. Choosing the panel is the
     // caller's business; each of the three says so for itself now.
+    void RememberError(int line, int column, String^ message, String^ file) {
+        errorLine_ = line;
+        errorColumn_ = column;
+        errorMessage_ = message;
+        errorFile_ = file;
+    }
+
+    // Forgotten when a build starts, so that Enter on the console never takes
+    // you to something an earlier build said and this one did not.
+    void ForgetError() {
+        errorLine_ = 0;
+        errorColumn_ = 0;
+        errorMessage_ = nullptr;
+        errorFile_ = nullptr;
+    }
+
+    void GoToError() {
+        if (errorMessage_ == nullptr) { what_->Text = "no error to go to"; return; }
+        if (errorFile_ != nullptr && !SamePath(path_, errorFile_) &&
+            System::IO::File::Exists(errorFile_))
+            OpenPath(errorFile_);
+        GoTo(errorLine_, errorColumn_);
+        what_->Text = String::Format("{0}:{1}: error: {2}", errorLine_, errorColumn_,
+                                     errorMessage_);
+    }
+
+    void OnConsoleKey(Object^, KeyEventArgs^ e) {
+        if (e->KeyCode != Keys::Enter) return;
+        e->SuppressKeyPress = true;   // a read-only box would beep at it
+        GoToError();
+    }
+
+    void OnConsoleDoubleClick(Object^, EventArgs^) { GoToError(); }
+
     void GoTo(int line, int column) {
         int row = line - 1;
         if (row < 0) row = 0;
@@ -2871,8 +2929,17 @@ private:
 
     // A read-only box selects all of itself when it is given the keyboard,
     // which looks like a mistake rather than a highlight.
+    // Shown *and* given the keyboard, as Ctrl+0 does for the project pane -
+    // otherwise the panel is reachable by mouse alone, and Enter on the console
+    // is a key nobody can press. Ctrl+4 is the way back to the file, as before.
     void ShowPanel(int which) {
         panel_->SelectedIndex = which;
+        if (which == 0) console_->Focus();
+        else if (which == 1) debug_->Focus();
+        else assembly_->Focus();
+        // After the focus, not before it: taking the keyboard is what makes a
+        // read-only box select all of itself, so clearing the selection first
+        // clears nothing. The note above this said so and I did it anyway.
         console_->SelectionLength = 0;
         debug_->SelectionLength = 0;
         assembly_->SelectionLength = 0;

@@ -523,6 +523,14 @@ between, which is what the terminal's own menu does with `Ctrl-D`. A key bound
 twice would go to whichever menu was built first and leave the other advertising
 a key that does nothing; that is what once happened to `F7` and Step over.
 
+**Enter on the Console goes to the error it is about**, as it does in the
+terminal — and double-click does the same, since a console is a thing people
+click at. The window already jumps there when a build fails; this is for
+afterwards, once you have moved away. It is forgotten when the next build
+starts, so it never takes you to something an earlier build said. `Ctrl+1`,
+`Ctrl+2` and `Ctrl+3` now give the panel the keyboard as well as showing it —
+without that, Enter on the console would be a key nobody could press.
+
 **The status bar says what the next build will use** — the language, debug or
 release, the compiler that will actually run with a `*` when the file chose it
 rather than the menu, and the target when it means anything. `C  debug  cc1*

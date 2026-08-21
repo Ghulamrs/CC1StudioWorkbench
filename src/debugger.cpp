@@ -831,6 +831,103 @@ size_t dbg_variableOnLine(const std::vector<Variable>& locals, const std::string
     return locals.size();
 }
 
+namespace {
+
+// What a debugger says when it will not do what it was asked, and nothing when
+// it did. The words rather than the first line it printed: lldb puts a caret
+// under the offending word and the words themselves on the line after it, so a
+// reader that took the first line came back with "^".
+//
+// Its own complaint is what the caller shows, because it names the mistake -
+// "use of undeclared identifier 'nosuch'" - better than anything invented
+// here. lldb's "error: " in front of it comes off, so that all three read
+// alike; gdb and cdb print no such prefix.
+std::string complaintIn(const std::string& answer) {
+    const char* const words[] = {
+        "error",               // lldb
+        "No symbol",           // gdb, and cdb when the name is not there
+        "not an lvalue",
+        "Couldn't",
+        "cannot be",
+        "Syntax error",        // cdb
+        "Type conflict",
+        "Bad register error"
+    };
+
+    std::vector<std::string> all = lines(answer);
+    for (size_t i = 0; i < all.size(); ++i) {
+        std::string line = trimmed(withoutPrompt(all[i]));
+        for (size_t w = 0; w < sizeof words / sizeof words[0]; ++w) {
+            if (line.find(words[w]) == std::string::npos) continue;
+            // lldb writes the caret and the words on one line when an
+            // expression has more than one thing wrong with it -
+            // "|       error: use of undeclared identifier 'i'" - so the
+            // message starts wherever "error: " does, not only at the front.
+            size_t at = line.find("error: ");
+            if (at != std::string::npos) line = line.substr(at + 7);
+            return line;
+        }
+    }
+    return std::string();
+}
+
+}  // namespace
+
+std::string dbg_watchLine(const Watch& watch) {
+    return "  " + watch.expression + " = " + (watch.ok ? watch.value : "[" + watch.value + "]");
+}
+
+size_t dbg_watchOnLine(const std::vector<Watch>& watches, const std::string& line) {
+    const std::string bare = trimmed(line);
+    for (size_t i = 0; i < watches.size(); ++i)
+        if (trimmed(dbg_watchLine(watches[i])) == bare) return i;
+    return watches.size();
+}
+
+std::string dbg_readValue(DebuggerKind kind, const std::string& said) {
+    std::vector<std::string> all = lines(said);
+
+    for (size_t i = 0; i < all.size(); ++i) {
+        const std::string line = trimmed(withoutPrompt(all[i]));
+        if (line.empty() || line == kMarker) continue;
+
+        if (kind == DebuggerCdb) {
+            // "int 0n12", and "char * 0x00007ff6`44e8b000" - the type is what
+            // comes before the last space, whatever it is made of, and the
+            // value is what comes after it. A line with no space in it is not
+            // an answer of this shape.
+            //
+            // The question is not the answer: "?? total" is what a console
+            // echoes back before cdb says anything, and its last word is the
+            // expression. Nothing cdb answers with begins with a question
+            // mark, so that is what tells them apart.
+            if (line[0] == '?') continue;
+
+            size_t space = line.find_last_of(' ');
+            if (space == std::string::npos || space + 1 >= line.size()) continue;
+            std::string value = line.substr(space + 1);
+            if (value.compare(0, 2, "0n") == 0) value = value.substr(2);
+
+            // And an answer has a number in it somewhere - a decimal, a hex
+            // address, a character code. A line of words is prose.
+            if (value.find_first_of("0123456789") == std::string::npos) continue;
+            return value;
+        }
+
+        // lldb answers "(int) $0 = 12" and gdb "$1 = 12". The $ is what tells
+        // the answer from the echo of the command that asked for it, which
+        // lldb prints first when its input is a pipe - and which would
+        // otherwise be read as the answer whenever the expression had an = in
+        // it.
+        size_t dollar = line.find('$');
+        if (dollar == std::string::npos) continue;
+        size_t equals = line.find(" = ", dollar);
+        if (equals == std::string::npos) continue;
+        return trimmed(line.substr(equals + 3));
+    }
+    return std::string();
+}
+
 std::string dbg_stopLine(const std::string& file, size_t line,
                          const std::string& function) {
     return "stopped at " + path::filename(file) + ":" + std::to_string(line) +
@@ -983,6 +1080,11 @@ Stop Debugger::afterMoving(const std::string& command) {
     } else if (stop.exited) {
         last_ = Stop();
     }
+
+    // And the watches, wherever it has got to. Here rather than in the front
+    // ends, because every way of moving arrives here and a watch that only
+    // some of them refreshed would be worse than no watch at all.
+    readWatches();
     return stop;
 }
 
@@ -1018,6 +1120,73 @@ std::vector<Variable> Debugger::locals() {
     return found;
 }
 
+std::string Debugger::evaluate(const std::string& expression, bool* ok) {
+    if (ok) *ok = false;
+    if (!running() || expression.empty()) return std::string();
+
+    // cdb's ?? is the C++ evaluator it was given for setting a variable; gdb's
+    // print and lldb's expression are the same two commands as there. All
+    // three answer from the frame they are currently in, which is what makes a
+    // watch mean what it should after Ctrl-Up.
+    std::string answer;
+    if (kind_ == DebuggerCdb) {
+        answer = ask("?? " + expression);
+    } else if (kind_ == DebuggerGdb) {
+        answer = ask("print " + expression);
+    } else {
+        answer = ask("expression " + expression);
+    }
+
+    const std::string value = dbg_readValue(kind_, answer);
+    if (!value.empty()) {
+        if (ok) *ok = true;
+        return value;
+    }
+
+    // No value in it, so it would not answer, and its own words are the answer
+    // instead - the same bargain setVariable makes.
+    const std::string why = complaintIn(answer);
+    return why.empty() ? "no answer" : why;
+}
+
+void Debugger::addWatch(const std::string& expression) {
+    if (expression.empty()) return;
+    Watch watch;
+    watch.expression = expression;
+    watches_.push_back(watch);
+    if (running()) watches_[watches_.size() - 1].value =
+        evaluate(expression, &watches_[watches_.size() - 1].ok);
+}
+
+void Debugger::setWatch(size_t which, const std::string& expression) {
+    if (which >= watches_.size()) return;
+    if (expression.empty()) { removeWatch(which); return; }
+    watches_[which].expression = expression;
+    watches_[which].value.clear();
+    watches_[which].ok = false;
+    if (running()) watches_[which].value = evaluate(expression, &watches_[which].ok);
+}
+
+void Debugger::removeWatch(size_t which) {
+    if (which >= watches_.size()) return;
+    watches_.erase(watches_.begin() + static_cast<long>(which));
+}
+
+// Read again, all of them, wherever the program has got to. This is what the
+// list is for, and it is called from the moves themselves rather than by the
+// front ends: a watch that only some of the ways of moving refreshed would be
+// worse than no watch at all.
+void Debugger::readWatches() {
+    for (size_t i = 0; i < watches_.size(); ++i) {
+        if (!running()) {
+            watches_[i].value = "not running";
+            watches_[i].ok = false;
+            continue;
+        }
+        watches_[i].value = evaluate(watches_[i].expression, &watches_[i].ok);
+    }
+}
+
 bool Debugger::setVariable(const std::string& name, const std::string& value,
                            std::string* said) {
     if (said) said->clear();
@@ -1035,32 +1204,19 @@ bool Debugger::setVariable(const std::string& name, const std::string& value,
     } else {
         answer = ask("expression " + name + " = " + value);
     }
-    // Refused, in each of their words. What they have in common is that none of
+    // Refused, in its own words. What the three have in common is that none of
     // them says anything at all when it worked - gdb and cdb print nothing and
     // lldb prints the value it now holds - so what is looked for is the
     // complaint rather than the success.
-    //
-    // The line it is on is what comes back, not the whole transcript: that
-    // line is the message, and a message line has room for one line.
-    const char* const complaints[] = {
-        "error:",              // lldb
-        "No symbol",           // gdb, and cdb when the name is not there
-        "not an lvalue",
-        "Couldn't",
-        "cannot be",
-        "Syntax error",        // cdb
-        "Type conflict",
-        "Bad register error"
-    };
-    std::vector<std::string> all = lines(answer);
-    for (size_t i = 0; i < all.size(); ++i) {
-        const std::string line = trimmed(withoutPrompt(all[i]));
-        for (size_t c = 0; c < sizeof complaints / sizeof complaints[0]; ++c) {
-            if (line.find(complaints[c]) == std::string::npos) continue;
-            if (said) *said = line;
-            return false;
-        }
+    const std::string why = complaintIn(answer);
+    if (!why.empty()) {
+        if (said) *said = why;
+        return false;
     }
+
+    // A write is a move as far as a watch is concerned: "total + i" is a
+    // different number afterwards, and nobody should have to step to see it.
+    readWatches();
     return true;
 }
 
@@ -1085,6 +1241,11 @@ bool Debugger::selectFrame(size_t which) {
     if (said.find("error:") != std::string::npos) return false;
     if (said.find("No frame at level") != std::string::npos) return false;
     if (said.find("Invalid frame") != std::string::npos) return false;
+
+    // An expression means what the frame it is asked in says it means, so a
+    // watch on `total` answers main's total after this and not the one that is
+    // out of scope where the program stopped.
+    readWatches();
     return true;
 }
 

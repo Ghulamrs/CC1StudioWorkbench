@@ -143,6 +143,35 @@ The way back is also the top line: it names the frame the program stopped in,
 and pressing enter on it goes there. Any step goes back too - every stop starts
 at the frame it stopped in.
 
+**An expression can be watched, and follows the stepping.** Debug ▸ Watch
+expression asks for one, and it is answered again at every stop and after every
+change of frame, without being asked for a second time:
+
+```
+stopped at stepped.c:11 in main
+
+  total = 2   [int]
+  i = 2   [int]
+
+watching
+  total + i = 4
+  twice(4) = 8
+  nosuch = [use of undeclared identifier 'nosuch']
+```
+
+`expression` to lldb, `print` to gdb, `??` to cdb, and the answer read out of
+`(int) $0 = 4`, `$1 = 4` and `int 0n4` - the `$` is what tells lldb's answer
+from its echo of the command that asked for it. One it cannot answer keeps its
+place with the reason in brackets, so the block never has an expression with
+nothing after it; step into a function where the name is out of scope and that
+is what it says.
+
+The list belongs to the core beside the debugger rather than to either front
+end, and reading it again is done by the moves themselves - a watch that only
+some of the ways of moving refreshed would be worse than no watch at all. They
+outlive a debugging session, as a breakpoint does. Enter on one changes it, and
+an empty answer drops it.
+
 **And a variable can be written back.** Enter on one in the Debug tab, or a
 double-click in the window, asks for a value in the box that asks for
 filenames, and it goes into whichever frame is being looked at - so a caller's

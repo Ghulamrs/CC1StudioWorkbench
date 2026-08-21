@@ -1782,11 +1782,46 @@ void Editor::goToFrame() {
         size_t variable = dbg_variableOnLine(locals_, lines[panelOff_]);
         if (variable < locals_.size()) { editVariable(variable); return; }
 
-        say("that line is neither a frame nor a variable");
+        size_t watch = dbg_watchOnLine(debugger_.watches(), lines[panelOff_]);
+        if (watch < debugger_.watches().size()) { editWatch(watch); return; }
+
+        say("that line is neither a frame nor a variable nor a watch");
         return;
     }
 
     lookAt(which);
+}
+
+// An expression to keep asking about, read again wherever the program gets to
+// next. Asked for in the same box as everything else, and answered straight
+// away when there is something to answer it against.
+void Editor::watchExpression() {
+    bool cancelled = false;
+    std::string what = prompt("watch: ", cancelled);
+    if (cancelled || what.empty()) { say("nothing to watch"); return; }
+
+    debugger_.addWatch(what);
+    panelOpen_ = true;
+    tab_ = TabDebug;
+    if (stopLine_ > 0) writeDebugTab();
+    say(debugger_.running() ? "watching " + what
+                            : "watching " + what + " - it is read when the program stops");
+}
+
+// Changing one, or taking it away: the box comes up with nothing in it, and an
+// empty answer is how a watch is removed. There is no other list here that
+// needs a key for taking something out of it, so it does not get one.
+void Editor::editWatch(size_t which) {
+    if (which >= debugger_.watches().size()) return;
+    const std::string was = debugger_.watches()[which].expression;
+
+    bool cancelled = false;
+    std::string what = prompt("watch " + was + ", or empty to drop it: ", cancelled);
+    if (cancelled) { say(was + " is still watched"); return; }
+
+    debugger_.setWatch(which, what);
+    writeDebugTab();
+    say(what.empty() ? "stopped watching " + was : "watching " + what);
 }
 
 // Writing a variable back, into whichever frame is being looked at. The value
@@ -2338,6 +2373,17 @@ void Editor::writeDebugTab() {
             debug_.push_back(dbg_variableLine(locals_[i]));
     }
 
+    // The expressions being watched, which are the editor's own question
+    // rather than the debugger's list of what is in scope - so they are their
+    // own block, under the variables.
+    const std::vector<Watch>& watching = debugger_.watches();
+    if (!watching.empty()) {
+        debug_.push_back("");
+        debug_.push_back("watching");
+        for (size_t i = 0; i < watching.size(); ++i)
+            debug_.push_back(dbg_watchLine(watching[i]));
+    }
+
     // Who is waiting for it. The first frame is where it is standing, which
     // the line at the top already says, so what is worth showing is what is
     // above that - and a program standing in main has nothing above it.
@@ -2355,6 +2401,8 @@ void Editor::writeDebugTab() {
     // there is one: a program standing in main has one frame and variables
     // like any other.
     debug_.push_back("Ctrl-W puts the cursor in the panel; Enter on a variable sets it");
+    if (!watching.empty())
+        debug_.push_back("Enter on a watch changes it, and an empty answer takes it away");
     if (stack_.size() > 1) {
         debug_.push_back("Ctrl-Up looks at what called this   Ctrl-Down comes back down");
         debug_.push_back("Enter on a frame looks at it, and on the top line goes back");
@@ -2593,6 +2641,7 @@ void Editor::perform(Action action) {
         case ActionStepOut:      debugStep(action); break;
         case ActionFrameUp:      lookAlongStack(1); break;
         case ActionFrameDown:    lookAlongStack(-1); break;
+        case ActionWatch:        watchExpression(); break;
         case ActionDebugStop:
             if (debugger_.running()) { debugStop(); say("debugging stopped"); }
             else say("nothing is running");

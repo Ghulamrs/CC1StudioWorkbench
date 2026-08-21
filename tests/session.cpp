@@ -1340,6 +1340,24 @@ void stoppingAndStepping(const std::string& ed1, const std::string& cc1) {
     check(!onScreen(refused, "= nosuch"), "a value it will not take is not written into the tab");
     check(onScreen(refused, "total = 0"), "and the variable is left as it was");
 
+    // A watch, added from the Debug menu and then left alone: what makes it a
+    // watch is that it is read again at the next stop without being asked for.
+    // Nine items down that menu - Start, Debug project, breakpoint, over,
+    // into, out, up, down, and then Watch expression.
+    const std::string toWatch = kF10 + times(kRight, 4) + times(kDown, 8) + kEnter;
+    Screen watching = drive(ed1, withCc1,
+                            toLoopBody + kF9 + kF8 + toWatch + "total + i" + kEnter + ctrl('q'),
+                            dir);
+    check(onScreen(watching, "watching"), "the tab has a block for what is being watched");
+    check(onScreen(watching, "total + i = 1"), "with the expression answered where it stopped");
+
+    Screen followed = drive(ed1, withCc1,
+                            toLoopBody + kF9 + kF8 + toWatch + "total + i" + kEnter + kF8 +
+                                ctrl('q'),
+                            dir);
+    check(onScreen(followed, "total + i = 4"),
+          "and it follows the stepping - 2 plus 2 the next time round");
+
     // A line that is neither says so rather than doing something. Six down
     // from the top of that tab is the "called from" heading, which names a
     // frame without being one - the likeliest line to press enter on by

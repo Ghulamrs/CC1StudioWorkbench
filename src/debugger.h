@@ -84,6 +84,19 @@ struct StackFrame {
     StackFrame() : line(0) {}
 };
 
+// An expression the editor keeps asking about. The list belongs to the
+// debugger rather than to either front end, because the rule that matters is
+// "read them all again whenever the program has moved" - and a rule written
+// out in one front end and not the other is how they came to disagree about a
+// stop with no source.
+struct Watch {
+    std::string expression;
+    std::string value;
+    bool ok;          // false when the debugger would not answer, and `value` is why
+
+    Watch() : ok(false) {}
+};
+
 class Debugger {
 public:
     Debugger();
@@ -138,6 +151,23 @@ public:
     bool setVariable(const std::string& name, const std::string& value,
                      std::string* said = 0);
 
+    // What an expression comes to, in the frame being looked at. False into
+    // `ok` when the debugger would not answer, and the answer is then its own
+    // complaint - the same bargain setVariable makes.
+    std::string evaluate(const std::string& expression, bool* ok = 0);
+
+    // Expressions to keep asking about. They are read again after every move
+    // and after every change of frame, which is the whole point of them: a
+    // watch that had to be asked for again by hand would be `evaluate`.
+    //
+    // They outlive a debugging session, as a breakpoint does - starting the
+    // program again finds them still here.
+    void addWatch(const std::string& expression);
+    void setWatch(size_t which, const std::string& expression);
+    void removeWatch(size_t which);
+    const std::vector<Watch>& watches() const { return watches_; }
+    void readWatches();
+
     // Anything else, for the console: what was typed, answered as it came.
     std::string ask(const std::string& command);
 
@@ -155,6 +185,8 @@ private:
     // Where it was standing before this move, so that a debugger which reports
     // only what changed can be asked where it is.
     Stop last_;
+
+    std::vector<Watch> watches_;
 };
 
 // Reading what each of them says. Free functions, and tested as such: a stop
@@ -259,6 +291,23 @@ size_t dbg_frameOnLine(const std::vector<StackFrame>& stack, const std::string& 
 // dbg_variableOnLine answers locals.size() when the line is not a variable.
 std::string dbg_variableLine(const Variable& variable);
 size_t dbg_variableOnLine(const std::vector<Variable>& locals, const std::string& line);
+
+// And the same pair for a watch: "  total + i = 1" in the tab, and which watch
+// a line of it is about. A watch that could not be answered shows what the
+// debugger said instead of a value, in brackets, so that the tab never has an
+// expression with nothing after it.
+std::string dbg_watchLine(const Watch& watch);
+size_t dbg_watchOnLine(const std::vector<Watch>& watches, const std::string& line);
+
+// The value out of an answer, in each of their spellings:
+//
+//   lldb:  (int) $0 = 12
+//   gdb:   $1 = 12
+//   cdb:   int 0n12
+//
+// Empty when there is no value in it, which is a debugger that complained -
+// and the complaint is what the caller shows instead.
+std::string dbg_readValue(DebuggerKind kind, const std::string& said);
 
 std::string dbg_lookingAt(const StackFrame& frame);
 

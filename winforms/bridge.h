@@ -375,6 +375,20 @@ int ed1_locals_on_line(Ed1Debugger* debugger, const char* line);
 int ed1_set_variable(Ed1Debugger* debugger, const char* name, const char* value);
 const char* ed1_set_complaint(Ed1Debugger* debugger);
 
+// Expressions the debugger keeps answering, read again after every move and
+// every change of frame - that being the whole of what a watch is. The list
+// lives in the core beside the debugger rather than in either front end, so
+// that both refresh them at exactly the same moments.
+//
+// ed1_watch_set with an empty expression takes that watch away; there is no
+// list here that needs a key of its own for removing something.
+void ed1_watch_add(Ed1Debugger* debugger, const char* expression);
+int ed1_watch_count(Ed1Debugger* debugger);
+const char* ed1_watch_text(Ed1Debugger* debugger, int index);
+const char* ed1_watch_expression(Ed1Debugger* debugger, int index);
+int ed1_watch_on_line(Ed1Debugger* debugger, const char* line);
+void ed1_watch_set(Ed1Debugger* debugger, int index, const char* expression);
+
 // And how it got there: the frame it is standing in first, and what called it
 // after that. One frame is a program standing in main, which the Debug tab
 // says nothing about - see dbg_readFrames for why the stack stops there.

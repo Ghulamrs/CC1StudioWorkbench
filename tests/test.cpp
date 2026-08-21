@@ -1605,6 +1605,45 @@ void whatACallStackLooksLike() {
     check(editor::dbg_variableOnLine(inScope, editor::dbg_frameLine(one)) == inScope.size(),
           "and neither is a frame, which the same tab is full of");
 
+    // The value out of an answer, in the three spellings. These are what they
+    // printed: lldb echoes the command over a pipe and puts its caret line
+    // above the words, which is why the reader looks for the $ and not for the
+    // first line with an = in it.
+    checkEqual(editor::dbg_readValue(editor::DebuggerLldb,
+                                     "(lldb) expression total + i\n(int) $0 = 1\n"),
+               "1", "lldb: the value is read past its own echo of the command");
+    checkEqual(editor::dbg_readValue(editor::DebuggerGdb, "(gdb) $1 = 12\n"),
+               "12", "gdb: and past its prompt");
+    checkEqual(editor::dbg_readValue(editor::DebuggerCdb, "0:000> ?? total\nint 0n12\n"),
+               "12", "cdb: with the 0n it puts in front of a decimal taken off");
+    check(editor::dbg_readValue(editor::DebuggerLldb,
+                                "(lldb) expression nosuch\n                  ^\n"
+                                "                  error: use of undeclared identifier\n")
+              .empty(),
+          "and a complaint holds no value at all");
+
+    // A watch that could not be answered shows what the debugger said, in
+    // brackets, so the tab never has an expression with nothing after it.
+    editor::Watch answered;
+    answered.expression = "total + i";
+    answered.value = "1";
+    answered.ok = true;
+    checkEqual(editor::dbg_watchLine(answered), "  total + i = 1", "a watch is written with its value");
+
+    editor::Watch refused;
+    refused.expression = "nosuch";
+    refused.value = "use of undeclared identifier 'nosuch'";
+    checkEqual(editor::dbg_watchLine(refused), "  nosuch = [use of undeclared identifier 'nosuch']",
+               "and one that could not be answered says why, in brackets");
+
+    std::vector<editor::Watch> watching;
+    watching.push_back(answered);
+    watching.push_back(refused);
+    check(editor::dbg_watchOnLine(watching, editor::dbg_watchLine(refused)) == 1,
+          "and either line is read back as the watch it was written for");
+    check(editor::dbg_watchOnLine(watching, "  total = 0   [int]") == watching.size(),
+          "while a variable is not read as a watch");
+
     // The tab's first line names frame 0, and is written here because pressing
     // enter on it is how either front end goes back to the stop.
     checkEqual(editor::dbg_stopLine("/home/me/work/stepped.c", 3, "twice"),
@@ -1748,6 +1787,30 @@ void debuggingForReal() {
 
     editor::Stop again = debugger.resume();
     check(again.stopped && again.line == 11, "a breakpoint in a loop is hit again");
+
+    // A watch, which is the same question asked again at every stop. What
+    // makes it a watch rather than an answer is that nobody asks for it twice:
+    // the value below changes because the program moved, and for no other
+    // reason.
+    //
+    // Standing on the second time round the loop here, where total is 2 and i
+    // is 2.
+    debugger.addWatch("total + i");
+    check(debugger.watches().size() == 1, "an expression can be watched");
+    check(debugger.watches()[0].ok && debugger.watches()[0].value == "4",
+          "and is answered where the program is standing - total 2 plus i 2");
+
+    editor::Stop roundAgain = debugger.resume();
+    check(roundAgain.stopped, "the program carries on to the next time round");
+    check(debugger.watches()[0].value == "9",
+          "and the watch has followed it without being asked - total 6 plus i 3");
+
+    debugger.addWatch("nosuch + 1");
+    check(!debugger.watches()[1].ok, "an expression it cannot answer is kept as a watch");
+    check(!debugger.watches()[1].value.empty(), "with what it said about it for a value");
+
+    debugger.removeWatch(1);
+    check(debugger.watches().size() == 1, "and a watch can be taken away again");
 
     debugger.clearBreakpoints();
     editor::Stop ended = debugger.resume();
@@ -2133,6 +2196,14 @@ void debuggingCppForReal() {
     editor::Stop out = debugger.stepOut();
     check(out.stopped && out.function == "main", "and stepping out comes back");
 
+    // A watch, which under cdb is ?? again - the same evaluator the writing
+    // below uses, and the one spelling only this machine can prove. Standing
+    // in main with the loop's first addition still to come, so total is 0.
+    debugger.addWatch("total + 1");
+    check(debugger.watches().size() == 1, "an expression can be watched");
+    check(debugger.watches()[0].ok, "and cdb answers it");
+    checkEqual(debugger.watches()[0].value, "1", "with what it comes to - total 0 plus 1");
+
     // Writing one back, which is cdb's ?? - its C++ expression evaluator -
     // rather than lldb's expression or gdb's set variable. Only this machine
     // can say whether that spelling is right, and what is checked is what the
@@ -2149,6 +2220,10 @@ void debuggingCppForReal() {
 
     check(!debugger.setVariable("nosuch", "1", &said), "a name that is not in scope is refused");
     check(!said.empty(), "with the debugger's own words for why");
+
+    // And the watch followed the write without being asked: a write is a move
+    // as far as an expression is concerned.
+    checkEqual(debugger.watches()[0].value, "101", "the watch followed what was written");
 
     debugger.clearBreakpoints();
     editor::Stop ended = debugger.resume();
@@ -2376,6 +2451,25 @@ void theSeamTheWindowUses() {
 
     check(ed1_set_variable(debugger, "total", "0") != 0, "and it is put back where it was");
     check(ed1_debugger_look_at(debugger, 0) != 0, "with the frame put back too");
+
+    // A watch through the seam, which is the window's only way to one. The
+    // list is the core's, so what is checked here is that the window can put
+    // one in it, read the line to write for it, and find it again from that
+    // line - the same three questions it asks about a frame.
+    ed1_watch_add(debugger, "n + 1");
+    check(ed1_watch_count(debugger) == 1, "the window can add a watch");
+    std::string watchLine = ed1_watch_text(debugger, 0);
+    check(watchLine.find("n + 1 = ") != std::string::npos,
+          "and is given the line to write for it, answered");
+    check(ed1_watch_on_line(debugger, watchLine.c_str()) == 0,
+          "which reads back as the watch it was written for");
+    check(ed1_watch_on_line(debugger, "  total = 0   [int]") == -1,
+          "while a variable is not read as one");
+    checkEqual(std::string(ed1_watch_expression(debugger, 0)), "n + 1",
+               "and the expression itself comes back for the box that changes it");
+
+    ed1_watch_set(debugger, 0, "");
+    check(ed1_watch_count(debugger) == 0, "an empty answer takes the watch away");
 
     // And the line the window writes at the top, which it compares a clicked
     // row against to know that the row means the frame it stopped in.

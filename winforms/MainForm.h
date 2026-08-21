@@ -509,6 +509,8 @@ private:
             "Down the stack", nullptr, gcnew EventHandler(this, &MainForm::OnFrameDown));
         downTheStack->ShortcutKeyDisplayString = "Ctrl+Down";
         debug->DropDownItems->Add(downTheStack);
+        debug->DropDownItems->Add("Watch expression...", nullptr,
+                                  gcnew EventHandler(this, &MainForm::OnWatch));
 
         debug->DropDownItems->Add("Stop debugging", nullptr,
                                   gcnew EventHandler(this, &MainForm::OnDebugStop));
@@ -3296,6 +3298,16 @@ private:
             for (int i = 0; i < howMany; ++i)
                 said->AppendFormat("{0}\r\n", FromUtf8(ed1_local_text(debugger_, i)));
         }
+        // The expressions being watched, which are the editor's own question
+        // rather than the debugger's list of what is in scope - so they are
+        // their own block, under the variables.
+        int watching = ed1_watch_count(debugger_);
+        if (watching > 0) {
+            said->Append("\r\nwatching\r\n");
+            for (int i = 0; i < watching; ++i)
+                said->AppendFormat("{0}\r\n", FromUtf8(ed1_watch_text(debugger_, i)));
+        }
+
         // Who is waiting for it. The first frame is where it is standing and
         // the line at the top already says that, so what is worth showing is
         // what is above it - and a program in main has nothing above it.
@@ -3312,6 +3324,8 @@ private:
         // not there is one: a program standing in main has one frame and
         // variables like any other.
         said->Append("\r\nDouble-click a variable, or press enter on it, to set it");
+        if (watching > 0)
+            said->Append("\r\nThe same on a watch changes it, and an empty answer drops it");
         if (deep > 1) {
             said->Append("\r\nCtrl+Up looks at what called this   Ctrl+Down comes back down");
             said->Append("\r\nThe same on a frame looks at it, and on the top line goes back");
@@ -3373,11 +3387,42 @@ private:
                                               reinterpret_cast<const char*>(line));
             if (variable >= 0) { EditVariable(variable); return; }
 
-            what_->Text = "that line is neither a frame nor a variable";
+            int watch = ed1_watch_on_line(debugger_, reinterpret_cast<const char*>(line));
+            if (watch >= 0) { EditWatch(watch); return; }
+
+            what_->Text = "that line is neither a frame nor a variable nor a watch";
             return;
         }
 
         LookAt(which);
+    }
+
+    // An expression to keep asking about, read again wherever the program gets
+    // to next. Asked for in the same box as everything else.
+    void OnWatch(Object^, EventArgs^) {
+        String^ what = Ask("watch expression", "");
+        if (what == nullptr || what->Length == 0) { what_->Text = "nothing to watch"; return; }
+
+        pin_ptr<Byte> wanted = &Utf8Of(what)[0];
+        ed1_watch_add(debugger_, reinterpret_cast<const char*>(wanted));
+        panel_->SelectedIndex = 1;   // the Debug tab, which is where it appears
+        if (stopLine_ > 0) WriteDebugTab();
+        what_->Text = ed1_debugger_running(debugger_) != 0
+                          ? "watching " + what
+                          : "watching " + what + " - it is read when the program stops";
+    }
+
+    // Changing one, or taking it away: the box comes up with the expression in
+    // it, and an empty answer is how a watch is dropped.
+    void EditWatch(int which) {
+        String^ was = FromUtf8(ed1_watch_expression(debugger_, which));
+        String^ what = Ask("watch, or empty to drop it", was);
+        if (what == nullptr) { what_->Text = was + " is still watched"; return; }
+
+        pin_ptr<Byte> wanted = &Utf8Of(what)[0];
+        ed1_watch_set(debugger_, which, reinterpret_cast<const char*>(wanted));
+        WriteDebugTab();
+        what_->Text = what->Length == 0 ? "stopped watching " + was : "watching " + what;
     }
 
     // Writing a variable back, into whichever frame is being looked at. Asked

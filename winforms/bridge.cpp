@@ -224,6 +224,7 @@ struct Ed1Debugger {
     size_t looking;          // which frame the variables belong to; 0 is the stop
     std::string frameLine;   // one frame as the Debug tab spells it
     std::string variableLine;
+    std::string watchLine;
     std::string lookingLine;
     std::string complaint;   // what it said about a value it would not take
     std::string answer;
@@ -837,6 +838,43 @@ int ed1_set_variable(Ed1Debugger* debugger, const char* name, const char* value)
 }
 
 const char* ed1_set_complaint(Ed1Debugger* debugger) { return debugger->complaint.c_str(); }
+
+void ed1_watch_add(Ed1Debugger* debugger, const char* expression) {
+    debugger->debugger.addWatch(expression ? expression : "");
+}
+
+int ed1_watch_count(Ed1Debugger* debugger) {
+    return static_cast<int>(debugger->debugger.watches().size());
+}
+
+namespace {
+bool watched(Ed1Debugger* debugger, int index) {
+    return index >= 0 && static_cast<size_t>(index) < debugger->debugger.watches().size();
+}
+}  // namespace
+
+const char* ed1_watch_text(Ed1Debugger* debugger, int index) {
+    debugger->watchLine = watched(debugger, index)
+                              ? editor::dbg_watchLine(debugger->debugger.watches()[index])
+                              : std::string();
+    return debugger->watchLine.c_str();
+}
+
+const char* ed1_watch_expression(Ed1Debugger* debugger, int index) {
+    return watched(debugger, index)
+               ? debugger->debugger.watches()[index].expression.c_str()
+               : "";
+}
+
+int ed1_watch_on_line(Ed1Debugger* debugger, const char* line) {
+    size_t which = editor::dbg_watchOnLine(debugger->debugger.watches(), line ? line : "");
+    return which < debugger->debugger.watches().size() ? static_cast<int>(which) : -1;
+}
+
+void ed1_watch_set(Ed1Debugger* debugger, int index, const char* expression) {
+    if (!watched(debugger, index)) return;
+    debugger->debugger.setWatch(static_cast<size_t>(index), expression ? expression : "");
+}
 
 int ed1_debugger_look_at(Ed1Debugger* debugger, int which) {
     if (!reaches(debugger, which)) return 0;

@@ -26,3 +26,6 @@ gui.png
 
 # Claude Code personal settings - never commit, holds local paths
 .claude/settings.local.json
+
+# Xcode's own build directory, when the project is built in place
+build/

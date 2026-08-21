@@ -118,7 +118,7 @@ def main():
                      "sourceTree = \"<group>\"; };\n"
                      % (ident("file", name), name, name))
     lines.append("\t\t%s /* ed1 */ = {isa = PBXFileReference; "
-                 "explicitFileType = \"compiled.mach-o-executable\"; "
+                 "explicitFileType = \"compiled.mach-o.executable\"; "
                  "includeInIndex = 0; path = ed1; sourceTree = BUILT_PRODUCTS_DIR; };\n"
                  % PRODUCT)
     lines.append("/* End PBXFileReference section */\n")

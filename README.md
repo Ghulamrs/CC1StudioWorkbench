@@ -516,6 +516,14 @@ the whole gutter with them, breakpoint dots and the stopped-at arrow included,
 which is what `Ctrl-L` does in the terminal too. The menu ticks say which of the
 three are showing; without them nobody would learn they can be turned off.
 
+The terminal's other keys are here too: `Ctrl+Q` leaves, `Ctrl+D` swaps debug
+and release, `Ctrl+K` goes round the compilers and `Ctrl+T` round the targets.
+Those last three belong to no single menu item — they move *between* items — so
+they are caught before the menus see them and shown on every item they move
+between, which is what the terminal's own menu does with `Ctrl-D`. A key bound
+twice would go to whichever menu was built first and leave the other advertising
+a key that does nothing; that is what once happened to `F7` and Step over.
+
 **Help ▸ Keys** — `F1`, the same key as the terminal's — lists what is bound,
 **read off the menu bar when you ask for it** rather than kept as a second list
 somewhere. Rebind something and the table says so the same afternoon; there is

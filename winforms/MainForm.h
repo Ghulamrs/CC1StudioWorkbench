@@ -57,6 +57,20 @@ protected:
     // and any Cancel stops it. File > Exit and the close button both arrive
     // here. Protected because what it overrides is: a managed override may not
     // be less accessible than the method it replaces.
+    // Ctrl+D, Ctrl+K and Ctrl+T do not belong to one menu item: they move
+    // between several, the way the terminal's do. A ToolStripMenuItem can own
+    // only one meaning, and a key bound to two items goes to whichever menu was
+    // built first while the other advertises a key that does nothing - which is
+    // exactly what happened to F7 and Step over. So these are caught here and
+    // shown on every item they move between with ShortcutKeyDisplayString.
+    // Protected because what it overrides is.
+    virtual bool ProcessCmdKey(System::Windows::Forms::Message% message, Keys keys) override {
+        if (keys == static_cast<Keys>(Keys::Control | Keys::D)) { NextConfig(); return true; }
+        if (keys == static_cast<Keys>(Keys::Control | Keys::K)) { NextTool(); return true; }
+        if (keys == static_cast<Keys>(Keys::Control | Keys::T)) { NextTarget(); return true; }
+        return Form::ProcessCmdKey(message, keys);
+    }
+
     virtual void OnFormClosing(System::Windows::Forms::FormClosingEventArgs^ e) override {
         for (int i = 0; i < sheets_->Count; ++i)
             if (!MayDiscard(sheets_[i])) {
@@ -342,7 +356,8 @@ private:
         file->DropDownItems->Add(
             Item("Previous file", Keys::Control | Keys::PageUp,
                  gcnew EventHandler(this, &MainForm::OnPreviousFile)));
-        file->DropDownItems->Add("Exit", nullptr, gcnew EventHandler(this, &MainForm::OnExit));
+        file->DropDownItems->Add(
+            Item("Exit", Keys::Control | Keys::Q, gcnew EventHandler(this, &MainForm::OnExit)));
         bar->Items->Add(file);
 
         ToolStripMenuItem^ edit = gcnew ToolStripMenuItem("&Edit");
@@ -415,9 +430,14 @@ private:
                                   gcnew EventHandler(this, &MainForm::OnRunProject));
         debugConfigItem_ = gcnew ToolStripMenuItem(
             "Debug build", nullptr, gcnew EventHandler(this, &MainForm::OnDebugConfig));
+        // Shown, not bound: Ctrl+D moves between these two and belongs to
+        // neither, so it is caught in ProcessCmdKey. Both say so, as both of
+        // the terminal's own say Ctrl-D.
+        debugConfigItem_->ShortcutKeyDisplayString = "Ctrl+D";
         build->DropDownItems->Add(debugConfigItem_);
         releaseConfigItem_ = gcnew ToolStripMenuItem(
             "Release build", nullptr, gcnew EventHandler(this, &MainForm::OnReleaseConfig));
+        releaseConfigItem_->ShortcutKeyDisplayString = "Ctrl+D";
         build->DropDownItems->Add(releaseConfigItem_);
         bar->Items->Add(build);
 
@@ -483,6 +503,7 @@ private:
         for (int i = 0; i < 3; ++i) {
             ToolStripMenuItem^ one = gcnew ToolStripMenuItem(
                 FromUtf8(ed1_arch(i)), nullptr, gcnew EventHandler(this, &MainForm::OnTarget));
+            one->ShortcutKeyDisplayString = "Ctrl+T";   // shown, not bound - see ProcessCmdKey
             targetItems_->Add(one);
             target->DropDownItems->Add(one);
         }
@@ -491,12 +512,15 @@ private:
         ToolStripMenuItem^ tools = gcnew ToolStripMenuItem("Too&ls");
         toolAutoItem_ = gcnew ToolStripMenuItem(
             "By language", nullptr, gcnew EventHandler(this, &MainForm::OnToolAuto));
+        toolAutoItem_->ShortcutKeyDisplayString = "Ctrl+K";   // shown, not bound
         tools->DropDownItems->Add(toolAutoItem_);
         toolCc1Item_ = gcnew ToolStripMenuItem(
             "cc1", nullptr, gcnew EventHandler(this, &MainForm::OnToolCc1));
+        toolCc1Item_->ShortcutKeyDisplayString = "Ctrl+K";
         tools->DropDownItems->Add(toolCc1Item_);
         toolClItem_ = gcnew ToolStripMenuItem(
             "MSVC (cl)", nullptr, gcnew EventHandler(this, &MainForm::OnToolCl));
+        toolClItem_->ShortcutKeyDisplayString = "Ctrl+K";
         tools->DropDownItems->Add(toolClItem_);
         bar->Items->Add(tools);
 
@@ -2122,10 +2146,17 @@ private:
             System::Text::StringBuilder^ under = gcnew System::Text::StringBuilder();
             for each (ToolStripItem^ each in menu->DropDownItems) {
                 ToolStripMenuItem^ item = dynamic_cast<ToolStripMenuItem^>(each);
-                if (item == nullptr || item->ShortcutKeys == Keys::None) continue;
-                under->AppendFormat("  {0,-18}{1}\r\n",
-                                    spelling->ConvertToString(item->ShortcutKeys),
-                                    item->Text->Replace("&", ""));
+                if (item == nullptr) continue;
+
+                // What the item advertises, which is not always what it is
+                // bound to: a key that moves between several items is caught in
+                // ProcessCmdKey and shown here by name, so it is in this table
+                // like any other rather than missing from it.
+                String^ key = item->ShortcutKeys == Keys::None
+                                  ? item->ShortcutKeyDisplayString
+                                  : spelling->ConvertToString(item->ShortcutKeys);
+                if (key == nullptr || key->Length == 0) continue;
+                under->AppendFormat("  {0,-18}{1}\r\n", key, item->Text->Replace("&", ""));
             }
 
             // A menu whose items all go without keys says nothing here.
@@ -2831,6 +2862,34 @@ private:
         toolClItem_->Checked = toolKind_ == ED1_TOOL_MSVC;
         debugConfigItem_->Checked = config_ == ED1_CONFIG_DEBUG;
         releaseConfigItem_->Checked = config_ == ED1_CONFIG_RELEASE;
+    }
+
+    // Debug and release are two, so this is a toggle. The compilers and the
+    // targets are three each, so those go round - and going round rather than
+    // between two is why automatic is never more than two presses away, which
+    // is the reason the terminal gives for its own.
+    void NextConfig() {
+        if (config_ == ED1_CONFIG_DEBUG) OnReleaseConfig(nullptr, nullptr);
+        else OnDebugConfig(nullptr, nullptr);
+    }
+
+    void NextTool() {
+        if (toolKind_ == ED1_TOOL_AUTO) OnToolCc1(nullptr, nullptr);
+        else if (toolKind_ == ED1_TOOL_CC1) OnToolCl(nullptr, nullptr);
+        else OnToolAuto(nullptr, nullptr);
+    }
+
+    void NextTarget() {
+        if (targetItems_ == nullptr || targetItems_->Count == 0) return;
+        int at = 0;
+        for (int i = 0; i < targetItems_->Count; ++i)
+            if (String::Equals(targetItems_[i]->Text, arch_, StringComparison::Ordinal)) {
+                at = i;
+                break;
+            }
+        // OnTarget reads the target's name off the item it was given, so the
+        // item is what it is handed rather than a name looked up twice.
+        OnTarget(targetItems_[(at + 1) % targetItems_->Count], nullptr);
     }
 
     void OnDebugConfig(Object^, EventArgs^) {

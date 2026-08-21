@@ -74,6 +74,8 @@ Menu::Menu() : active_(false), dropped_(false), column_(0), item_(0) {
     debug.items.push_back({"Step over", "F7", ActionStepOver});
     debug.items.push_back({"Step into", "F6", ActionStepInto});
     debug.items.push_back({"Step out", "", ActionStepOut});
+    debug.items.push_back({"Up the stack", "Ctrl-Up", ActionFrameUp});
+    debug.items.push_back({"Down the stack", "Ctrl-Down", ActionFrameDown});
     debug.items.push_back({"Stop debugging", "", ActionDebugStop});
     columns_.push_back(debug);
 

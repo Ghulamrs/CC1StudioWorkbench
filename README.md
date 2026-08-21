@@ -133,9 +133,15 @@ after it is unchanged. The line above the list says whose they are, because
 `stopped at stepped.c:3 in twice` is still true and would otherwise be standing
 over another function's locals.
 
-The way back is the top line: it names the frame the program stopped in, and
-pressing enter on it goes there. Any step goes back too - every stop starts at
-the frame it stopped in.
+`Ctrl-Up` and `Ctrl-Down` walk the same stack from the text, without going near
+the panel - one frame towards what called this, one frame back down - which is
+where you are when the question occurs to you. They are in the Debug menu with
+the steps. The two ends say so rather than doing nothing: nothing called main,
+and there is nothing below where the program stopped.
+
+The way back is also the top line: it names the frame the program stopped in,
+and pressing enter on it goes there. Any step goes back too - every stop starts
+at the frame it stopped in.
 
 The program has not moved through any of this. The arrow in the gutter still
 marks the line it is standing on: looking at a frame is not stepping.

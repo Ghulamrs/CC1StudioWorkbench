@@ -73,6 +73,9 @@ const std::string kF6 = "\x1b[17~";
 const std::string kF7 = "\x1b[18~";
 const std::string kF8 = "\x1b[19~";
 const std::string kF9 = "\x1b[20~";
+// Control with an arrow: the arrow's own sequence with the modifier in it.
+const std::string kCtrlUp = "\x1b[1;5A";
+const std::string kCtrlDown = "\x1b[1;5B";
 const std::string kF4 = "\x1bOS";
 const std::string kF10 = "\x1b[21~";
 const std::string kDown = "\x1b[B";
@@ -1125,6 +1128,15 @@ void stoppingAndStepping(const std::string& ed1, const std::string& cc1) {
     // the column before the first digit and nothing moves when it appears.
     check(onScreen(marked, "*11"), "and marks it in the gutter, beside the number");
 
+    // Ctrl with an arrow, which is a key the console has to send and the
+    // decoder has to read before anything can be done with it. Asked here,
+    // with nothing stopped, because that answer needs no debugger and so is
+    // asked on all three machines - including the one where cc1's own target
+    // cannot be debugged at all and every check below this is skipped.
+    Screen noStack = drive(ed1, common, kCtrlUp + ctrl('q'), dir);
+    check(wasShown(noStack, "no stack to walk"),
+          "Ctrl-Up arrives as Ctrl-Up, and says there is nothing stopped");
+
     Screen unmarked = drive(ed1, common, toLoopBody + kF9 + kF9 + ctrl('q'), dir);
     check(wasShown(unmarked, "breakpoint off line 11"), "and F9 again takes it away");
     check(!onScreen(unmarked, "*11"), "leaving the gutter as it was");
@@ -1266,6 +1278,27 @@ void stoppingAndStepping(const std::string& ed1, const std::string& cc1) {
     // sits in the column before its first digit, so a one-digit line has a
     // space between them where an eleven has none.
     check(onScreen(went, "> 3"), "while the program is still standing where it stopped");
+
+    // The same walk with a key, from the text, without going near the panel -
+    // which is where a person is when the question occurs to them.
+    Screen up = drive(ed1, withCc1, toLoopBody + kF9 + kF8 + kF6 + kCtrlUp + ctrl('q'), dir);
+    check(onScreen(up, "the variables are main's"), "Ctrl-Up looks at what called this");
+    check(onScreen(up, "total = 0"), "with that frame's variables");
+    check(onScreen(up, "11/14"), "and the caret on the line waiting for the call");
+
+    // And the ends of it, which are the two answers with nowhere to go.
+    Screen top = drive(ed1, withCc1,
+                       toLoopBody + kF9 + kF8 + kF6 + kCtrlUp + kCtrlUp + ctrl('q'), dir);
+    check(wasShown(top, "nothing called main"), "and says so at the top of the stack");
+
+    Screen down = drive(ed1, withCc1,
+                        toLoopBody + kF9 + kF8 + kF6 + kCtrlUp + kCtrlDown + ctrl('q'), dir);
+    check(wasShown(down, "back where it stopped"), "Ctrl-Down comes back down");
+    check(onScreen(down, "n = 1"), "to the variables of the frame it stopped in");
+    check(onScreen(down, "3/14"), "and the line it stopped on");
+
+    Screen bottom = drive(ed1, withCc1, toLoopBody + kF9 + kF8 + kF6 + kCtrlDown + ctrl('q'), dir);
+    check(wasShown(bottom, "nothing below it"), "and says so at the bottom of it");
 
     // A line that is not a frame says so rather than going somewhere.
     const std::string toAVariable = ctrl('w') + ctrl('w') + times(kDown, 2) + kEnter;

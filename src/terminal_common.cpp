@@ -22,6 +22,11 @@ bool hasShift(int modifier) {
     return ((modifier - 1) & 1) != 0;
 }
 
+bool hasControl(int modifier) {
+    if (modifier < 2) return false;
+    return ((modifier - 1) & 4) != 0;
+}
+
 int shiftedForm(int key) {
     switch (key) {
         case KEY_ARROW_LEFT:  return KEY_SHIFT_LEFT;
@@ -33,6 +38,16 @@ int shiftedForm(int key) {
         case KEY_PAGE_UP:     return KEY_SHIFT_PAGE_UP;
         case KEY_PAGE_DOWN:   return KEY_SHIFT_PAGE_DOWN;
         default:              return key;
+    }
+}
+
+// Only the two that mean anything here. Control with any other arrow is that
+// arrow, which is what it did before there was a stack to walk.
+int controlledForm(int key) {
+    switch (key) {
+        case KEY_ARROW_UP:   return KEY_CTRL_UP;
+        case KEY_ARROW_DOWN: return KEY_CTRL_DOWN;
+        default:             return key;
     }
 }
 
@@ -157,6 +172,9 @@ int Terminal::readKey() const {
     }
     if (key == '\x1b') return '\x1b';
 
+    // Control first, and control with shift counts as control: the two keys
+    // that mean anything with control on them mean nothing with shift.
+    if (hasControl(second)) return controlledForm(key);
     return hasShift(second) ? shiftedForm(key) : key;
 }
 

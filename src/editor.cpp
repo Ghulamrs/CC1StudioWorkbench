@@ -1759,6 +1759,38 @@ void Editor::goToFrame() {
         return;
     }
 
+    lookAt(which);
+}
+
+// One frame along, without going near the panel: Ctrl-Up towards what called
+// this, Ctrl-Down back towards where the program stopped. The same act as
+// pressing enter on the frame, reached from the text where the caret already
+// is - which is where a person is when the question occurs to them.
+void Editor::lookAlongStack(int by) {
+    if (!debugger_.running() || stack_.empty()) {
+        say("nothing is stopped, so there is no stack to walk");
+        return;
+    }
+    if (by > 0) {
+        if (looking_ + 1 >= stack_.size()) {
+            say("nothing called " + stack_[stack_.size() - 1].function + ", which is the top");
+            return;
+        }
+        lookAt(looking_ + 1);
+        return;
+    }
+    if (looking_ == 0) {
+        say("this is where the program stopped - there is nothing below it");
+        return;
+    }
+    lookAt(looking_ - 1);
+}
+
+// Looking at a frame: its variables are read, the tab is written again with it
+// marked, and the caret goes to the line that is waiting for the call.
+void Editor::lookAt(size_t which) {
+    if (which >= stack_.size()) return;
+
     if (!debugger_.selectFrame(which)) {
         say("the debugger would not go to that frame");
         return;
@@ -2263,8 +2295,8 @@ void Editor::writeDebugTab() {
     debug_.push_back("");
     debug_.push_back("F8 carries on   F7 steps over   F6 steps into   F9 sets a breakpoint");
     if (stack_.size() > 1) {
+        debug_.push_back("Ctrl-Up looks at what called this   Ctrl-Down comes back down");
         debug_.push_back("Ctrl-W puts the cursor in the panel; Enter on a frame looks at it");
-        debug_.push_back("Enter on the top line goes back to where the program stopped");
     }
 }
 
@@ -2415,6 +2447,7 @@ void Editor::showKeys() {
     console_.push_back("F5           run this file        F4       build the project");
     console_.push_back("F1           these keys");
     console_.push_back("F9 / F8      breakpoint / debug   F7 / F6  step over / into");
+    console_.push_back("Ctrl-Up      up the stack         Ctrl-Down down again");
     console_.push_back("             Debug menu: Debug project puts the project's own");
     console_.push_back("             program under the debugger instead of this file");
     console_.push_back("F2 / F3      previous / next file Ctrl-L   line numbers");
@@ -2431,7 +2464,8 @@ void Editor::showKeys() {
     console_.push_back("Ctrl-S       save                 Ctrl-Q   leave");
     console_.push_back("In the project pane, enter opens. In the panel, left and right");
     console_.push_back("change tab - Console, Debug, Assembly - and on Console,");
-    console_.push_back("enter goes to the line cc1 named.");
+    console_.push_back("enter goes to the line cc1 named. On Debug, enter on a frame");
+    console_.push_back("looks at it, and on the top line goes back to the stop.");
     panelOff_ = 0;
     say("keys");
 }
@@ -2496,6 +2530,8 @@ void Editor::perform(Action action) {
         case ActionStepOver:
         case ActionStepInto:
         case ActionStepOut:      debugStep(action); break;
+        case ActionFrameUp:      lookAlongStack(1); break;
+        case ActionFrameDown:    lookAlongStack(-1); break;
         case ActionDebugStop:
             if (debugger_.running()) { debugStop(); say("debugging stopped"); }
             else say("nothing is running");
@@ -2614,6 +2650,9 @@ void Editor::processKey(int key) {
         case KEY_F7:  perform(ActionStepOver); return;
         case KEY_F8:  perform(ActionDebug); return;
         case KEY_F9:  perform(ActionToggleBreak); return;
+
+        case KEY_CTRL_UP:   perform(ActionFrameUp); return;
+        case KEY_CTRL_DOWN: perform(ActionFrameDown); return;
 
         case ctrl('q'):
             if (!mayLeave()) return;

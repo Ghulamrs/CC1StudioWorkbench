@@ -184,6 +184,8 @@ private:
     void openSelected();
     void goToProblem();
     void goToFrame();
+    void lookAlongStack(int by);
+    void lookAt(size_t which);
     void writeDebugTab();
 
     void refreshTree();

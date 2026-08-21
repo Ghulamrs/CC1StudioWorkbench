@@ -56,6 +56,8 @@ enum Action {
     ActionStepOver,
     ActionStepInto,
     ActionStepOut,
+    ActionFrameUp,
+    ActionFrameDown,
     ActionDebugStop,
     ActionConfigDebug,
     ActionConfigRelease,

@@ -75,6 +75,11 @@ protected:
         if (keys == static_cast<Keys>(Keys::Control | Keys::D)) { NextConfig(); return true; }
         if (keys == static_cast<Keys>(Keys::Control | Keys::K)) { NextTool(); return true; }
         if (keys == static_cast<Keys>(Keys::Control | Keys::T)) { NextTarget(); return true; }
+        if (keys == static_cast<Keys>(Keys::Control | Keys::Up)) { LookAlongStack(1); return true; }
+        if (keys == static_cast<Keys>(Keys::Control | Keys::Down)) {
+            LookAlongStack(-1);
+            return true;
+        }
         return Form::ProcessCmdKey(message, keys);
     }
 
@@ -488,6 +493,19 @@ private:
                                        gcnew EventHandler(this, &MainForm::OnStepInto)));
         debug->DropDownItems->Add("Step out", nullptr,
                                   gcnew EventHandler(this, &MainForm::OnStepOut));
+
+        // Windows Forms will not take an arrow as a menu shortcut, so these
+        // two are caught in ProcessCmdKey with Ctrl-D, Ctrl-K and Ctrl-T, and
+        // say their key here themselves - as those three do.
+        ToolStripMenuItem^ upTheStack = gcnew ToolStripMenuItem(
+            "Up the stack", nullptr, gcnew EventHandler(this, &MainForm::OnFrameUp));
+        upTheStack->ShortcutKeyDisplayString = "Ctrl+Up";
+        debug->DropDownItems->Add(upTheStack);
+        ToolStripMenuItem^ downTheStack = gcnew ToolStripMenuItem(
+            "Down the stack", nullptr, gcnew EventHandler(this, &MainForm::OnFrameDown));
+        downTheStack->ShortcutKeyDisplayString = "Ctrl+Down";
+        debug->DropDownItems->Add(downTheStack);
+
         debug->DropDownItems->Add("Stop debugging", nullptr,
                                   gcnew EventHandler(this, &MainForm::OnDebugStop));
         bar->Items->Add(debug);
@@ -3082,6 +3100,9 @@ private:
     void OnStepInto(Object^, EventArgs^) { Step(1); }
     void OnStepOut(Object^, EventArgs^) { Step(2); }
 
+    void OnFrameUp(Object^, EventArgs^) { LookAlongStack(1); }
+    void OnFrameDown(Object^, EventArgs^) { LookAlongStack(-1); }
+
     void Step(int how) {
         if (ed1_debugger_running(debugger_) == 0) {
             what_->Text = "nothing is running - F8 starts it";
@@ -3264,8 +3285,8 @@ private:
 
         said->Append("\r\nF8 carries on   F7 steps over   F6 steps into   F9 sets a breakpoint");
         if (deep > 1) {
+            said->Append("\r\nCtrl+Up looks at what called this   Ctrl+Down comes back down");
             said->Append("\r\nDouble-click a frame, or press enter on it, to look at it");
-            said->Append("\r\nThe top line goes back to where the program stopped");
         }
         debug_->Text = said->ToString();
     }
@@ -3315,6 +3336,40 @@ private:
             return;
         }
 
+        LookAt(which);
+    }
+
+    // One frame along, without going near the panel: Ctrl-Up towards what
+    // called this, Ctrl-Down back towards where the program stopped. The same
+    // act as pressing enter on the frame, reached from the text where the
+    // caret already is - which is where a person is when the question occurs
+    // to them.
+    void LookAlongStack(int by) {
+        int deep = ed1_stack_count(debugger_);
+        if (ed1_debugger_running(debugger_) == 0 || deep == 0) {
+            what_->Text = "nothing is stopped, so there is no stack to walk";
+            return;
+        }
+        int looking = ed1_looking_at(debugger_);
+        if (by > 0) {
+            if (looking + 1 >= deep) {
+                what_->Text = String::Format("nothing called {0}, which is the top",
+                                             FromUtf8(ed1_stack_function(debugger_, deep - 1)));
+                return;
+            }
+            LookAt(looking + 1);
+            return;
+        }
+        if (looking == 0) {
+            what_->Text = "this is where the program stopped - there is nothing below it";
+            return;
+        }
+        LookAt(looking - 1);
+    }
+
+    // Looking at a frame: its variables are read, the tab is written again
+    // with it marked, and the caret goes to the line waiting for the call.
+    void LookAt(int which) {
         if (ed1_debugger_look_at(debugger_, which) == 0) {
             what_->Text = "the debugger would not go to that frame";
             return;

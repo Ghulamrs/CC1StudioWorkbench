@@ -44,7 +44,15 @@ enum Key {
     KEY_SHIFT_HOME,
     KEY_SHIFT_END,
     KEY_SHIFT_PAGE_UP,
-    KEY_SHIFT_PAGE_DOWN
+    KEY_SHIFT_PAGE_DOWN,
+
+    // Control with an arrow, which a terminal spells the same way it spells
+    // shift with one - the arrow's own sequence with a different modifier in
+    // it. These two are the stack: up towards what called this, down towards
+    // where the program stopped. They come after the shifted ones on purpose,
+    // outside the range isShiftedMove asks about.
+    KEY_CTRL_UP,
+    KEY_CTRL_DOWN
 };
 
 // Whether a key is the shifted form of a movement, and the plain key it shifts.

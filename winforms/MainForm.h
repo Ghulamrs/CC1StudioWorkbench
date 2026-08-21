@@ -1417,15 +1417,30 @@ private:
         }
     }
 
+    // These three said nothing when there was nothing to do, where the terminal
+    // has a word for each. A command that appears to have been ignored is worse
+    // than one that says why it did nothing - and the box gives no sign of its
+    // own either way, since the text simply does not change.
     void OnUndo(Object^, EventArgs^) {
         // The box keeps its own history, and it is the one the typing went
         // into - there is no sense in keeping a second one beside it.
-        if (text_->CanUndo) text_->Undo();
+        if (!text_->CanUndo) { what_->Text = "nothing to undo"; return; }
+        text_->Undo();
     }
-    void OnRedo(Object^, EventArgs^) { text_->Redo(); }
+    void OnRedo(Object^, EventArgs^) {
+        if (!text_->CanRedo) { what_->Text = "nothing to redo"; return; }
+        text_->Redo();
+    }
     void OnCut(Object^, EventArgs^) { text_->Cut(); }
     void OnCopy(Object^, EventArgs^) { text_->Copy(); }
     void OnPaste(Object^, EventArgs^) {
+        // Asked about text rather than about the clipboard in general: this is
+        // a source file, and an image or a page of RTF on the clipboard is
+        // nothing to paste into one whatever the box would make of it.
+        if (!text_->CanPaste(DataFormats::GetFormat(DataFormats::Text))) {
+            what_->Text = "there is nothing to paste";
+            return;
+        }
         text_->Paste();
         Recolour();
     }

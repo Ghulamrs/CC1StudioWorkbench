@@ -502,6 +502,13 @@ project.cpp and compile.cpp the terminal editor uses, compiled into the same
 binary as native code. Nothing is duplicated: laying a file out, colouring it,
 reading ed1.json and choosing between cc1 and cl are all the same code running.
 
+**File ▸ New** gives a blank buffer with no name, as the terminal's does, and
+`Ctrl+PageDown` / `Ctrl+PageUp` move between the open files. That last pair is
+the one place the two front ends disagree about a key on purpose: `F2` and `F3`
+are previous and next file in the terminal, but Rename and Find next in the
+window, so the window takes the Windows convention rather than moving two
+bindings that were already there.
+
 **The project operations** are on the Project menu: new project, save project,
 add this file, new file, rename, move to group and delete. New file and new
 project are on the File menu as well, because that is where somebody who wants

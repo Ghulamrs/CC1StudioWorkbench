@@ -294,6 +294,8 @@ private:
         MenuStrip^ bar = gcnew MenuStrip();
 
         ToolStripMenuItem^ file = gcnew ToolStripMenuItem("&File");
+        file->DropDownItems->Add("New", nullptr,
+                                 gcnew EventHandler(this, &MainForm::OnNewBuffer));
         file->DropDownItems->Add(
             Item("New file...", Keys::Control | Keys::N,
                  gcnew EventHandler(this, &MainForm::OnNewFile)));
@@ -312,6 +314,16 @@ private:
                                  gcnew EventHandler(this, &MainForm::OnSaveAs));
         file->DropDownItems->Add(
             Item("Close", Keys::Control | Keys::W, gcnew EventHandler(this, &MainForm::OnCloseFile)));
+        file->DropDownItems->Add(gcnew ToolStripSeparator());
+        // Ctrl+PageDown and Ctrl+PageUp rather than the terminal's F3 and F2,
+        // which are Find next and Rename here. The user's call: the Windows
+        // convention, and nothing already bound has to move for it.
+        file->DropDownItems->Add(
+            Item("Next file", Keys::Control | Keys::PageDown,
+                 gcnew EventHandler(this, &MainForm::OnNextFile)));
+        file->DropDownItems->Add(
+            Item("Previous file", Keys::Control | Keys::PageUp,
+                 gcnew EventHandler(this, &MainForm::OnPreviousFile)));
         file->DropDownItems->Add("Exit", nullptr, gcnew EventHandler(this, &MainForm::OnExit));
         bar->Items->Add(file);
 
@@ -1629,6 +1641,26 @@ private:
 
         FillTree();
         OpenPath(OutcomePath());
+    }
+
+    // A blank buffer with no name, as Editor::newFile makes one. MakeSheet
+    // adds the tab and brings it forward, and bringing it forward is what puts
+    // "untitled" on the message line - so what this has to say is said after.
+    void OnNewBuffer(Object^, EventArgs^) {
+        MakeSheet(nullptr, "");
+        what_->Text = "new file - Ctrl+S names it";
+    }
+
+    void OnNextFile(Object^, EventArgs^) { StepFile(1); }
+    void OnPreviousFile(Object^, EventArgs^) { StepFile(-1); }
+
+    // Round the ends, as Editor::nextDocument does. Which file arrived is left
+    // to OnSheetChanged, which says it for every other way of changing tab too.
+    void StepFile(int by) {
+        int count = files_->TabPages->Count;
+        if (count < 2) { what_->Text = "only one file is open"; return; }
+        int at = (files_->SelectedIndex + count + by) % count;
+        files_->SelectedTab = files_->TabPages[at];
     }
 
     void OnRenameFile(Object^, EventArgs^) {

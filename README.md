@@ -505,7 +505,7 @@ reading ed1.json and choosing between cc1 and cl are all the same code running.
 **File ▸ New** gives a blank buffer with no name, as the terminal's does, and
 `Ctrl+PageDown` / `Ctrl+PageUp` move between the open files rather than the
 terminal's `F2` and `F3`, which are Rename and Find next here. That is one of
-nine places the two disagree about a key on purpose, and they are all in the
+ten places the two disagree about a key on purpose, and they are all in the
 table below.
 
 **View hides what you are not using**: `Ctrl+P` the project pane, `Ctrl+E` the
@@ -544,10 +544,10 @@ it without opening anything.
 
 ### Where the keys differ, and why
 
-Most keys are the same in both. These nine are not, and every one of them is a
-decision rather than an oversight — which is worth writing down, because an
-undocumented difference is indistinguishable from a mistake to whoever compares
-the two next.
+Most keys are the same in both. These ten are not. Most are decisions; two are
+limits, where a terminal cannot express the key at all. Both kinds are worth
+writing down: an undocumented difference is indistinguishable from a mistake to
+whoever compares the two next.
 
 | | terminal | window | why |
 |---|---|---|---|
@@ -556,10 +556,17 @@ the two next.
 | Re-indent | `Ctrl-A` | `Ctrl+L` | `Ctrl+A` had gone to Select all |
 | line numbers | `Ctrl-L` | menu only | `Ctrl+L` had gone to Re-indent |
 | Find next | `Ctrl-G` | `F3` | the Windows convention |
-| Find previous | menu only | `Shift+F3` | follows `F3` |
+| Find previous | menu only | `Shift+F3` | follows `F3`; `Ctrl-G` has no shifted form to pair with |
 | Replace | `Ctrl-R` | `Ctrl+H` | the Windows convention |
 | close the open file | menu only | `Ctrl+W` | the Windows convention |
 | move between panes | `Ctrl-W`, cycling | `Ctrl+0` … `Ctrl+4`, picking one | `Ctrl+W` had gone to Close |
+| Console / Debug / Assembly | menu only | `Ctrl+1` / `Ctrl+2` / `Ctrl+3` | a terminal has no code for a control-digit |
+
+**Two of these are limits rather than choices**, and it is the terminal that is
+limited: it receives `Ctrl-1` as the digit, and `Ctrl-G` with or without shift
+as the same byte. So the panel keys and a backwards-find key cannot be given to
+it however much one might want to — its answer is the menu. They are in the
+table so that a later comparison does not chase them as gaps.
 
 **`Ctrl+W` is the one to be careful with**, and the only difference here that
 can surprise you rather than merely fail: in the terminal it moves to the next
@@ -583,7 +590,7 @@ terminal's things.
 **read off the menu bar when you ask for it** rather than kept as a second list
 somewhere. Rebind something and the table says so the same afternoon; there is
 nothing to forget to update. It cannot be the terminal's table anyway, for the
-nine reasons above. Only `Tab` is written by hand there, since it belongs to
+ten reasons above. Only `Tab` is written by hand there, since it belongs to
 the text box rather than to a menu.
 
 **The project operations** are on the Project menu: new project, save project,

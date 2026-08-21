@@ -23,3 +23,6 @@ winforms/obj/
 *.log
 gui.png
 *.png
+
+# Claude Code personal settings - never commit, holds local paths
+.claude/settings.local.json

@@ -2101,9 +2101,7 @@ void Editor::showStop(const Stop& where) {
         // That is a real place to be standing and not a failure, so it is not
         // reported as one: the debugger is left running, and F8 or Stop
         // debugging both do what they say.
-        if (where.said.find("stop reason") != std::string::npos ||
-            where.said.find("frame #0") != std::string::npos ||
-            where.said.find("#0  0x") != std::string::npos) {
+        if (dbg_stoppedWithNoSource(where.said)) {
             stopFile_.clear();
             stopLine_ = 0;
             locals_.clear();

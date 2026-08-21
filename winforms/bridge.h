@@ -350,6 +350,11 @@ const char* ed1_stop_said(Ed1Debugger* debugger);
    front ends show the same thing. */
 const char* ed1_stop_output(Ed1Debugger* debugger);
 
+/* Whether a stop that named no place is a program standing where there is no
+   source - stepping off the end of main - rather than a debugger that died.
+   The first is carried on from; the second is the end of the session. */
+int ed1_stop_no_source(Ed1Debugger* debugger);
+
 /* What is in scope where it stopped, read after a move. */
 int ed1_locals_count(Ed1Debugger* debugger);
 const char* ed1_local_name(Ed1Debugger* debugger, int index);

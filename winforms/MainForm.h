@@ -3129,11 +3129,32 @@ private:
         }
 
         if (ed1_stop_stopped(debugger_) == 0) {
+            String^ heard = Lines(FromUtf8(ed1_stop_said(debugger_)));
+
+            // Stepping off the end of main lands in the code that started the
+            // program, which was not compiled here. That is a real place to be
+            // standing and not a failure: the debugger stays running, F8
+            // carries on from it, and Stop debugging still leaves. The
+            // terminal has always said so and this said the debugger had died
+            // and ended the session - the same step, two answers.
+            if (ed1_stop_no_source(debugger_) != 0) {
+                stopFile_ = nullptr;
+                stopLine_ = 0;
+                ShowStoppedLine(-1);
+                Current()->gutter->Invalidate();
+                debug_->Text =
+                    "stopped where there is no source to show\r\n\r\n"
+                    "Stepping past the end of main arrives in the code that\r\n"
+                    "started it, which was not compiled here. F8 carries on to\r\n"
+                    "the end, and Stop debugging leaves it.\r\n\r\n" + heard;
+                what_->Text = "stopped where there is no source - F8 carries on";
+                return;
+            }
+
             // With what it said under it. The terminal half has always printed
             // this and the window said only the sentence, which is the least
             // useful moment to be told nothing: a debugger that has stopped
             // answering has usually just explained itself.
-            String^ heard = Lines(FromUtf8(ed1_stop_said(debugger_)));
             debug_->Text = String::IsNullOrEmpty(heard)
                 ? "the debugger stopped answering"
                 : "the debugger stopped answering\r\n\r\n" + heard;

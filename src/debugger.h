@@ -123,6 +123,19 @@ private:
 // line is a fiddly thing to parse and it should not need a live debugger and a
 // built program to check that it is parsed right.
 Stop dbg_readStop(DebuggerKind kind, const std::string& said);
+// Whether a stop that named no place is a program standing somewhere with no
+// source rather than a debugger that has died.
+//
+// Stepping off the end of main arrives in the code that started the program,
+// which was not compiled here: lldb says "stop reason" and "frame #0", gdb
+// "#0  0x". That is a real place to be standing and F8 carries on from it, so
+// it must not be reported as a failure and the debugger must not be stopped.
+//
+// It lives here because both front ends need it and only one of them had it.
+// The terminal asked these three questions inline and the window asked none,
+// so the same step ended the session in one and not the other.
+bool dbg_stoppedWithNoSource(const std::string& said);
+
 // What a console adds to what a debugger says, and how it is taken back out.
 //
 // On Windows cdb is given a pseudo-console rather than a pipe, so that the

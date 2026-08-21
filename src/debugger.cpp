@@ -295,6 +295,12 @@ bool cdbOwn(const std::string& line) {
 
 }  // namespace
 
+bool dbg_stoppedWithNoSource(const std::string& said) {
+    return said.find("stop reason") != std::string::npos ||
+           said.find("frame #0") != std::string::npos ||
+           said.find("#0  0x") != std::string::npos;
+}
+
 std::string dbg_programOutput(DebuggerKind kind, const std::string& said) {
     const std::vector<std::string> all = lines(said);
     std::string out;

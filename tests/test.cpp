@@ -1578,6 +1578,33 @@ void debuggingForReal() {
     editor::path::removeTree(dir);
 }
 
+// Standing somewhere with no source is not a debugger that died. Both front
+// ends have to tell those apart the same way, which is why the question is one
+// function rather than three lines written out in one of them.
+void steppingOffTheEnd() {
+    std::printf("a stop with no source, told from a debugger that died\n");
+
+    // lldb, having stepped past the end of main into dyld.
+    const std::string lldbSaid =
+        "Process 10488 stopped\n"
+        "* thread #1, queue = 'com.apple.main-thread', stop reason = instruction step over\n"
+        "    frame #0: 0x0000000180a3b154 dyld`start + 7000\n";
+    check(editor::dbg_stoppedWithNoSource(lldbSaid),
+          "lldb standing in the loader is a place, not a failure");
+
+    // gdb, the same step.
+    const std::string gdbSaid =
+        "0x00007ffff7829d90 in __libc_start_call_main () from /lib64/libc.so.6\n"
+        "#0  0x00007ffff7829d90 in __libc_start_call_main ()\n";
+    check(editor::dbg_stoppedWithNoSource(gdbSaid), "and so is gdb in libc's start");
+
+    // A debugger that has gone says none of those things.
+    check(!editor::dbg_stoppedWithNoSource(""),
+          "a debugger that said nothing at all has died, not arrived");
+    check(!editor::dbg_stoppedWithNoSource("The system cannot find the file specified."),
+          "and neither is a shell's complaint a place to be standing");
+}
+
 // What a console puts around what a debugger says. The escape sequences below
 // are real: captured from a pseudo-console the first time cdb was given one.
 void whatAConsoleAdds() {
@@ -2397,6 +2424,7 @@ int main(int argc, char** argv) {
     whatTheDebuggerHeard();
     whatTheProgramSaid();
     whatAConsoleAdds();
+    steppingOffTheEnd();
     aProjectMadeFromWhatIsThere();
     whatItRemembers();
     talkingToAChild();

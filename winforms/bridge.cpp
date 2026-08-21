@@ -732,6 +732,10 @@ int ed1_stop_line(Ed1Debugger* debugger) { return static_cast<int>(debugger->sto
 const char* ed1_stop_function(Ed1Debugger* debugger) { return debugger->stop.function.c_str(); }
 const char* ed1_stop_said(Ed1Debugger* debugger) { return debugger->stop.said.c_str(); }
 
+int ed1_stop_no_source(Ed1Debugger* debugger) {
+    return editor::dbg_stoppedWithNoSource(debugger->stop.said) ? 1 : 0;
+}
+
 const char* ed1_stop_output(Ed1Debugger* debugger) {
     // Worked out here and kept, rather than handed back from a temporary: the
     // managed side reads these one string at a time and holds none of them.

@@ -628,6 +628,10 @@ private:
         console_->KeyDown += gcnew KeyEventHandler(this, &MainForm::OnConsoleKey);
         console_->DoubleClick += gcnew EventHandler(this, &MainForm::OnConsoleDoubleClick);
         debug_ = ReadOnlyBox();
+        // A frame in the Debug tab is gone to the way an error in the Console
+        // is: double-click it, or put the caret on it and press enter.
+        debug_->KeyDown += gcnew KeyEventHandler(this, &MainForm::OnDebugKey);
+        debug_->DoubleClick += gcnew EventHandler(this, &MainForm::OnDebugDoubleClick);
         assembly_ = gcnew RichTextBox();
         assembly_->Dock = DockStyle::Fill;
         assembly_->BorderStyle = System::Windows::Forms::BorderStyle::None;
@@ -3199,14 +3203,11 @@ private:
         if (deep > 1) {
             said->Append("\r\ncalled from\r\n");
             for (int i = 1; i < deep; ++i)
-                said->AppendFormat("  {0}   {1}:{2}\r\n",
-                                   FromUtf8(ed1_stack_function(debugger_, i)),
-                                   System::IO::Path::GetFileName(
-                                       FromUtf8(ed1_stack_file(debugger_, i))),
-                                   ed1_stack_line(debugger_, i));
+                said->AppendFormat("{0}\r\n", FromUtf8(ed1_stack_text(debugger_, i)));
         }
 
         said->Append("\r\nF8 carries on   F7 steps over   F6 steps into   F9 sets a breakpoint");
+        if (deep > 1) said->Append("\r\nDouble-click a frame, or press enter on it, to go there");
         debug_->Text = said->ToString();
 
         Current()->gutter->Invalidate();
@@ -3253,6 +3254,44 @@ private:
     }
 
     void OnConsoleDoubleClick(Object^, EventArgs^) { GoToError(); }
+
+    void OnDebugKey(Object^, KeyEventArgs^ e) {
+        if (e->KeyCode != Keys::Enter) return;
+        e->SuppressKeyPress = true;   // a read-only box would beep at it
+        GoToFrame();
+    }
+
+    void OnDebugDoubleClick(Object^, EventArgs^) { GoToFrame(); }
+
+    // The frame on the line that was clicked, or that the caret is on. Which
+    // line that is comes from the box; which frame is on it is the core's
+    // answer, matched against what the core wrote there - see dbg_frameLine.
+    //
+    // This goes to where the call came from and no further. The program is
+    // still standing where it stopped, the arrow in the gutter still marks
+    // that line, and the variables are still that frame's: going to a line is
+    // not stepping.
+    void GoToFrame() {
+        if (debug_->Lines->Length == 0) return;
+        int row = debug_->GetLineFromCharIndex(debug_->SelectionStart);
+        if (row < 0 || row >= debug_->Lines->Length) return;
+
+        pin_ptr<Byte> line = &Utf8Of(debug_->Lines[row])[0];
+        int which = ed1_stack_on_line(debugger_, reinterpret_cast<const char*>(line));
+        if (which < 0) {
+            what_->Text = "that line is not a frame - a frame is one under \"called from\"";
+            return;
+        }
+
+        String^ file = FromUtf8(ed1_stack_file(debugger_, which));
+        int at = ed1_stack_line(debugger_, which);
+        if (file->Length > 0 && !SamePath(path_, file) && System::IO::File::Exists(file))
+            OpenPath(file);
+        GoTo(at, 1);
+        what_->Text = String::Format("{0}:{1} in {2} - where the call came from",
+                                     System::IO::Path::GetFileName(file), at,
+                                     FromUtf8(ed1_stack_function(debugger_, which)));
+    }
 
     void GoTo(int line, int column) {
         int row = line - 1;

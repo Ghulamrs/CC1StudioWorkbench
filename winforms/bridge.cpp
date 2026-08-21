@@ -221,6 +221,7 @@ struct Ed1Debugger {
     editor::Stop stop;
     std::vector<editor::Variable> locals;
     std::vector<editor::StackFrame> stack;
+    std::string frameLine;   // one frame as the Debug tab spells it
     std::string answer;
     std::string output;   // the program's own words, kept for the same reason
 };
@@ -787,6 +788,20 @@ const char* ed1_stack_file(Ed1Debugger* debugger, int index) {
 }
 int ed1_stack_line(Ed1Debugger* debugger, int index) {
     return reaches(debugger, index) ? static_cast<int>(debugger->stack[index].line) : 0;
+}
+
+const char* ed1_stack_text(Ed1Debugger* debugger, int index) {
+    // Worked out here and kept, as the program's output is: the managed side
+    // reads these one string at a time and holds none of them.
+    debugger->frameLine = reaches(debugger, index)
+                              ? editor::dbg_frameLine(debugger->stack[index])
+                              : std::string();
+    return debugger->frameLine.c_str();
+}
+
+int ed1_stack_on_line(Ed1Debugger* debugger, const char* line) {
+    size_t which = editor::dbg_frameOnLine(debugger->stack, line ? line : "");
+    return which < debugger->stack.size() ? static_cast<int>(which) : -1;
 }
 
 int ed1_begin_from_what_is_there(Ed1Project* project, const char* directory) {

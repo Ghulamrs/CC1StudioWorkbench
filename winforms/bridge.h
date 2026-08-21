@@ -369,6 +369,13 @@ const char* ed1_stack_function(Ed1Debugger* debugger, int index);
 const char* ed1_stack_file(Ed1Debugger* debugger, int index);
 int ed1_stack_line(Ed1Debugger* debugger, int index);
 
+// How a frame is written in the Debug tab, and which frame a line of that tab
+// is about - -1 for a line that is not one. The window writes the line with
+// the first and reads it back with the second rather than counting rows of its
+// own, so that the row it acts on is the row the core named. See dbg_frameLine.
+const char* ed1_stack_text(Ed1Debugger* debugger, int index);
+int ed1_stack_on_line(Ed1Debugger* debugger, const char* line);
+
 #ifdef __cplusplus
 }
 #endif

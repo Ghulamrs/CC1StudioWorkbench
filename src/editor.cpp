@@ -1731,6 +1731,46 @@ void Editor::resetDebug() {
                      configFlags(kind, config_, kArches[arch_]) + " )");
 }
 
+// The frame the cursor is on, which is the panel's top line: with the panel
+// focused the terminal leaves the cursor at the start of that row, so the line
+// it is standing on is the line to act on, and moving down the panel moves it.
+// Nothing new is drawn to say which line is picked, because the cursor is
+// already sitting on it.
+//
+// This goes to where the call came from and no further: the program is still
+// standing where it stopped, the arrow in the gutter still marks that line, and
+// the variables are still that frame's. Going to a line is not stepping.
+void Editor::goToFrame() {
+    const std::vector<std::string>& lines = panelLines();
+    if (panelOff_ >= lines.size()) { say("there is nothing on that line"); return; }
+
+    size_t which = dbg_frameOnLine(stack_, lines[panelOff_]);
+    if (which >= stack_.size()) {
+        say("that line is not a frame - the cursor is on the panel's top line");
+        return;
+    }
+
+    const StackFrame& frame = stack_[which];
+    if (!frame.file.empty() && path::filename(frame.file) != path::filename(buf_.path())) {
+        std::string full = whereThatFileIs(frame.file);
+        if (full.empty()) {
+            say(path::filename(frame.file) + " is not in this project");
+            return;
+        }
+        open(full);
+    }
+
+    if (frame.line > 0) {
+        cy_ = frame.line - 1;
+        if (cy_ >= buf_.lineCount()) cy_ = buf_.lineCount() - 1;
+        cx_ = 0;
+        clampCursor();
+    }
+    focus_ = FocusText;
+    say(path::filename(frame.file) + ":" + number(frame.line) + " in " + frame.function +
+        " - where the call came from");
+}
+
 void Editor::goToProblem() {
     if (!lastDiag_.present) { say("no error to go to"); return; }
     cy_ = lastDiag_.line - 1;
@@ -2173,13 +2213,13 @@ void Editor::showStop(const Stop& where) {
     if (stack_.size() > 1) {
         debug_.push_back("");
         debug_.push_back("called from");
-        for (size_t i = 1; i < stack_.size(); ++i)
-            debug_.push_back("  " + stack_[i].function + "   " +
-                             path::filename(stack_[i].file) + ":" + number(stack_[i].line));
+        for (size_t i = 1; i < stack_.size(); ++i) debug_.push_back(dbg_frameLine(stack_[i]));
     }
 
     debug_.push_back("");
     debug_.push_back("F8 carries on   F7 steps over   F6 steps into   F9 sets a breakpoint");
+    if (stack_.size() > 1)
+        debug_.push_back("Ctrl-W puts the cursor in the panel; Enter on a frame goes to it");
 
     say(path::filename(where.file) + ":" + number(where.line) +
         (where.function.empty() ? std::string() : " in " + where.function));
@@ -2606,7 +2646,10 @@ void Editor::processKey(int key) {
         return;
     }
     if (focus_ == FocusPanel) {
-        if ((key == '\r' || key == '\n') && tab_ == TabConsole) goToProblem();
+        if (key == '\r' || key == '\n') {
+            if (tab_ == TabConsole) goToProblem();
+            else if (tab_ == TabDebug) goToFrame();
+        }
         return;   // otherwise the panel is there to be read
     }
 

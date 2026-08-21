@@ -1225,6 +1225,37 @@ void stoppingAndStepping(const std::string& ed1, const std::string& cc1) {
     check(onScreen(inside, "main   stepped.c:11"),
           "naming what called it and the line waiting for it to come back");
 
+    // And going to that frame, driven the way a person drives it: Ctrl-W twice
+    // to reach the panel - the first press is the project pane - then down to
+    // the frame and enter on it. The panel's top line is the line the cursor
+    // is on, so six presses put the frame there:
+    //
+    //   stopped at stepped.c:3 in twice     the locals are n and doubled,
+    //                                       which both debuggers list
+    //     n = 1   [int]
+    //     doubled = ...
+    //
+    //   called from
+    //     main   stepped.c:11
+    const std::string toTheFrame = ctrl('w') + ctrl('w') + times(kDown, 6) + kEnter;
+    Screen went = drive(ed1, withCc1, toLoopBody + kF9 + kF8 + kF6 + toTheFrame + ctrl('q'), dir);
+    check(wasShown(went, "where the call came from"), "enter on a frame goes to it");
+    check(onScreen(went, "11/14"), "putting the caret on the line that is waiting");
+    check(onScreen(went, "[text]"), "and the keyboard back in the text");
+
+    // The program has not moved: going to a line is not stepping, and the
+    // arrow in the gutter still marks where it is standing.
+    // "> 3", not ">3": the number is right-aligned in the gutter and the marker
+    // sits in the column before its first digit, so a one-digit line has a
+    // space between them where an eleven has none.
+    check(onScreen(went, "> 3"), "while the program is still standing where it stopped");
+
+    // A line that is not a frame says so rather than going somewhere.
+    const std::string toAVariable = ctrl('w') + ctrl('w') + times(kDown, 2) + kEnter;
+    Screen notAFrame = drive(ed1, withCc1,
+                             toLoopBody + kF9 + kF8 + kF6 + toAVariable + ctrl('q'), dir);
+    check(wasShown(notAFrame, "not a frame"), "enter on a variable says it is not a frame");
+
     Screen carried = drive(ed1, withCc1, toLoopBody + kF9 + kF8 + kF7 + kF8 + ctrl('q'), dir);
     check(onScreen(carried, "total = 2"), "F7 steps over it and F8 carries on round the loop");
     check(onScreen(carried, "i = 2"), "with the counter moved on");

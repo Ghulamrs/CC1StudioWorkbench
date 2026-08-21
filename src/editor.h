@@ -183,6 +183,7 @@ private:
     bool breakpointOn(size_t line) const;
     void openSelected();
     void goToProblem();
+    void goToFrame();
 
     void refreshTree();
     void applyProject();

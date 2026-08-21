@@ -108,6 +108,16 @@ called from
   main   stepped.c:11
 ```
 
+**And a frame is a place to go to.** Double-click one in the window, or press
+enter on it - `Ctrl-W` twice puts the cursor in the panel in the terminal, and
+the line it is standing on is the panel's top line. The caret goes to the line
+that is waiting for the call to come back, opening that file if the call came
+from another one.
+
+It goes there and no further. The program is still standing where it stopped,
+the arrow in the gutter still marks that line, and the variables are still that
+frame's: going to a line is not stepping.
+
 The stack stops at `main`. Below main is the code that started the program,
 which was not compiled here and has no source to go to - the same place a step
 off the end of main arrives in. lldb shows one frame of it and gdb three, and

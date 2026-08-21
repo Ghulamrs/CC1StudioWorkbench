@@ -1549,6 +1549,40 @@ void whatACallStackLooksLike() {
     check(inlined.size() == 2 && inlined[0].function == "doubled",
           "cdb: a call that was inlined is still a frame");
 
+    // How a frame is written in the tab, and read back off it. The two front
+    // ends compose that tab separately, so the line is written by one function
+    // and matched by another rather than by either of them counting rows.
+    editor::StackFrame one;
+    one.function = "main";
+    one.file = "/home/me/work/stepped.c";
+    one.line = 11;
+    checkEqual(editor::dbg_frameLine(one), "  main   stepped.c:11",
+               "a frame is written with its file's name, not its whole path");
+
+    std::vector<editor::StackFrame> two;
+    editor::StackFrame inner;
+    inner.function = "twice";
+    inner.file = "/home/me/work/stepped.c";
+    inner.line = 3;
+    two.push_back(inner);
+    two.push_back(one);
+    check(editor::dbg_frameOnLine(two, editor::dbg_frameLine(one)) == 1,
+          "and the line it wrote is read back as that frame");
+    check(editor::dbg_frameOnLine(two, "  main   stepped.c:11  ") == 1,
+          "with what the tab pads it with taken off");
+    check(editor::dbg_frameOnLine(two, "  total = 0   [int]") == two.size(),
+          "a line that is not a frame is not read as one");
+    check(editor::dbg_frameOnLine(two, "called from") == two.size(),
+          "and neither is the heading over them");
+
+    // A function that called itself writes the same line twice. The first of
+    // them is answered, which is right for going there: both name one place.
+    std::vector<editor::StackFrame> again;
+    again.push_back(inner);
+    again.push_back(inner);
+    check(editor::dbg_frameOnLine(again, editor::dbg_frameLine(inner)) == 0,
+          "a recursive call is two frames on one line, and the first answers");
+
     // A stack with nothing above it is one frame, and the editor says nothing
     // about it: standing in main having been called by nobody is the ordinary
     // case, and a "called from" with one name under it is noise.
@@ -2153,6 +2187,15 @@ void theSeamTheWindowUses() {
     check(std::string(ed1_stack_function(debugger, ed1_stack_count(debugger))).empty() &&
               ed1_stack_line(debugger, -1) == 0,
           "and an index off either end answers with nothing");
+
+    // And the line the window writes for a frame, read back to say which frame
+    // the row it was clicked on is - the window counts no rows of its own.
+    std::string written = ed1_stack_text(debugger, 1);
+    check(written == "  main   seam.c:10", "the window is given the line to write");
+    check(ed1_stack_on_line(debugger, written.c_str()) == 1,
+          "and reads it back as the frame it was written for");
+    check(ed1_stack_on_line(debugger, "  (nothing in scope here)") == -1,
+          "while a row that is not a frame answers -1 rather than a frame");
 
     ed1_debugger_step_out(debugger);
     check(std::string(ed1_stop_function(debugger)) == "main", "and stepping out comes back");

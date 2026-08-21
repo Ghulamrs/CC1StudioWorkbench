@@ -36,7 +36,7 @@
     .\show.ps1 -Files examples\hello.c -Keys "{F9}{F8}" -Panel Debug
 
 .EXAMPLE
-    .\show.ps1 -Files examples\smart.cpp -Keys "{F9}{F8}" -Then "{F6}" -Panel Debug
+    .\show.ps1 -Files examples\smart.cpp -Keys "{F9}{F8}" -Then "{F6}","^2{DOWN 6}{ENTER}"
 #>
 param(
     # The directory holding ed1.json, and where paths are counted from.
@@ -66,9 +66,19 @@ param(
     # still starting is a key nobody sees: SendKeys posts it, the window is
     # busy compiling, and what comes back is a picture of the stop it was
     # already standing on.
-    [string]$Then = "",
+    #
+    # Several may be given, and each waits for the one before it:
+    #
+    #     -Then "{F6}","^2{DOWN 6}{ENTER}"
+    #
+    # steps into the call, and then - once that has finished - goes to the
+    # panel and presses enter on a frame. Written as one batch, the ^2 arrives
+    # while the step is still running and is refused, and the keys after it go
+    # to the text: what came back was a picture of the file with a newline
+    # typed into it.
+    [string[]]$Then = @(),
 
-    # How long to wait after those, a step being quicker than a start.
+    # How long to wait after each of those, a step being quicker than a start.
     [int]$ThenSeconds = 10,
 
     # The editor to run. Found beside this script by default.
@@ -170,8 +180,9 @@ if ($Keys -ne "") {
     Start-Sleep -Seconds $KeySeconds
 }
 
-if ($Then -ne "") {
-    [System.Windows.Forms.SendKeys]::SendWait($Then)
+foreach ($batch in $Then) {
+    if ($batch -eq "") { continue }
+    [System.Windows.Forms.SendKeys]::SendWait($batch)
     Start-Sleep -Seconds $ThenSeconds
 }
 

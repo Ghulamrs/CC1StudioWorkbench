@@ -205,6 +205,23 @@ std::vector<Variable> dbg_readVariables(DebuggerKind kind, const std::string& sa
 // there is nothing the editor could do if it were clicked.
 std::vector<StackFrame> dbg_readFrames(DebuggerKind kind, const std::string& said);
 
+// How a frame is written in the Debug tab - "  main   stepped.c:11" - and
+// which frame a line of that tab is about.
+//
+// The pair is here, in one place, because the two front ends compose that tab
+// separately: the terminal fills a vector of lines and the window a string for
+// a RichTextBox. A rule that counted rows would be a rule each of them could
+// count differently, which is how they came to disagree about a stop with no
+// source. Written by one function and read back by another that matches what
+// was written, they cannot.
+//
+// dbg_frameOnLine answers stack.size() when the line is not a frame at all -
+// the heading, a variable, the hint at the bottom. A recursive call writes the
+// same line twice and the first of them is answered, which is right for going
+// to it: the two name the same place in the same file.
+std::string dbg_frameLine(const StackFrame& frame);
+size_t dbg_frameOnLine(const std::vector<StackFrame>& stack, const std::string& line);
+
 }  // namespace editor
 
 #endif

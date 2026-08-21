@@ -800,6 +800,20 @@ std::vector<StackFrame> dbg_readFrames(DebuggerKind kind, const std::string& sai
     return found;
 }
 
+std::string dbg_frameLine(const StackFrame& frame) {
+    // std::to_string rather than the number() above it, which reads a number
+    // out of a string and is the traffic going the other way.
+    return "  " + frame.function + "   " + path::filename(frame.file) + ":" +
+           std::to_string(frame.line);
+}
+
+size_t dbg_frameOnLine(const std::vector<StackFrame>& stack, const std::string& line) {
+    const std::string bare = trimmed(line);
+    for (size_t i = 0; i < stack.size(); ++i)
+        if (trimmed(dbg_frameLine(stack[i])) == bare) return i;
+    return stack.size();
+}
+
 // ---- the conversation ------------------------------------------------------
 
 Debugger::Debugger() : kind_(DebuggerNone), onConsole_(false) {}

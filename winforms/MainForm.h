@@ -1579,7 +1579,10 @@ private:
 
     void OnOpenProject(Object^, EventArgs^) {
         FolderBrowserDialog^ pick = gcnew FolderBrowserDialog();
-        if (pick->ShowDialog() != System::Windows::Forms::DialogResult::OK) return;
+        if (pick->ShowDialog() != System::Windows::Forms::DialogResult::OK) {
+            what_->Text = "no project opened";
+            return;
+        }
         LoadProject(pick->SelectedPath);
     }
 
@@ -1721,7 +1724,7 @@ private:
                                ? "There is no project, so this goes where the editor was started."
                                : "It will be made in " + root,
                            "");
-        if (name == nullptr || name->Length == 0) return;
+        if (name == nullptr || name->Length == 0) { what_->Text = "nothing made"; return; }
 
         array<Byte>^ relative = Utf8Of(name);
         pin_ptr<Byte> relativePin = &relative[0];
@@ -1791,7 +1794,7 @@ private:
                                                       reinterpret_cast<const char*>(wasPin)));
 
         String^ name = Ask("Rename " + shown + " to", shown);
-        if (name == nullptr || name->Length == 0) return;
+        if (name == nullptr || name->Length == 0) { what_->Text = "not renamed"; return; }
 
         array<Byte>^ from = Utf8Of(target);
         pin_ptr<Byte> fromPin = &from[0];
@@ -1882,7 +1885,7 @@ private:
         if (target == nullptr) { what_->Text = "no file to move"; return; }
 
         String^ group = Ask("Move to group", GroupUnderCursor());
-        if (group == nullptr || group->Length == 0) return;
+        if (group == nullptr || group->Length == 0) { what_->Text = "not moved"; return; }
 
         array<Byte>^ path = Utf8Of(target);
         pin_ptr<Byte> pathPin = &path[0];
@@ -1895,10 +1898,13 @@ private:
     }
 
     void OnAddThisFile(Object^, EventArgs^) {
-        if (path_ == nullptr) { what_->Text = "save the file first, so it has a name"; return; }
+        if (path_ == nullptr) {
+            what_->Text = "save the file first, so it has a name";
+            return;
+        }
 
         String^ group = Ask("Add to group", "Sources");
-        if (group == nullptr || group->Length == 0) return;
+        if (group == nullptr || group->Length == 0) { what_->Text = "not added"; return; }
 
         array<Byte>^ path = Utf8Of(path_);
         pin_ptr<Byte> pathPin = &path[0];
@@ -1919,11 +1925,17 @@ private:
         pick->ShowNewFolderButton = true;
         String^ start = RootNow();
         if (start != nullptr && start->Length > 0) pick->SelectedPath = start;
-        if (pick->ShowDialog(this) != System::Windows::Forms::DialogResult::OK) return;
+        if (pick->ShowDialog(this) != System::Windows::Forms::DialogResult::OK) {
+            what_->Text = "no project made";
+            return;
+        }
 
         String^ name = Ask("Project name", "It will be made in " + pick->SelectedPath,
                            "Project");
-        if (name == nullptr || name->Length == 0) return;
+        if (name == nullptr || name->Length == 0) {
+            what_->Text = "no project made";
+            return;
+        }
 
         array<Byte>^ where = Utf8Of(pick->SelectedPath);
         pin_ptr<Byte> wherePin = &where[0];
@@ -1983,7 +1995,10 @@ private:
     void OnOpenFile(Object^, EventArgs^) {
         OpenFileDialog^ pick = gcnew OpenFileDialog();
         pick->Filter = "C and C++|*.c;*.h;*.cpp;*.hpp|All files|*.*";
-        if (pick->ShowDialog() != System::Windows::Forms::DialogResult::OK) return;
+        if (pick->ShowDialog() != System::Windows::Forms::DialogResult::OK) {
+            what_->Text = "not opened";
+            return;
+        }
         OpenPath(pick->FileName);
     }
 
@@ -2085,7 +2100,10 @@ private:
         } else if (projectDirectory_ != nullptr) {
             pick->InitialDirectory = projectDirectory_;
         }
-        if (pick->ShowDialog(this) != System::Windows::Forms::DialogResult::OK) return;
+        if (pick->ShowDialog(this) != System::Windows::Forms::DialogResult::OK) {
+            what_->Text = "not saved";
+            return;
+        }
 
         sheet->path = pick->FileName;
         path_ = pick->FileName;
@@ -2760,7 +2778,10 @@ private:
     }
 
     void OnDebugStop(Object^, EventArgs^) {
-        if (ed1_debugger_running(debugger_) == 0) { what_->Text = "nothing is running"; return; }
+        if (ed1_debugger_running(debugger_) == 0) {
+            what_->Text = "nothing is running";
+            return;
+        }
         EndDebugging();
         what_->Text = "debugging stopped";
     }

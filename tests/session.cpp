@@ -1143,6 +1143,37 @@ void stoppingAndStepping(const std::string& ed1, const std::string& cc1) {
         file::remove_all(renaming);
     }
 
+    // Deleting a file takes its breakpoints with it. Nothing shows that at the
+    // time - the tab loses its name whether they went or not - but a name can
+    // come back, and a file written under it used to arrive with somebody
+    // else's lines already marked.
+    {
+        file::path deleting = freshProject("deleted-with-a-breakpoint");
+        file::path was = deleting / "src" / "stepped.c";
+        writeFile(was, kWorthStoppingIn);
+        std::string there = "\"" + was.string() + "\" --project \"" + deleting.string() + "\"";
+
+        const std::string toProject = kF10 + times(kRight, 2);
+        const std::string deleteIt =
+            toProject + times(kDown, 6) + kEnter + "yes" + kEnter;
+        // No kRight this time: the menu reopens on the column it was left on,
+        // so a second F10 is already on Project. Walking right again lands on
+        // some other menu's first item and quietly does something else.
+        const std::string makeItAgain =
+            kF10 + times(kDown, 3) + kEnter + "src/stepped.c" + kEnter;
+
+        // Twelve lines in the new file, so that line 11 is there to be marked.
+        Screen reborn = drive(ed1, there,
+                              toLoopBody + kF9 + deleteIt + makeItAgain +
+                                  times(kEnter, 12) + ctrl('s') + ctrl('q'),
+                              deleting);
+        check(file::exists(deleting / "src" / "stepped.c"),
+              "a deleted file's name can be used again");
+        check(!onScreen(reborn, "*11"),
+              "and the new file under it has none of the old one's breakpoints");
+        file::remove_all(deleting);
+    }
+
 #ifdef _WIN32
     // cc1 generates MASM for this machine's own target, which carries no line
     // table, so there is nothing here for a debugger to read - and so nothing

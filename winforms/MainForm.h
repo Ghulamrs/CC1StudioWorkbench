@@ -1695,6 +1695,15 @@ private:
             sheets_->Remove(sheet);
             files_->TabPages->Remove(sheet->page);
         }
+
+        // Its breakpoints go with it, as they do in Editor::deleteFile. A file
+        // that is not there cannot be stopped in - and a name can come back, so
+        // leaving them would hand lines set in this file to whatever is written
+        // under the name next.
+        String^ key = OneName(target);
+        breaks_->Remove(key);
+        breakNames_->Remove(key);
+
         if (sheets_->Count == 0) MakeSheet(nullptr, "");
         OnSheetChanged(nullptr, nullptr);
         FillTree();

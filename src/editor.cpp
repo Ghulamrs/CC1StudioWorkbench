@@ -1634,6 +1634,12 @@ void Editor::deleteFile() {
         Buffer& b = (i == doc_) ? buf_ : docs_[i].buf;
         if (!b.path().empty() && path::same(b.path(), path)) b.setPath(std::string());
     }
+
+    // Its breakpoints go with it. A file that is not there cannot be stopped
+    // in - and a name can come back, so leaving them would hand lines somebody
+    // set in this file to whatever is written under the name next.
+    breaks_.erase(path::oneName(path));
+
     refreshTree();
 }
 
@@ -1963,6 +1969,7 @@ void Editor::buildProject(bool andRun) {
 }
 
 bool Editor::breakpointOn(size_t line) const {
+    if (buf_.path().empty()) return false;
     std::map<std::string, FileBreaks>::const_iterator found =
         breaks_.find(path::oneName(buf_.path()));
     if (found == breaks_.end()) return false;

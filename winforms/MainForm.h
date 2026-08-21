@@ -1369,10 +1369,21 @@ private:
     }
 
     void OnReplace(Object^, EventArgs^) {
+        // Both ways out are said out loud, as Editor::replacePrompt says them:
+        // the box closing with nothing on the message line reads as a command
+        // that did not work, rather than one that was called off. The second
+        // question takes an empty answer, which is how a word is deleted
+        // everywhere it appears - only cancelling it means nothing.
         String^ want = Ask("Replace what", needle_);
-        if (want == nullptr || want->Length == 0) return;
+        if (want == nullptr || want->Length == 0) {
+            what_->Text = "nothing replaced";
+            return;
+        }
         String^ with = Ask("Replace \"" + want + "\" with", "");
-        if (with == nullptr) return;
+        if (with == nullptr) {
+            what_->Text = "nothing replaced";
+            return;
+        }
 
         array<Byte>^ text = WholeText();
         pin_ptr<Byte> textPin = &text[0];

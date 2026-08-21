@@ -284,20 +284,12 @@ void Editor::restore() {
 // the case is not part of the answer either, which path::absolute leaves alone
 // deliberately - the name is shown to people as they wrote it.
 size_t Editor::findDocument(const std::string& path) const {
-    std::string want = path::absolute(path);
-#ifdef _WIN32
-    for (size_t i = 0; i < want.size(); ++i) want[i] = static_cast<char>(::tolower(want[i]));
-#endif
+    std::string want = path::oneName(path);
 
     for (size_t i = 0; i < docs_.size(); ++i) {
         const std::string& have = (i == doc_) ? buf_.path() : docs_[i].buf.path();
         if (have.empty()) continue;
-
-        std::string mine = path::absolute(have);
-#ifdef _WIN32
-        for (size_t j = 0; j < mine.size(); ++j) mine[j] = static_cast<char>(::tolower(mine[j]));
-#endif
-        if (mine == want) return i;
+        if (path::oneName(have) == want) return i;
     }
     return docs_.size();
 }
@@ -1596,11 +1588,28 @@ void Editor::renameFile() {
     if (!done.ok) return;
 
     // A file open in a tab has to follow its own name, or saving would write
-    // the old one back.
+    // the old one back. Compared by what the paths resolve to rather than by
+    // how they were written: the pane hands out one spelling and the edit view
+    // holds another, and a tab that misses here goes on wearing the old name
+    // with nothing said.
     for (size_t i = 0; i < docs_.size(); ++i) {
         Buffer& b = (i == doc_) ? buf_ : docs_[i].buf;
-        if (b.path() == path) b.setPath(done.path);
+        if (!b.path().empty() && path::same(b.path(), path)) b.setPath(done.path);
     }
+
+    // So do its breakpoints. They are filed under the file's name, so a rename
+    // without this leaves them under a name nothing asks for again: the marks
+    // vanish from the gutter, and a debugger started afterwards is told to stop
+    // in a file that is no longer there.
+    std::map<std::string, FileBreaks>::iterator had = breaks_.find(path::oneName(path));
+    if (had != breaks_.end()) {
+        std::set<size_t> lines = had->second.lines;
+        breaks_.erase(had);
+        FileBreaks& now = breaks_[path::oneName(done.path)];
+        now.path = done.path;
+        now.lines = lines;
+    }
+
     lang_ = languageFor(buf_.path());
     refreshTree();
 }
@@ -1623,7 +1632,7 @@ void Editor::deleteFile() {
 
     for (size_t i = 0; i < docs_.size(); ++i) {
         Buffer& b = (i == doc_) ? buf_ : docs_[i].buf;
-        if (b.path() == path) b.setPath(std::string());
+        if (!b.path().empty() && path::same(b.path(), path)) b.setPath(std::string());
     }
     refreshTree();
 }
@@ -1954,17 +1963,19 @@ void Editor::buildProject(bool andRun) {
 }
 
 bool Editor::breakpointOn(size_t line) const {
-    std::map<std::string, std::set<size_t> >::const_iterator found =
-        breaks_.find(buf_.path());
+    std::map<std::string, FileBreaks>::const_iterator found =
+        breaks_.find(path::oneName(buf_.path()));
     if (found == breaks_.end()) return false;
-    return found->second.count(line) > 0;
+    return found->second.lines.count(line) > 0;
 }
 
 void Editor::toggleBreak() {
     if (buf_.path().empty()) { say("save the file first - a breakpoint is on a line of a file"); return; }
 
     size_t line = cy_ + 1;   // the debugger counts from one, the buffer from zero
-    std::set<size_t>& here = breaks_[buf_.path()];
+    FileBreaks& file = breaks_[path::oneName(buf_.path())];
+    if (file.path.empty()) file.path = buf_.path();
+    std::set<size_t>& here = file.lines;
     if (here.count(line)) {
         here.erase(line);
         if (debugger_.running()) {
@@ -1973,14 +1984,14 @@ void Editor::toggleBreak() {
             // are never enough breakpoints here for it to matter.
             debugger_.clearBreakpoints();
             for (std::set<size_t>::iterator it = here.begin(); it != here.end(); ++it)
-                debugger_.breakAt(buf_.path(), *it);
+                debugger_.breakAt(file.path, *it);
         }
         say("breakpoint off line " + number(line));
         return;
     }
 
     here.insert(line);
-    if (debugger_.running()) debugger_.breakAt(buf_.path(), line);
+    if (debugger_.running()) debugger_.breakAt(file.path, line);
     say("breakpoint on line " + number(line));
 }
 
@@ -2216,11 +2227,11 @@ void Editor::debug(bool project) {
     }
 
     size_t set = 0;
-    for (std::map<std::string, std::set<size_t> >::iterator file = breaks_.begin();
+    for (std::map<std::string, FileBreaks>::iterator file = breaks_.begin();
          file != breaks_.end(); ++file)
-        for (std::set<size_t>::iterator line = file->second.begin();
-             line != file->second.end(); ++line)
-            if (debugger_.breakAt(file->first, *line)) ++set;
+        for (std::set<size_t>::iterator line = file->second.lines.begin();
+             line != file->second.lines.end(); ++line)
+            if (debugger_.breakAt(file->second.path, *line)) ++set;
 
     console_.push_back(std::string("started ") + dbg_name(debugger_.kind()) + " with " +
                        number(set) + " breakpoint" + (set == 1 ? "" : "s"));

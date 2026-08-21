@@ -1175,6 +1175,17 @@ void paths() {
     check(p::rename(file, moved), "it can be renamed");
     check(!p::exists(file) && p::exists(moved), "which takes the old name away");
 
+    // One name for a file, whatever spelling it arrives in. This is what keeps
+    // one file to one tab, and one file to one set of breakpoints.
+    check(p::same(moved, p::withSlashes(moved)), "a path is the same file as itself");
+    check(p::same(moved, p::join(dir, "one/two/./three/b.c")),
+          "and so is the same path written through a dot");
+    check(p::same(moved, p::join(dir, "one/two/three/../three/b.c")),
+          "and one written through a step up and back");
+    check(!p::same(moved, p::join(dir, "one/two/three/c.c")),
+          "two different files are not the same file");
+    check(p::oneName(moved) == p::oneName(moved), "the one name is stable");
+
     // What is in a directory, without . and .., and saying which are which.
     bool readable = false;
     std::vector<p::Entry> inside = p::entries(p::join(dir, "one"), &readable);

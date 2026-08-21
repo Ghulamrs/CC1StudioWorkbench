@@ -38,6 +38,19 @@ std::string absolute(const std::string& path);
 // and cannot happen anywhere else.
 std::string relativeTo(const std::string& path, const std::string& base);
 
+// One name for a file, for comparing two paths or filing something under one.
+// Two spellings of the same file have to answer the same here - as typed, as
+// the pane hands it out, absolute or relative, forward slashes or back - or the
+// editor opens a second tab on a file it already has, or keeps a breakpoint
+// under a name nothing else ever asks for.
+//
+// Never shown to anybody. On Windows it is lower-cased, because the filesystem
+// does not care about case and a person reading their own filename does.
+std::string oneName(const std::string& path);
+
+// Whether two paths are the same file, by the rule above.
+bool same(const std::string& one, const std::string& other);
+
 std::string parent(const std::string& path);
 std::string filename(const std::string& path);
 std::string join(const std::string& directory, const std::string& leaf);

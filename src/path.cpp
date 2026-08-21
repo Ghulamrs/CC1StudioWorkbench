@@ -1,5 +1,6 @@
 #include "path.h"
 
+#include <cctype>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -163,6 +164,19 @@ std::string relativeTo(const std::string& path, const std::string& base) {
         out += here.parts[i];
     }
     return out.empty() ? std::string(".") : out;
+}
+
+std::string oneName(const std::string& path) {
+    std::string name = absolute(path);
+#ifdef _WIN32
+    for (size_t i = 0; i < name.size(); ++i)
+        name[i] = static_cast<char>(::tolower(static_cast<unsigned char>(name[i])));
+#endif
+    return name;
+}
+
+bool same(const std::string& one, const std::string& other) {
+    return oneName(one) == oneName(other);
 }
 
 std::string parent(const std::string& path) {

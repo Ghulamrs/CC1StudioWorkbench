@@ -247,8 +247,17 @@ private:
     // Where the program is to stop, by file and by line counting from one, and
     // where it actually is once it has. Kept by file rather than by buffer so
     // that a breakpoint survives the file being closed and opened again.
+    //
+    // Filed under path::oneName, and holding the name as it was written beside
+    // the lines: one file has one entry however its path was spelled, and the
+    // debugger is still told the name a person would recognise rather than the
+    // flattened one used to find it.
+    struct FileBreaks {
+        std::string path;
+        std::set<size_t> lines;
+    };
     Debugger debugger_;
-    std::map<std::string, std::set<size_t> > breaks_;
+    std::map<std::string, FileBreaks> breaks_;
     Built debugBuilt_;
     // Whether that program is the editor's own temporary one, and so the
     // editor's to remove when the debugger stops. The project's program is the

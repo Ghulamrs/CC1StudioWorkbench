@@ -79,7 +79,9 @@ machine it was installed on.
 
 **It stops the program on a line and walks through it.** F9 puts a breakpoint
 on the line the caret is on - a `*` in the gutter, and no compiler needed to put
-it there. F8 builds with `-g`, starts the debugger, sets every breakpoint it has
+it there. A breakpoint belongs to the file rather than to the tab, so it
+survives the file being closed and opened again, and follows the file when it is
+renamed. F8 builds with `-g`, starts the debugger, sets every breakpoint it has
 been given and runs; when the program stops, the caret goes to the line, a `>`
 marks it, and the Debug tab says where it is and what is in scope:
 

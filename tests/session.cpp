@@ -1121,6 +1121,28 @@ void stoppingAndStepping(const std::string& ed1, const std::string& cc1) {
     check(wasShown(unmarked, "breakpoint off line 11"), "and F9 again takes it away");
     check(!onScreen(unmarked, "*11"), "leaving the gutter as it was");
 
+    // A breakpoint is filed under the file's name, so renaming the file has to
+    // carry it across. It did not: the mark left the gutter, and a debugger
+    // started afterwards was told to stop in a file that was no longer there.
+    // In a project of its own, since it leaves the file under another name.
+    {
+        file::path renaming = freshProject("renamed-under-a-breakpoint");
+        file::path was = renaming / "src" / "stepped.c";
+        writeFile(was, kWorthStoppingIn);
+        std::string there = "\"" + was.string() + "\" --project \"" + renaming.string() + "\"";
+
+        // Project menu, then down to Rename..., as fileCommands drives it.
+        const std::string toRename = kF10 + times(kRight, 2) + times(kDown, 4) + kEnter;
+        Screen followed = drive(ed1, there,
+                                toLoopBody + kF9 + toRename + "src/moved.c" + kEnter + ctrl('q'),
+                                renaming);
+        check(file::exists(renaming / "src" / "moved.c"),
+              "a file with a breakpoint in it can be renamed");
+        check(onScreen(followed, "*11"),
+              "and the breakpoint is still on the line under the new name");
+        file::remove_all(renaming);
+    }
+
 #ifdef _WIN32
     // cc1 generates MASM for this machine's own target, which carries no line
     // table, so there is nothing here for a debugger to read - and so nothing

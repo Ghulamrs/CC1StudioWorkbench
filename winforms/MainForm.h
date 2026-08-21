@@ -137,8 +137,14 @@ private:
     int workResult_;        // what it came back with
     int workKind_;          // and the compiler and language it was told to use
     int workLanguage_;
+    // Breakpoints, filed under OneName so that one file has one set of them
+    // however its path was spelled - the same rule that keeps one file to one
+    // tab. breakNames_ holds the spelling to hand a debugger, since OneName is
+    // flattened and lower-cased and is for finding things, never for showing
+    // or for passing on. Editor::renameFile keeps the same pair in the core.
     System::Collections::Generic::Dictionary<String^,
         System::Collections::Generic::List<int>^>^ breaks_;
+    System::Collections::Generic::Dictionary<String^, String^>^ breakNames_;
     String^ stopFile_;
     int stopLine_;          // 0 when the program is not standing still
 
@@ -233,6 +239,7 @@ private:
         workLanguage_ = 0;
         breaks_ = gcnew System::Collections::Generic::Dictionary<String^,
             System::Collections::Generic::List<int>^>();
+        breakNames_ = gcnew System::Collections::Generic::Dictionary<String^, String^>();
         stopFile_ = nullptr;
         stopLine_ = 0;
         indentWidth_ = 4;
@@ -926,7 +933,7 @@ private:
             if (sheet->gutter == panel) file = sheet->path;
 
         System::Collections::Generic::List<int>^ marks = nullptr;
-        if (file != nullptr) breaks_->TryGetValue(file, marks);
+        if (file != nullptr) breaks_->TryGetValue(OneName(file), marks);
 
         bool sameFile = file != nullptr && stopFile_ != nullptr &&
                         System::IO::Path::GetFileName(file) ==
@@ -1641,6 +1648,24 @@ private:
             path_ = now;
             Text = String::Format("{0} - {1}", ProductName(), System::IO::Path::GetFileName(now));
         }
+
+        // So do its breakpoints, which are filed under the file's name. Without
+        // this they are left under a name nothing asks for again: the marks go
+        // from the gutter, and a debugger started afterwards is told to stop in
+        // a file that is no longer there. Editor::renameFile does the same.
+        String^ wasKey = OneName(target);
+        System::Collections::Generic::List<int>^ hadBreaks = nullptr;
+        if (breaks_->TryGetValue(wasKey, hadBreaks)) {
+            breaks_->Remove(wasKey);
+            breakNames_->Remove(wasKey);
+            String^ nowKey = OneName(now);
+            breaks_[nowKey] = hadBreaks;
+            breakNames_[nowKey] = now;
+            Sheet^ showing = Current();
+            if (showing != nullptr && showing->gutter != nullptr)
+                showing->gutter->Invalidate();   // the marks are drawn, not stored
+        }
+
         FillTree();
     }
 
@@ -2317,11 +2342,13 @@ private:
 
     System::Collections::Generic::List<int>^ BreaksFor(String^ file) {
         if (file == nullptr) return nullptr;
+        String^ key = OneName(file);
         System::Collections::Generic::List<int>^ lines = nullptr;
-        if (!breaks_->TryGetValue(file, lines)) {
+        if (!breaks_->TryGetValue(key, lines)) {
             lines = gcnew System::Collections::Generic::List<int>();
-            breaks_[file] = lines;
+            breaks_[key] = lines;
         }
+        breakNames_[key] = file;   // the newest spelling is the one to show
         return lines;
     }
 
@@ -2361,7 +2388,9 @@ private:
         ed1_debugger_clear(debugger_);
         for each (System::Collections::Generic::KeyValuePair<String^,
                       System::Collections::Generic::List<int>^> pair in breaks_) {
-            array<Byte>^ bytes = Utf8Of(pair.Key);
+            String^ named = nullptr;
+            if (!breakNames_->TryGetValue(pair.Key, named)) named = pair.Key;
+            array<Byte>^ bytes = Utf8Of(named);
             pin_ptr<Byte> pinned = &bytes[0];
             for each (int line in pair.Value)
                 ed1_debugger_break(debugger_, reinterpret_cast<const char*>(pinned), line);

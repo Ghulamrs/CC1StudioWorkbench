@@ -521,8 +521,11 @@ whatever this machine has - fixed-pitch only, since the gutter's numbers are
 laid out on every character being the same width. It applies to every tab at
 once, because a file does not have a typeface: the person reading it does. And
 it is remembered in `~/.ed1config.json`, beside the last project and the frame
-style, for the same reason those are there - it is a fact about the machine you
-are sitting at, not about any project. A name that machine does not have is
+style, for the same reason those are there. A font is not a property of a
+project at all: it belongs to the person reading, and often only to the hour -
+a face that is comfortable in the morning is not the one wanted at the end of a
+long day. Putting it in an `ed1.json` would push one person's eyes onto everyone
+who opens that project. A name that machine does not have is
 quietly the default rather than a complaint at startup.
 
 **View hides what you are not using**: `Ctrl+P` the project pane, `Ctrl+E` the

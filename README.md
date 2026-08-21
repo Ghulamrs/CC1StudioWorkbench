@@ -96,6 +96,25 @@ F6 steps into a call, F7 over one, F8 carries on, and the Debug menu has those
 and step-out. Those variables are cc1's own DWARF, read back by the machine's
 own debugger.
 
+**And it says how the program got there.** Stepping into a call, the Debug tab
+puts the stack under the variables - who is waiting, and on which line:
+
+```
+stopped at stepped.c:3 in twice
+
+  n = 1   [int]
+
+called from
+  main   stepped.c:11
+```
+
+The stack stops at `main`. Below main is the code that started the program,
+which was not compiled here and has no source to go to - the same place a step
+off the end of main arrives in. lldb shows one frame of it and gdb three, and
+three lines of somebody else's libc above the answer are three lines to read
+past at every stop. A program standing in main has a stack of one and the tab
+says nothing about it, since a `called from` with nothing under it is noise.
+
 It drives that debugger rather than being one - lldb on a Mac, gdb on the Linux
 box, cdb on Windows - all three spoken through `src/debugger.cpp`, which is the
 one place their vocabularies differ.

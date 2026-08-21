@@ -1215,10 +1215,15 @@ void stoppingAndStepping(const std::string& ed1, const std::string& cc1) {
     // else's debugger and shown by this editor.
     check(onScreen(stopped, "total = 0"), "and the locals are there, with their values");
     check(onScreen(stopped, "i = 1"), "including the one the loop declared");
+    check(!onScreen(stopped, "called from"),
+          "and nothing is said about a stack, since main was called by nobody");
 
     Screen inside = drive(ed1, withCc1, toLoopBody + kF9 + kF8 + kF6 + ctrl('q'), dir);
     check(onScreen(inside, "in twice"), "F6 steps into the call");
     check(onScreen(inside, "n = 1"), "where the argument is in scope");
+    check(onScreen(inside, "called from"), "and now there is a stack to show");
+    check(onScreen(inside, "main   stepped.c:11"),
+          "naming what called it and the line waiting for it to come back");
 
     Screen carried = drive(ed1, withCc1, toLoopBody + kF9 + kF8 + kF7 + kF8 + ctrl('q'), dir);
     check(onScreen(carried, "total = 2"), "F7 steps over it and F8 carries on round the loop");

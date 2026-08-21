@@ -72,6 +72,18 @@ struct Variable {
     std::string value;
 };
 
+// One place on the call stack: the function standing there, and the line of it
+// that is being waited on. The fields are three of a Stop's, because a frame is
+// a place the program is standing in - the only difference is that it got there
+// by calling rather than by arriving, and is waiting for the call to come back.
+struct StackFrame {
+    std::string function;
+    std::string file;
+    size_t line;
+
+    StackFrame() : line(0) {}
+};
+
 class Debugger {
 public:
     Debugger();
@@ -99,6 +111,11 @@ public:
     Stop stepOut();      // out of the one we are in
 
     std::vector<Variable> locals();
+
+    // How it got here: where it is standing first, and what called it after
+    // that. One frame means it is in main and nothing called it, which is the
+    // ordinary case and is not worth saying.
+    std::vector<StackFrame> frames();
 
     // Anything else, for the console: what was typed, answered as it came.
     std::string ask(const std::string& command);
@@ -175,6 +192,18 @@ std::string dbg_withoutEcho(const std::string& said, const std::string& asked,
 std::string dbg_programOutput(DebuggerKind kind, const std::string& said);
 
 std::vector<Variable> dbg_readVariables(DebuggerKind kind, const std::string& said);
+
+// The call stack, as each of them prints it.
+//
+// It stops at main. Below main is the code that started the program, which was
+// not compiled here and has no source to go to - the same place a step off the
+// end of main arrives in, see dbg_stoppedWithNoSource. lldb shows one frame of
+// it and gdb three, and three lines of somebody else's libc above the answer
+// are three lines to be read past at every stop.
+//
+// A frame that names no source is dropped for the same reason, and because
+// there is nothing the editor could do if it were clicked.
+std::vector<StackFrame> dbg_readFrames(DebuggerKind kind, const std::string& said);
 
 }  // namespace editor
 

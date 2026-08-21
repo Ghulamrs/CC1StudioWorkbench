@@ -270,6 +270,7 @@ private:
     std::string stopFile_;
     size_t stopLine_;            // 0 when the program is not standing still
     std::vector<Variable> locals_;
+    std::vector<StackFrame> stack_;   // and how it got to where it is standing
 
     bool marked_;             // whether one end of a selection has been put down
     size_t markRow_, markCol_;

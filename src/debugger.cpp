@@ -472,6 +472,74 @@ std::string dbg_whyNot(ToolchainKind kind, const std::string& arch) {
 //
 //   Last event: 8ec.1ff0: Hit breakpoint 0
 //   Last event: 8ec.1ff0: Exit process 0:8ec, code c
+namespace {
+
+// One line of lldb's or gdb's, read as a place: a function, and the file and
+// line it is standing on. "main () at s.c:11" is that line whether it is where
+// the program halted or a frame that is waiting for a call to come back, so
+// there is one reader for it rather than one per caller.
+//
+// False when the line does not say where, which is most lines and also a frame
+// with no source behind it - "dyld`start + 1903".
+bool placeIn(const std::string& line, StackFrame* frame) {
+    size_t at = line.rfind(" at ");
+    if (at == std::string::npos) return false;
+
+    // Where, after the " at ": the file is what follows up to a colon, read
+    // from the right, since a Windows path holds one that is not a separator.
+    std::string where = trimmed(line.substr(at + 4));
+    size_t colon = where.find_last_of(':');
+    if (colon == std::string::npos) return false;
+
+    std::string tail = where.substr(colon + 1);
+    std::string head = where.substr(0, colon);
+    if (!digits(tail)) return false;
+
+    // lldb gives file:line:column and gdb gives file:line, so a second colon
+    // with a number after it means the first number was the column.
+    size_t second = head.find_last_of(':');
+    if (second != std::string::npos && digits(head.substr(second + 1))) {
+        tail = head.substr(second + 1);
+        head = head.substr(0, second);
+    }
+
+    frame->file = head;
+    frame->line = number(tail);
+
+    // The function is before the " at ", after the last backtick that lldb
+    // puts between the program and the name, or before the "()" gdb puts
+    // after it.
+    std::string front = line.substr(0, at);
+    size_t tick = front.find_last_of('`');
+    if (tick != std::string::npos) front = front.substr(tick + 1);
+
+    // gdb writes "main ()" and lldb writes "twice(n=1)": the name is what is
+    // before the bracket either way, and the arguments are not part of it -
+    // they are in the variables, spelled properly.
+    //
+    // This has to come before the comma below, and did not, which cost the
+    // name of every function taking more than one argument: lldb prints
+    // "sums`addUp(a=2, b=40)", the comma inside the arguments was the last one
+    // on the line, and what came back was "b=40)". One argument or none has no
+    // comma, so every test here had passed.
+    size_t bracket = front.find('(');
+    if (bracket != std::string::npos) front = front.substr(0, bracket);
+
+    // gdb puts what it was doing before the name: "Breakpoint 1, main ()".
+    size_t comma = front.find_last_of(',');
+    if (comma != std::string::npos) front = front.substr(comma + 1);
+
+    // and names the address before it when it did not stop at the start of a
+    // line: "0x00000000004011b3 in main ()".
+    size_t in = front.rfind(" in ");
+    if (in != std::string::npos) front = front.substr(in + 4);
+
+    frame->function = trimmed(front);
+    return true;
+}
+
+}  // namespace
+
 Stop dbg_readCdbStop(const std::string& said) {
     Stop stop;
     stop.said = said;
@@ -572,58 +640,13 @@ Stop dbg_readStop(DebuggerKind kind, const std::string& said) {
                                                   : line.find(" at ") != std::string::npos;
         if (!interesting || stop.stopped) continue;
 
-        size_t at = line.rfind(" at ");
-        if (at == std::string::npos) continue;
+        StackFrame here;
+        if (!placeIn(line, &here)) continue;
 
-        std::string where = trimmed(line.substr(at + 4));
-        size_t colon = where.find_last_of(':');
-        if (colon == std::string::npos) continue;
-
-        std::string tail = where.substr(colon + 1);
-        std::string head = where.substr(0, colon);
-        if (!digits(tail)) continue;
-
-        // lldb gives file:line:column and gdb gives file:line, so a second
-        // colon with a number after it means the first number was the column.
-        size_t second = head.find_last_of(':');
-        if (second != std::string::npos && digits(head.substr(second + 1))) {
-            tail = head.substr(second + 1);
-            head = head.substr(0, second);
-        }
-
-        stop.file = head;
-        stop.line = number(tail);
+        stop.file = here.file;
+        stop.line = here.line;
+        stop.function = here.function;
         stop.stopped = true;
-
-        // The function is before the " at ", after the last backtick that lldb
-        // puts between the program and the name, or before the "()" gdb puts
-        // after it.
-        std::string front = line.substr(0, at);
-        size_t tick = front.find_last_of('`');
-        if (tick != std::string::npos) front = front.substr(tick + 1);
-
-        // gdb writes "main ()" and lldb writes "twice(n=1)": the name is what
-        // is before the bracket either way, and the arguments are not part of
-        // it - they are in the variables, spelled properly.
-        //
-        // This has to come before the comma below, and did not, which cost the
-        // name of every function taking more than one argument: lldb prints
-        // "sums`addUp(a=2, b=40)", the comma inside the arguments was the last
-        // one on the line, and what came back was "b=40)". One argument or
-        // none has no comma, so every test here had passed.
-        size_t bracket = front.find('(');
-        if (bracket != std::string::npos) front = front.substr(0, bracket);
-
-        // gdb puts what it was doing before the name: "Breakpoint 1, main ()".
-        size_t comma = front.find_last_of(',');
-        if (comma != std::string::npos) front = front.substr(comma + 1);
-
-        // and names the address before it when it did not stop at the start of
-        // a line: "0x00000000004011b3 in main ()".
-        size_t in = front.rfind(" in ");
-        if (in != std::string::npos) front = front.substr(in + 4);
-
-        stop.function = trimmed(front);
     }
 
     // gdb says where it is only when that changes. A step that stays in the
@@ -679,6 +702,100 @@ std::vector<Variable> dbg_readVariables(DebuggerKind kind, const std::string& sa
             variable.value = variable.value.substr(2);
         if (variable.name.empty() || variable.name.find(' ') != std::string::npos) continue;
         found.push_back(variable);
+    }
+    return found;
+}
+
+// What the frame numbering on the front of a backtrace line is, and what is
+// left when it comes off.
+//
+//   lldb:  * frame #0: 0x00000001000037bc stepped`twice(n=1) at stepped.c:3:9
+//   gdb:   #1  0x00000000004011b3 in main () at stepped.c:11
+//
+// Empty when the line is not a frame at all - the "* thread #1, stop reason =
+// ..." heading lldb puts above its stack, and gdb's blank lines.
+std::string afterFrameNumber(DebuggerKind kind, const std::string& line) {
+    if (kind == DebuggerLldb) {
+        size_t frame = line.find("frame #");
+        if (frame == std::string::npos) return std::string();
+        size_t colon = line.find(':', frame);
+        if (colon == std::string::npos) return std::string();
+        return trimmed(line.substr(colon + 1));
+    }
+
+    if (line.empty() || line[0] != '#') return std::string();
+    size_t i = 1;
+    while (i < line.size() && line[i] >= '0' && line[i] <= '9') ++i;
+    if (i == 1) return std::string();
+    return trimmed(line.substr(i));
+}
+
+// cdb's stack is a table, and the source is in brackets at the end of the row
+// because .lines -e was asked for when it started:
+//
+//   Child-SP          RetAddr               Call Site
+//   000000f5`5e4ffbd8 00007ff6`9bb77190     counted!twice+0x4 [C:\work\counted.cpp @ 3]
+//   (Inline Function) --------`-------- counted!invoke_main+0x22 [exe_common.inl @ 78]
+//   000000f5`5e4ffc60 00007ffb`d63aad6c     KERNEL32!BaseThreadInitThunk+0x17
+//
+// What is read is the bracket and the call site immediately before it, rather
+// than the columns counted from the left. `k` numbers no frames - `kn` does,
+// and a reader written against `kn`'s "00 " and "01 " finds nothing in `k`'s
+// output at all, which is what the first version of this did on the one
+// machine that has cdb. The row for an inlined call has dashes where the
+// stack pointer would be and is a frame like any other, which is the second
+// reason not to read from the left.
+//
+// A row with no bracket named no source: the heading, and the CRT and kernel
+// frames under main.
+bool cdbFrameIn(const std::string& line, StackFrame* frame) {
+    size_t open = line.rfind('[');
+    size_t close = line.rfind(']');
+    if (open == std::string::npos || close == std::string::npos || close < open) return false;
+
+    // "C:\work\counted.cpp @ 3" - the at-sign is cdb's own separator here, and
+    // the colon after the drive letter is not one.
+    std::string where = line.substr(open + 1, close - open - 1);
+    size_t sign = where.rfind(" @ ");
+    if (sign == std::string::npos) return false;
+    std::string tail = trimmed(where.substr(sign + 3));
+    if (!digits(tail)) return false;
+
+    frame->file = trimmed(where.substr(0, sign));
+    frame->line = number(tail);
+
+    // "counted!twice+0x4": the last column before the source, then the module,
+    // then the name, then how far into it.
+    std::string call = trimmed(line.substr(0, open));
+    size_t space = call.find_last_of(" \t");
+    if (space != std::string::npos) call = call.substr(space + 1);
+    size_t bang = call.find('!');
+    if (bang == std::string::npos) return false;
+    call = call.substr(bang + 1);
+    size_t end = call.find_first_of("+ \t(");
+    frame->function = trimmed(end == std::string::npos ? call : call.substr(0, end));
+    return true;
+}
+
+std::vector<StackFrame> dbg_readFrames(DebuggerKind kind, const std::string& said) {
+    std::vector<StackFrame> found;
+    std::vector<std::string> all = lines(said);
+
+    for (size_t i = 0; i < all.size(); ++i) {
+        std::string line = trimmed(withoutPrompt(all[i]));
+        if (line.empty() || line == kMarker) continue;
+
+        StackFrame frame;
+        if (kind == DebuggerCdb) {
+            if (!cdbFrameIn(line, &frame)) continue;
+        } else {
+            std::string rest = afterFrameNumber(kind, line);
+            if (rest.empty() || !placeIn(rest, &frame)) continue;
+        }
+
+        found.push_back(frame);
+        // And no further: see the header for why the stack ends at main.
+        if (frame.function == "main") break;
     }
     return found;
 }
@@ -856,6 +973,16 @@ std::vector<Variable> Debugger::locals() {
     std::vector<Variable> locals = dbg_readVariables(kind_, ask("info locals"));
     for (size_t i = 0; i < locals.size(); ++i) found.push_back(locals[i]);
     return found;
+}
+
+std::vector<StackFrame> Debugger::frames() {
+    if (!running()) return std::vector<StackFrame>();
+
+    // All three will print the whole stack unasked; none of them needs telling
+    // how much of it to print, because dbg_readFrames stops reading at main.
+    if (kind_ == DebuggerCdb) return dbg_readFrames(kind_, ask("k"));
+    if (kind_ == DebuggerGdb) return dbg_readFrames(kind_, ask("backtrace"));
+    return dbg_readFrames(kind_, ask("thread backtrace"));
 }
 
 }  // namespace editor

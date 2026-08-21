@@ -34,6 +34,9 @@
 
 .EXAMPLE
     .\show.ps1 -Files examples\hello.c -Keys "{F9}{F8}" -Panel Debug
+
+.EXAMPLE
+    .\show.ps1 -Files examples\smart.cpp -Keys "{F9}{F8}" -Then "{F6}" -Panel Debug
 #>
 param(
     # The directory holding ed1.json, and where paths are counted from.
@@ -56,6 +59,17 @@ param(
     # How long to wait after those keys. Starting a debugger takes longer than
     # pressing a key usually does, since it compiles first.
     [int]$KeySeconds = 12,
+
+    # Keys to press once those have been answered - "{F6}" after a "{F9}{F8}"
+    # steps into the call the program stopped on. Sent as a batch of its own
+    # rather than added to -Keys, because a key sent while the debugger is
+    # still starting is a key nobody sees: SendKeys posts it, the window is
+    # busy compiling, and what comes back is a picture of the stop it was
+    # already standing on.
+    [string]$Then = "",
+
+    # How long to wait after those, a step being quicker than a start.
+    [int]$ThenSeconds = 10,
 
     # The editor to run. Found beside this script by default.
     [string]$Editor = "",
@@ -154,6 +168,11 @@ if ($Build) {
 if ($Keys -ne "") {
     [System.Windows.Forms.SendKeys]::SendWait($Keys)
     Start-Sleep -Seconds $KeySeconds
+}
+
+if ($Then -ne "") {
+    [System.Windows.Forms.SendKeys]::SendWait($Then)
+    Start-Sleep -Seconds $ThenSeconds
 }
 
 if ($Panel -ne "") {

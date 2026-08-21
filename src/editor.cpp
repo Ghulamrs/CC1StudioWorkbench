@@ -2087,6 +2087,7 @@ void Editor::showStop(const Stop& where) {
         stopFile_.clear();
         stopLine_ = 0;
         locals_.clear();
+        stack_.clear();
         debug_.push_back("the program ran to the end and returned " + number(static_cast<size_t>(where.status)));
         debug_.push_back("");
         debug_.push_back("F8 starts it again. The breakpoints are still where you put them.");
@@ -2105,6 +2106,7 @@ void Editor::showStop(const Stop& where) {
             stopFile_.clear();
             stopLine_ = 0;
             locals_.clear();
+        stack_.clear();
             debug_.push_back("stopped where there is no source to show");
             debug_.push_back("");
             debug_.push_back("Stepping past the end of main arrives in the code that");
@@ -2142,6 +2144,7 @@ void Editor::showStop(const Stop& where) {
     }
 
     locals_ = debugger_.locals();
+    stack_ = debugger_.frames();
 
     if (path::filename(where.file) == path::filename(buf_.path()) && where.line > 0) {
         cy_ = where.line - 1;
@@ -2163,6 +2166,18 @@ void Editor::showStop(const Stop& where) {
             debug_.push_back(said);
         }
     }
+
+    // Who is waiting for it. The first frame is where it is standing, which
+    // the line at the top already says, so what is worth showing is what is
+    // above that - and a program standing in main has nothing above it.
+    if (stack_.size() > 1) {
+        debug_.push_back("");
+        debug_.push_back("called from");
+        for (size_t i = 1; i < stack_.size(); ++i)
+            debug_.push_back("  " + stack_[i].function + "   " +
+                             path::filename(stack_[i].file) + ":" + number(stack_[i].line));
+    }
+
     debug_.push_back("");
     debug_.push_back("F8 carries on   F7 steps over   F6 steps into   F9 sets a breakpoint");
 
@@ -2293,6 +2308,7 @@ void Editor::debugStop() {
     stopFile_.clear();
     stopLine_ = 0;
     locals_.clear();
+    stack_.clear();
 }
 
 void Editor::showAbout() {

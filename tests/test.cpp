@@ -1483,6 +1483,82 @@ void whatADebuggerSays() {
           "nor of the function it stopped in");
 }
 
+// The call stack, in the three spellings it comes in. These are transcripts
+// each of them actually printed, prompts and all, rather than tidied versions
+// of them - the prompt on the front of the first line is exactly the sort of
+// thing that goes wrong.
+void whatACallStackLooksLike() {
+    std::printf("who called what the program is standing in\n");
+
+    std::vector<editor::StackFrame> lldb = editor::dbg_readFrames(
+        editor::DebuggerLldb,
+        "(lldb) thread backtrace\n"
+        "* thread #1, queue = 'com.apple.main-thread', stop reason = breakpoint 1.1\n"
+        "  * frame #0: 0x00000001000002f8 stepped`twice(n=1) at stepped.c:3:5\n"
+        "    frame #1: 0x00000001000003f8 stepped`main at stepped.c:11:9\n"
+        "    frame #2: 0x000000018b6584e4 dyld`start + 6992\n");
+    check(lldb.size() == 2, "lldb: the stack is read, and stops at main");
+    checkEqual(lldb[0].function, "twice", "lldb: standing in the one it stopped in");
+    check(lldb[0].line == 3, "lldb: on the line it stopped on, not the column after it");
+    checkEqual(lldb[1].function, "main", "lldb: called from the one above it");
+    checkEqual(lldb[1].file, "stepped.c", "lldb: which names its own file");
+    check(lldb[1].line == 11, "lldb: and the line that is waiting for the call");
+
+    std::vector<editor::StackFrame> gdb = editor::dbg_readFrames(
+        editor::DebuggerGdb,
+        "(gdb) #0  twice (n=1) at stepped.c:3\n"
+        "#1  0x00000000004011b3 in main () at stepped.c:11\n"
+        "#2  0x00007ffff7829d90 in __libc_start_call_main () at ../sysdeps/nptl/libc_start.c:58\n"
+        "#3  0x00007ffff7829e40 in __libc_start_main_impl () at ../csu/libc-start.c:392\n"
+        "#4  0x0000000000401085 in _start ()\n");
+    check(gdb.size() == 2, "gdb: the same stack, and libc is not part of it");
+    checkEqual(gdb[0].function, "twice", "gdb: past the prompt on the first frame");
+    checkEqual(gdb[1].function, "main", "gdb: and past the address in front of the second");
+    check(gdb[1].line == 11, "gdb: with the line it is waiting on");
+
+    // cdb prints a table, and puts the source in brackets at the end of each
+    // row because .lines -e was asked for when it started. This is what it
+    // printed, and the shape of it is the whole point: `k` numbers no frames,
+    // an inlined call has dashes where the stack pointer would be, and the
+    // heading and the CRT frames under main name no source at all.
+    std::vector<editor::StackFrame> cdb = editor::dbg_readFrames(
+        editor::DebuggerCdb,
+        "0:000> k\n"
+        "Child-SP          RetAddr               Call Site\n"
+        "000000f5`5e4ffbd8 00007ff6`9bb77190     counted!twice+0x4 "
+        "[C:\\Users\\me\\counted.cpp @ 3]\n"
+        "000000f5`5e4ffbe0 00007ff6`9bb773fc     counted!main+0x30 "
+        "[C:\\Users\\me\\counted.cpp @ 10]\n"
+        "(Inline Function) --------`--------     counted!invoke_main+0x22 "
+        "[D:\\a\\_work\\1\\s\\src\\vctools\\crt\\vcstartup\\src\\startup\\exe_common.inl @ 78]\n"
+        "000000f5`5e4ffc60 00007ffb`d63aad6c     KERNEL32!BaseThreadInitThunk+0x17\n"
+        "000000f5`5e4ffc90 00000000`00000000     ntdll!RtlUserThreadStart+0x2c\n");
+    check(cdb.size() == 2, "cdb: its table is read, heading and all");
+    checkEqual(cdb[0].function, "twice", "cdb: without the module in front or the offset after");
+    checkEqual(cdb[1].file, "C:\\Users\\me\\counted.cpp", "cdb: the whole Windows path, drive and all");
+    check(cdb[1].line == 10, "cdb: and the line after its at-sign");
+
+    // An inlined call is a frame like any other, and is read from the same row
+    // that has dashes where every other row has a stack pointer.
+    std::vector<editor::StackFrame> inlined = editor::dbg_readFrames(
+        editor::DebuggerCdb,
+        "(Inline Function) --------`--------     counted!doubled+0x11 "
+        "[C:\\Users\\me\\counted.cpp @ 4]\n"
+        "000000f5`5e4ffbe0 00007ff6`9bb773fc     counted!main+0x30 "
+        "[C:\\Users\\me\\counted.cpp @ 10]\n");
+    check(inlined.size() == 2 && inlined[0].function == "doubled",
+          "cdb: a call that was inlined is still a frame");
+
+    // A stack with nothing above it is one frame, and the editor says nothing
+    // about it: standing in main having been called by nobody is the ordinary
+    // case, and a "called from" with one name under it is noise.
+    std::vector<editor::StackFrame> alone = editor::dbg_readFrames(
+        editor::DebuggerLldb,
+        "  * frame #0: 0x000000010000038c stepped`main at stepped.c:9:5\n"
+        "    frame #1: 0x000000018b6584e4 dyld`start + 6992\n");
+    check(alone.size() == 1, "a program standing in main has a stack of one");
+}
+
 // The whole conversation, against a program cc1 built. Needs both a debugger
 // and a compiler, so it says when it is skipping rather than passing quietly.
 void debuggingForReal() {
@@ -1561,6 +1637,16 @@ void debuggingForReal() {
 
     editor::Stop into = debugger.stepInto();
     check(into.stopped && into.function == "twice", "stepping into a call arrives inside it");
+
+    // And from in there the stack says how it got in, which is the whole of
+    // what a call stack is for and cannot be seen from main.
+    std::vector<editor::StackFrame> stack = debugger.frames();
+    check(stack.size() == 2, "the stack inside a call is that call and what called it");
+    if (stack.size() == 2) {
+        checkEqual(stack[0].function, "twice", "standing in the function stepped into");
+        checkEqual(stack[1].function, "main", "called from the one that called it");
+        check(stack[1].line == 11, "on the line that is waiting for it to come back");
+    }
 
     editor::Stop out = debugger.stepOut();
     check(out.stopped && out.function == "main", "and stepping out comes back");
@@ -1888,6 +1974,16 @@ void debuggingCppForReal() {
     editor::Stop into = debugger.stepInto();
     check(into.stopped && into.function == "twice", "stepping into a call arrives inside it");
 
+    // And from in there the stack says how it got in, which is the whole of
+    // what a call stack is for and cannot be seen from main.
+    std::vector<editor::StackFrame> stack = debugger.frames();
+    check(stack.size() == 2, "the stack inside a call is that call and what called it");
+    if (stack.size() == 2) {
+        checkEqual(stack[0].function, "twice", "standing in the function stepped into");
+        checkEqual(stack[1].function, "main", "called from the one that called it");
+        check(stack[1].line == 10, "on the line that is waiting for it to come back");
+    }
+
     editor::Stop out = debugger.stepOut();
     check(out.stopped && out.function == "main", "and stepping out comes back");
 
@@ -2047,6 +2143,16 @@ void theSeamTheWindowUses() {
 
     ed1_debugger_step_into(debugger);
     check(std::string(ed1_stop_function(debugger)) == "twice", "stepping into arrives inside");
+
+    // And the stack, handed over the same way and for the same reason. The
+    // window has nowhere to put a vector either.
+    check(ed1_stack_count(debugger) == 2, "the stack inside the call has two frames");
+    check(std::string(ed1_stack_function(debugger, 1)) == "main",
+          "the second of them being what called it");
+    check(ed1_stack_line(debugger, 1) == 10, "on the line waiting for it to come back");
+    check(std::string(ed1_stack_function(debugger, ed1_stack_count(debugger))).empty() &&
+              ed1_stack_line(debugger, -1) == 0,
+          "and an index off either end answers with nothing");
 
     ed1_debugger_step_out(debugger);
     check(std::string(ed1_stop_function(debugger)) == "main", "and stepping out comes back");
@@ -2429,6 +2535,7 @@ int main(int argc, char** argv) {
     whatItRemembers();
     talkingToAChild();
     whatADebuggerSays();
+    whatACallStackLooksLike();
     debuggingForReal();
     debuggingCppForReal();
     theSeamTheWindowUses();

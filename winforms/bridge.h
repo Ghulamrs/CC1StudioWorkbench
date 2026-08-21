@@ -361,6 +361,14 @@ const char* ed1_local_name(Ed1Debugger* debugger, int index);
 const char* ed1_local_type(Ed1Debugger* debugger, int index);
 const char* ed1_local_value(Ed1Debugger* debugger, int index);
 
+// And how it got there: the frame it is standing in first, and what called it
+// after that. One frame is a program standing in main, which the Debug tab
+// says nothing about - see dbg_readFrames for why the stack stops there.
+int ed1_stack_count(Ed1Debugger* debugger);
+const char* ed1_stack_function(Ed1Debugger* debugger, int index);
+const char* ed1_stack_file(Ed1Debugger* debugger, int index);
+int ed1_stack_line(Ed1Debugger* debugger, int index);
+
 #ifdef __cplusplus
 }
 #endif

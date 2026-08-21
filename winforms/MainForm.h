@@ -3192,6 +3192,20 @@ private:
                 said->Append("\r\n");
             }
         }
+        // Who is waiting for it. The first frame is where it is standing and
+        // the line at the top already says that, so what is worth showing is
+        // what is above it - and a program in main has nothing above it.
+        int deep = ed1_stack_count(debugger_);
+        if (deep > 1) {
+            said->Append("\r\ncalled from\r\n");
+            for (int i = 1; i < deep; ++i)
+                said->AppendFormat("  {0}   {1}:{2}\r\n",
+                                   FromUtf8(ed1_stack_function(debugger_, i)),
+                                   System::IO::Path::GetFileName(
+                                       FromUtf8(ed1_stack_file(debugger_, i))),
+                                   ed1_stack_line(debugger_, i));
+        }
+
         said->Append("\r\nF8 carries on   F7 steps over   F6 steps into   F9 sets a breakpoint");
         debug_->Text = said->ToString();
 

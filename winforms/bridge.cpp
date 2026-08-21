@@ -220,6 +220,7 @@ struct Ed1Debugger {
     editor::Debugger debugger;
     editor::Stop stop;
     std::vector<editor::Variable> locals;
+    std::vector<editor::StackFrame> stack;
     std::string answer;
     std::string output;   // the program's own words, kept for the same reason
 };
@@ -685,6 +686,7 @@ void ed1_debugger_free(Ed1Debugger* debugger) { delete debugger; }
 int ed1_debugger_start(Ed1Debugger* debugger, int debuggerKind, const char* program) {
     debugger->stop = editor::Stop();
     debugger->locals.clear();
+    debugger->stack.clear();
     return debugger->debugger.start(static_cast<editor::DebuggerKind>(debuggerKind),
                                     program ? program : "") ? 1 : 0;
 }
@@ -697,6 +699,7 @@ void ed1_debugger_stop(Ed1Debugger* debugger) {
     debugger->debugger.stop();
     debugger->stop = editor::Stop();
     debugger->locals.clear();
+    debugger->stack.clear();
 }
 
 int ed1_debugger_break(Ed1Debugger* debugger, const char* file, int line) {
@@ -714,7 +717,10 @@ namespace {
 void afterMoving(Ed1Debugger* debugger, const editor::Stop& stop) {
     debugger->stop = stop;
     debugger->locals.clear();
-    if (stop.stopped) debugger->locals = debugger->debugger.locals();
+    debugger->stack.clear();
+    if (!stop.stopped) return;
+    debugger->locals = debugger->debugger.locals();
+    debugger->stack = debugger->debugger.frames();
 }
 }  // namespace
 
@@ -761,6 +767,26 @@ const char* ed1_local_type(Ed1Debugger* debugger, int index) {
 }
 const char* ed1_local_value(Ed1Debugger* debugger, int index) {
     return holds(debugger, index) ? debugger->locals[index].value.c_str() : "";
+}
+
+int ed1_stack_count(Ed1Debugger* debugger) {
+    return static_cast<int>(debugger->stack.size());
+}
+
+namespace {
+bool reaches(Ed1Debugger* debugger, int index) {
+    return index >= 0 && static_cast<size_t>(index) < debugger->stack.size();
+}
+}  // namespace
+
+const char* ed1_stack_function(Ed1Debugger* debugger, int index) {
+    return reaches(debugger, index) ? debugger->stack[index].function.c_str() : "";
+}
+const char* ed1_stack_file(Ed1Debugger* debugger, int index) {
+    return reaches(debugger, index) ? debugger->stack[index].file.c_str() : "";
+}
+int ed1_stack_line(Ed1Debugger* debugger, int index) {
+    return reaches(debugger, index) ? static_cast<int>(debugger->stack[index].line) : 0;
 }
 
 int ed1_begin_from_what_is_there(Ed1Project* project, const char* directory) {

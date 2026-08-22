@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Workspace
+   version = "1.0">
+   <FileRef
+      location = "group:Editor.xcodeproj">
+   </FileRef>
+   <FileRef
+      location = "group:../Compiler-C/cc1.xcodeproj">
+   </FileRef>
+   <FileRef
+      location = "group:../Compiler-S/shc.xcodeproj">
+   </FileRef>
+</Workspace>

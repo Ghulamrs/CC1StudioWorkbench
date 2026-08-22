@@ -668,6 +668,58 @@ Stop dbg_readStop(DebuggerKind kind, const std::string& said) {
     return stop;
 }
 
+namespace {
+
+// The address on the front of lldb's own frame line:
+//
+//   frame #0: 0x00000001000004a0 m`addUp(a=1, b=-253525928) at sum.c:4:5
+//
+// Zero when the transcript has no such line, which is every line gdb and cdb
+// write and most of lldb's.
+unsigned long long lldbFrameAddress(const std::string& said) {
+    std::vector<std::string> all = lines(said);
+    for (size_t i = 0; i < all.size(); ++i) {
+        std::string line = withoutPrompt(all[i]);
+        size_t frame = line.find("frame #0:");
+        if (frame == std::string::npos) continue;
+        size_t hex = line.find("0x", frame);
+        if (hex == std::string::npos) continue;
+        return std::strtoull(line.c_str() + hex, 0, 16);
+    }
+    return 0;
+}
+
+}  // namespace
+
+bool dbg_wentNowhere(DebuggerKind kind, const Stop& before, const Stop& after) {
+    // gdb and cdb both step by line and answer once. Only lldb needs this,
+    // and asking it of the others would be a rule with nothing to apply to.
+    if (kind != DebuggerLldb) return false;
+
+    // A program that has ended has been somewhere, and a step that could not
+    // be read at all is not a step that went nowhere - it is a debugger to be
+    // reported rather than one to be asked again.
+    if (!before.stopped || !after.stopped || after.exited) return false;
+    if (after.file.empty() || after.function.empty() || after.line == 0) return false;
+
+    if (after.file != before.file || after.line != before.line) return false;
+    if (after.function != before.function) return false;
+
+    // A breakpoint the person set is always a real stop, wherever it is. This
+    // costs nothing in the case being fixed - a step that shuffled along says
+    // "stop reason = step over" - and it is what stops a breakpoint on the
+    // stepped line from being stepped straight past.
+    if (after.said.find("stop reason = breakpoint") != std::string::npos) return false;
+
+    // The same place, then - so what is left is whether the program moved
+    // forward inside it. Forward and not merely elsewhere: a step into a
+    // recursive call is the same line of the same function, and its address
+    // goes back to the callee's prologue, which is a real arrival.
+    unsigned long long was = lldbFrameAddress(before.said);
+    unsigned long long now = lldbFrameAddress(after.said);
+    return was != 0 && now > was;
+}
+
 // lldb:  (int) total = 0
 // gdb:   total = 0
 std::vector<Variable> dbg_readVariables(DebuggerKind kind, const std::string& said) {
@@ -1099,9 +1151,33 @@ Stop Debugger::run() {
     return afterMoving(kind_ == DebuggerGdb ? "run < /dev/null" : "run");
 }
 
+Stop Debugger::afterStepping(const std::string& command) {
+    Stop before = last_;
+    Stop stop = afterMoving(command);
+    std::string said = stop.said;
+
+    // Bounded, so that a line table stranger than the ones this was written
+    // against cannot turn one press of F7 into a program that never comes
+    // back. Two goes are what a return statement takes on arm64-darwin and
+    // three what a one-line function does; sixteen is room and not a guess at
+    // the number.
+    for (int again = 0; again < 16 && dbg_wentNowhere(kind_, before, stop); ++again) {
+        before = stop;
+        stop = afterMoving(command);
+        // What the program printed on the way is the program's, whether or
+        // not the step it printed during is one the editor is going to show.
+        // Without this a printf stepped over vanished on the Mac, which is
+        // the fault dbg_programOutput exists to prevent.
+        said += "\n" + stop.said;
+    }
+
+    stop.said = said;
+    return stop;
+}
+
 Stop Debugger::resume() { return afterMoving(kind_ == DebuggerCdb ? "g" : "continue"); }
-Stop Debugger::stepOver() { return afterMoving(kind_ == DebuggerCdb ? "p" : "next"); }
-Stop Debugger::stepInto() { return afterMoving(kind_ == DebuggerCdb ? "t" : "step"); }
+Stop Debugger::stepOver() { return afterStepping(kind_ == DebuggerCdb ? "p" : "next"); }
+Stop Debugger::stepInto() { return afterStepping(kind_ == DebuggerCdb ? "t" : "step"); }
 Stop Debugger::stepOut() { return afterMoving(kind_ == DebuggerCdb ? "gu" : "finish"); }
 
 std::vector<Variable> Debugger::locals() {

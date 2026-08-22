@@ -73,6 +73,23 @@ answers `D8003: missing source filename`, which reads as a command with no file
 in it. `targetRecipe` had the same shape, so a cl project build on Windows had
 been broken for as long as it existed and nothing said so.
 
+## What stopped being a limit
+
+**shc did not run on Windows**, so the editor there had no compiler for a
+`.shl` at all and every Shalimar case skipped itself. Compiler-S grew an MSVC
+build and an ml64/link path in its driver on 2026-08-22, and the Windows suites
+went from 692 unit / 164 session to 704 / 189 - all of that difference being
+Shalimar cases that had never run.
+
+Closing it turned up a fault in this suite rather than in either compiler.
+`tests/test.cpp` handed `std::system` a command with a quoted program *and*
+quoted arguments, and `cmd /c` strips the first and last quote when there is
+more than one pair - so the command reached the shell as garbage, ran nothing,
+and reported "shc did not build it" with an empty log. `src/compile.cpp` has
+had the fix and the explanation since it was written; the suite did not, and
+the case had no way to say so because it was throwing the compiler's output
+away. It captures it now.
+
 ## What is still a limit
 
 **Debug information does not mix.** cl writes CodeView, cc1 writes DWARF on two
@@ -81,12 +98,6 @@ program linked from two compilers has a debugger that can see part of it. The
 editor starts the first debugger any part has and names the groups it will not
 be able to stop in, in the console, before the build starts - which is the
 honest thing, but it is not the same as debugging the whole program.
-
-**shc does not run on Windows.** Compiler-S cross-compiles and ships only
-assembly to that box, so the editor there has no compiler for a `.shl` at all
-and every Shalimar case skips itself. Closing that means an MSVC build of
-Compiler-S and an ml64/link path in its driver, which is that project's
-decision rather than this one's.
 
 **One flat list still cannot say "these files on Linux, those on Windows".**
 A group per platform and a `build` entry naming the one you are on is still the

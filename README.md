@@ -770,9 +770,10 @@ script was written.
 
 **Windows** is the only machine with cl, and therefore the only one where a
 target of C and C++ meets *that* linker. MSVC at `/W4 /WX` has caught two
-shadowed variables clang accepted. What it cannot do is Shalimar: shc does not
-run there - Compiler-S cross-compiles and ships only assembly to that box - so
-every Shalimar case skips itself with a word.
+shadowed variables clang accepted. It does Shalimar too, since 2026-08-22:
+`shc.exe` is built there by `Compiler-S/build.bat`, put there by that project's
+`tests/build-windows.sh`. Before that, every Shalimar case on this box skipped
+itself for want of a compiler.
 
 Both scripts copy the **build scripts and the tests** as well as the sources,
 and both exclude what was built here. A stale `build.bat` and a stale

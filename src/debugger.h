@@ -177,6 +177,11 @@ private:
 
     Stop afterMoving(const std::string& command);
 
+    // A move that is a step: the same thing, said again while it goes
+    // nowhere. See dbg_wentNowhere for what that means and why only lldb
+    // needs it.
+    Stop afterStepping(const std::string& command);
+
     Process child_;
     DebuggerKind kind_;
     bool onConsole_;    // it was given a console, so it echoes and writes escapes
@@ -205,6 +210,36 @@ Stop dbg_readStop(DebuggerKind kind, const std::string& said);
 // The terminal asked these three questions inline and the window asked none,
 // so the same step ended the session in one and not the other.
 bool dbg_stoppedWithNoSource(const std::string& said);
+
+// Whether a step arrived anywhere, or only shuffled along inside the line it
+// started on.
+//
+// gdb answers `next` with the place the program has got to and nothing else:
+// stepping over the last statement of a function reports the caller. lldb, on
+// the same program built by the same compiler, answers with the same source
+// line two or three times before it does - the addresses climb, the arguments
+// turn to rubbish as the frame comes apart, and the line does not change. So
+// one press of F7 stepped and appeared to do nothing, and it took three to
+// leave a function on the Mac and one on the Linux box.
+//
+// The reason is underneath both of them: cc1's arm64-darwin objects carry no
+// __eh_frame and no __compact_unwind, so lldb works the frame out by reading
+// the instructions, and cc1's code uses the stack pointer as a scratch stack
+// inside the body. The frame it computes therefore moves mid-function, lldb
+// reads that as having arrived somewhere new, and its step ends early. gdb on
+// x86_64-linux, with the same DWARF from the same compiler, does not - it
+// steps by line and the line has not changed. (`finish` under lldb fails
+// outright on those objects for the same missing information: "Could not
+// create return address breakpoint".)
+//
+// So this is the difference between the two spelled out where the rest of
+// their differences live, and a step is repeated until it has been somewhere.
+// The test is deliberately narrow: the same file, the same line and the same
+// function, with the address on lldb's own frame line further on than it was.
+// A step into a recursive call is on the same line of the same function and
+// its address goes *back* to the callee's prologue, so it is a real arrival
+// and is left alone.
+bool dbg_wentNowhere(DebuggerKind kind, const Stop& before, const Stop& after);
 
 // What a console adds to what a debugger says, and how it is taken back out.
 //

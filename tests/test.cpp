@@ -1342,6 +1342,39 @@ void talkingToAChild() {
     missing.stop();
 }
 
+// Where output goes when nobody wants it. /dev/null is not a path on Windows -
+// cmd has NUL instead - so a command redirecting to it there fails to run at
+// all, and a case that builds something with one silently reported that the
+// compiler had not built it. Which is exactly how it reads: "shc did not build
+// it, so there is nothing to stop inside", on the machine where shc had only
+// just been made to exist.
+#ifdef _WIN32
+const char* const kNowhere = " > NUL 2>&1";
+#else
+const char* const kNowhere = " > /dev/null 2>&1";
+#endif
+
+// A command for std::system, which on Windows goes through `cmd /c`.
+//
+// cmd removes the first and last quote when a command has both a quoted
+// program and quoted arguments - the documented rule is that with more than
+// two quote characters it strips the leading one and the trailing one - so
+// `"shc.exe" "in.shl" -o "out.exe"` reaches the shell as garbage and fails
+// having run nothing at all. An extra pair around the whole thing is what cmd
+// then eats, leaving the real ones alone.
+//
+// src/compile.cpp's runCaptured has said this since it was written; this suite
+// did not, and every build it tried to do that way failed silently with an
+// empty log. Everything here that hands a quoted command to std::system goes
+// through this.
+std::string shellCommand(const std::string& command) {
+#ifdef _WIN32
+    return "\"" + command + "\"";
+#else
+    return command;
+#endif
+}
+
 std::string readWholeFile(const std::string& where) {
     std::ifstream in(where.c_str(), std::ios::binary);
     std::stringstream all;
@@ -1385,6 +1418,80 @@ const char* const kGdbStopTwoArgs =
 const char* const kGdbStop =
     "Breakpoint 1, main () at dbg.c:13\n"
     "13\t        total = total + twice(i);\n";
+
+// Four goes at one step, kept exactly as lldb printed them, from the project
+// the session suite builds: sum.c holding addUp on one line and main.c calling
+// it. The breakpoint is on sum.c:3 and each of these is one `next` after the
+// one above.
+//
+// The first two `next`s go nowhere. The line does not change, the addresses
+// climb, and by the third the arguments are rubbish because the frame is
+// coming apart - and only the fourth arrives in main. gdb, given the same
+// DWARF from the same compiler on x86_64-linux, answers the first `next` with
+// "main () at main.c:8": one press, one arrival. That difference is what
+// dbg_wentNowhere is for, and it is why one press of F7 on this Mac stepped
+// and appeared to do nothing.
+const char* const kLldbStopAtBreak =
+    "Process 20033 stopped\n"
+    "* thread #1, queue = 'com.apple.main-thread', stop reason = breakpoint 1.1\n"
+    "    frame #0: 0x0000000100000440 sums`addUp(a=2, b=40) at sum.c:3:27\n"
+    "   2   \t\n"
+    "-> 3   \tint addUp(int a, int b) { return a + b; }\n"
+    "Target 0: (sums) stopped.\n";
+
+const char* const kLldbStepStillThere =
+    "Process 20033 stopped\n"
+    "* thread #1, queue = 'com.apple.main-thread', stop reason = step over\n"
+    "    frame #0: 0x000000010000046c sums`addUp(a=2, b=40) at sum.c:3:27\n"
+    "   2   \t\n"
+    "-> 3   \tint addUp(int a, int b) { return a + b; }\n"
+    "Target 0: (sums) stopped.\n";
+
+const char* const kLldbStepStillThereAgain =
+    "Process 20033 stopped\n"
+    "* thread #1, queue = 'com.apple.main-thread', stop reason = step over\n"
+    "    frame #0: 0x000000010000047c sums`addUp(a=1, b=-253525928) at sum.c:3:27\n"
+    "   2   \t\n"
+    "-> 3   \tint addUp(int a, int b) { return a + b; }\n"
+    "Target 0: (sums) stopped.\n";
+
+const char* const kLldbStepIntoTheCaller =
+    "Process 20033 stopped\n"
+    "* thread #1, queue = 'com.apple.main-thread', stop reason = step over\n"
+    "    frame #0: 0x00000001000004ac sums`main at main.c:7:5\n"
+    "   6   \t{\n"
+    "-> 7   \t    printf(\"answer %d\\n\", addUp(2, 40));\n"
+    "   8   \t    return 0;\n"
+    "Target 0: (sums) stopped.\n";
+
+// The same one press of `next`, on the Linux box, on the same two files built
+// by the same cc1. It is here so that the two transcripts sit beside each
+// other: gdb names the caller straight away, which is what F7 is supposed to
+// do and what dbg_wentNowhere makes lldb do as well.
+const char* const kGdbStepIntoTheCaller =
+    "main () at /home/ec2-user/sumsprobe/src/main.c:8\n"
+    "8\t    return 0;\n";
+
+// Recursion, which is the one thing a rule of "the same line twice is not a
+// move" would get wrong if it were written that way. fact calls itself on the
+// line it is defined on, so stepping in is the same file, the same line and
+// the same function - and it is a real arrival. What tells them apart is the
+// address: it goes back to the callee's prologue rather than on. Captured
+// from cc1's own arm64-darwin build of
+// "int fact(int n) { return n <= 1 ? 1 : n * fact(n - 1); }".
+const char* const kLldbInFact =
+    "Process 22548 stopped\n"
+    "* thread #1, queue = 'com.apple.main-thread', stop reason = step in\n"
+    "    frame #0: 0x0000000100000460 r`fact(n=2) at fact.c:1:19\n"
+    "-> 1   \tint fact(int n) { return n <= 1 ? 1 : n * fact(n - 1); }\n"
+    "Target 0: (r) stopped.\n";
+
+const char* const kLldbSteppedIntoItself =
+    "Process 22548 stopped\n"
+    "* thread #1, queue = 'com.apple.main-thread', stop reason = breakpoint 1.1 -14.1\n"
+    "    frame #0: 0x0000000100000430 r`fact(n=1) at fact.c:1:19\n"
+    "-> 1   \tint fact(int n) { return n <= 1 ? 1 : n * fact(n - 1); }\n"
+    "Target 0: (r) stopped.\n";
 
 void whatADebuggerSays() {
     std::printf("where a debugger says it stopped\n");
@@ -1513,6 +1620,66 @@ void whatADebuggerSays() {
         editor::DebuggerGdb, "(gdb) twice (n=1) at s.c:3\n3\t    int doubled = n * 2;\n");
     check(afterPrompt.stopped && afterPrompt.function == "twice" && afterPrompt.line == 3,
           "nor of the function it stopped in");
+
+    // A step that returns into the caller, which reads no differently from any
+    // other stop - the name has no brackets after it because main takes no
+    // arguments, and that was never the difficulty.
+    editor::Stop caller = editor::dbg_readStop(editor::DebuggerLldb, kLldbStepIntoTheCaller);
+    checkEqual(caller.function, "main", "lldb: a step back into the caller names it");
+    checkEqual(caller.file, "main.c", "lldb: and the file the caller is in");
+    check(caller.line == 7, "lldb: and the line the call was made from");
+
+    editor::Stop callerGdb = editor::dbg_readStop(editor::DebuggerGdb, kGdbStepIntoTheCaller);
+    checkEqual(callerGdb.function, "main", "gdb: the same, in its own words");
+    check(callerGdb.line == 8, "gdb: and the line it carried on at");
+}
+
+// A step that did not go anywhere, which is a thing only lldb does. The
+// transcripts above are one `next` after another in the project the session
+// suite builds; the first two land back on the line they started on, and only
+// the third arrives. Checked here so that it needs no debugger and no built
+// program - it is the whole reason F7 had to be pressed three times on a Mac
+// to leave a function and once on the Linux box.
+void aStepThatWentNowhere() {
+    std::printf("a step that did not go anywhere\n");
+
+    editor::Stop atBreak = editor::dbg_readStop(editor::DebuggerLldb, kLldbStopAtBreak);
+    editor::Stop still = editor::dbg_readStop(editor::DebuggerLldb, kLldbStepStillThere);
+    editor::Stop stillAgain = editor::dbg_readStop(editor::DebuggerLldb, kLldbStepStillThereAgain);
+    editor::Stop arrived = editor::dbg_readStop(editor::DebuggerLldb, kLldbStepIntoTheCaller);
+
+    check(editor::dbg_wentNowhere(editor::DebuggerLldb, atBreak, still),
+          "the same line at a later address is a step that went nowhere");
+    check(editor::dbg_wentNowhere(editor::DebuggerLldb, still, stillAgain),
+          "and so is the one after it");
+    check(!editor::dbg_wentNowhere(editor::DebuggerLldb, stillAgain, arrived),
+          "but arriving in another function is not");
+
+    // The other direction, which would be a step repeated until the program
+    // ran out: gdb answers once and its answer must never be asked again.
+    editor::Stop gdbBreak = editor::dbg_readStop(editor::DebuggerGdb, kGdbStopTwoArgs);
+    check(!editor::dbg_wentNowhere(editor::DebuggerGdb, gdbBreak, gdbBreak),
+          "gdb is never asked again, even for the very same stop");
+    check(!editor::dbg_wentNowhere(editor::DebuggerCdb, atBreak, still),
+          "nor is cdb");
+
+    // Recursion on one line: the same file, the same line and the same
+    // function, and a real arrival all the same. The address is what says so -
+    // it goes back to the callee's prologue instead of on.
+    editor::Stop inFact = editor::dbg_readStop(editor::DebuggerLldb, kLldbInFact);
+    editor::Stop deeper = editor::dbg_readStop(editor::DebuggerLldb, kLldbSteppedIntoItself);
+    check(!editor::dbg_wentNowhere(editor::DebuggerLldb, inFact, deeper),
+          "stepping into a recursive call on the same line is an arrival");
+
+    // And a breakpoint is a stop whatever else is true of it.
+    check(!editor::dbg_wentNowhere(editor::DebuggerLldb, atBreak, atBreak),
+          "a breakpoint is never stepped past");
+
+    // A stop that could not be read is a debugger to report, not one to ask
+    // again - see the loop in Debugger::afterStepping, which would otherwise
+    // sit there saying `next` to something that has stopped answering.
+    check(!editor::dbg_wentNowhere(editor::DebuggerLldb, atBreak, editor::Stop()),
+          "and a stop that was not read at all is not a step to repeat");
 }
 
 // The call stack, in the three spellings it comes in. These are transcripts
@@ -1752,8 +1919,8 @@ void debuggingForReal() {
 
     std::string program = editor::path::join(dir, "stepped");
     std::string build = "\"" + std::string(cc1) + "\" \"" + source + "\" -o \"" + program +
-                        "\" -g > /dev/null 2>&1";
-    if (std::system(build.c_str()) != 0 || !editor::path::exists(program)) {
+                        "\" -g" + kNowhere;
+    if (std::system(shellCommand(build).c_str()) != 0 || !editor::path::exists(program)) {
         std::printf("  (cc1 built nothing to debug)\n");
         editor::path::removeTree(dir);
         return;
@@ -3317,7 +3484,11 @@ void steppingShalimar() {
 
     std::string dir = editor::path::join(editor::path::tempDir(), "ed1-shm-step");
     editor::path::removeTree(dir);
-    editor::path::makeDirectories(dir);
+    if (!editor::path::makeDirectories(dir)) {
+        std::printf("  (could not make %s - this case is about shc, not about that)\n",
+                    dir.c_str());
+        return;
+    }
     const std::string source = editor::path::join(dir, "steps.shl");
     writeSource(source,
                 "fun <int> = twice(n: int) {\n"
@@ -3331,11 +3502,38 @@ void steppingShalimar() {
                 "  ? b\n"
                 "}\n");
 
+    // Checked, because writeSource does not: an ofstream that could not open
+    // its file says nothing, and shc then reports "cannot read" and takes the
+    // blame for a file this suite never wrote.
+    if (!editor::path::exists(source)) {
+        std::printf("  (could not write %s - this case is about shc, not about that)\n",
+                    source.c_str());
+        editor::path::removeTree(dir);
+        return;
+    }
+
+    // .exe on Windows, and not because the compiler needs it: nothing there
+    // will *run* a file without one, so a program named "steps" builds
+    // perfectly and then cannot be started. -o is taken as given by shc, as it
+    // is by cc1, so the caller is the one that has to know this.
+#ifdef _WIN32
+    const std::string program = editor::path::join(dir, "steps.exe");
+#else
     const std::string program = editor::path::join(dir, "steps");
+#endif
+    // Into a file rather than into nowhere, so that a build which does not
+    // work can say why. Discarding it is how this case spent an afternoon
+    // reporting "shc did not build it" on the machine where shc had only just
+    // been made to exist, with the reason thrown away every run.
+    const std::string log = editor::path::join(dir, "build.log");
     const std::string build = std::string("\"") + shc + "\" \"" + source +
-                              "\" --debug -o \"" + program + "\" > /dev/null 2>&1";
-    if (std::system(build.c_str()) != 0) {
+                              "\" --debug -o \"" + program + "\" > \"" + log +
+                              "\" 2>&1";
+    if (std::system(shellCommand(build).c_str()) != 0) {
         std::printf("  (shc did not build it, so there is nothing to stop inside)\n");
+        std::printf("   %s\n", build.c_str());
+        std::string said = readWholeFile(log);
+        if (!said.empty()) std::printf("   it said: %s\n", said.c_str());
         editor::path::removeTree(dir);
         return;
     }
@@ -3376,8 +3574,8 @@ void steppingShalimar() {
     // asserted.
     const std::string plain = editor::path::join(dir, "plain");
     const std::string release = std::string("\"") + shc + "\" \"" + source +
-                                "\" -o \"" + plain + "\" > /dev/null 2>&1";
-    if (std::system(release.c_str()) == 0) {
+                                "\" -o \"" + plain + "\"" + kNowhere;
+    if (std::system(shellCommand(release).c_str()) == 0) {
         shalimar::Session other;
         check(!other.start(plain),
               "a release build cannot be stopped: it has no code for it");
@@ -3398,6 +3596,7 @@ int main(int argc, char** argv) {
     whatItRemembers();
     talkingToAChild();
     whatADebuggerSays();
+    aStepThatWentNowhere();
     whatACallStackLooksLike();
     debuggingForReal();
     debuggingCppForReal();

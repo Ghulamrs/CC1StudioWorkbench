@@ -42,9 +42,18 @@ scp -q examples/* "$BOX:$DIR/examples/" 2>/dev/null
 # separator there, and build.bat is a batch file and has to be run through cmd
 # /c. Both of those are one-line lessons that cost an hour each to learn twice.
 #
-# CC1 names the compiler for the build cases, the same way make does here. It
-# is a path on that machine, so it is not spelled from this one.
+# CC1 and SHC name the compilers for the build cases, the same way make does
+# here. They are paths on that machine, so they are not spelled from this one.
+#
+# shc.exe is new there: Compiler-S grew an MSVC build on 2026-08-22
+# (Compiler-S/build.bat, put there by its tests/build-windows.sh), and until
+# then every Shalimar case on this box skipped itself for want of a compiler.
+# Its driver calls ml64 and link by their bare names, so it needs the Visual
+# Studio environment at run time as well - which build.bat has already set up
+# by the time the suites run, and which the editor arranges for itself through
+# prepareFor().
 CC1_THERE='$env:USERPROFILE\Compiler-C\msvc\x64\Release\cc1.exe'
+SHC_THERE='$env:USERPROFILE\Compiler-S\shc.exe'
 
 if [ "$WHAT" = "gui" ]; then
     say "msbuild winforms\\ed1gui.vcxproj"
@@ -53,4 +62,4 @@ if [ "$WHAT" = "gui" ]; then
 fi
 
 say "build.bat $WHAT"
-ssh -n "$BOX" "cd $DIR; \$env:CC1=\"$CC1_THERE\"; cmd /c build.bat $WHAT"
+ssh -n "$BOX" "cd $DIR; \$env:CC1=\"$CC1_THERE\"; \$env:SHC=\"$SHC_THERE\"; cmd /c build.bat $WHAT"

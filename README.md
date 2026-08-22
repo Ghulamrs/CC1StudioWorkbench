@@ -798,9 +798,28 @@ hand-kept project drifts, and a build tool quietly leaving a file out is not an
 error - just a smaller program - so nothing says so. That happened twice here
 in one day before the check existed.
 
-The one exception is `Compiler-C/msvc/cc1.vcxproj`, which is hand-kept and
-predates this; the solution references it rather than writing over it, and
-reads its GUID out of it so the two cannot disagree.
+**Two are kept by hand, and are checked instead of written.**
+`Compiler-C/msvc/cc1.vcxproj` predates this and belongs to another repository;
+the solution references it rather than writing over it, and reads its GUID out
+of it so the two cannot disagree. `winforms/RStudioGui.vcxproj` is C++/CLI: one
+file is compiled managed and every other file must be compiled native, and
+those per-file settings are the project's whole reason for existing - a
+generator that got one wrong would produce a binary that corrupts its heap
+before `main`.
+
+What can be compared is what they compile, and that is the part that drifts.
+`--check` now reads both source lists and holds them against the Makefiles.
+That gap was real rather than theoretical: the window's project sat outside
+every check while the script's own comment claimed it counted cc1's sources
+"below", which nothing did. Wiring the Shalimar session into the window needed
+two files added to it by hand, and nothing would have said so if they had been
+forgotten - except a link error, on the one machine that builds the window.
+
+Which files the window compiles is `CORE_SRC` in the Makefile: the half of the
+editor both front ends share. That split was asserted in this README long
+before the build knew about it; now `SRC` is `CORE_SRC` plus `TERMINAL_SRC`,
+and `--check` refuses to run at all if `SRC` is made of variables this script
+has not been taught - which is how the second of those two drifts happened.
 
 The three repositories are expected side by side. That is the only assumption
 any of this makes, and `workspace.mk` takes `CC1_DIR` and `SHC_DIR` for the

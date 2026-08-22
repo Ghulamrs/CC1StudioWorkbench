@@ -31,6 +31,15 @@ when sources were added and this was not re-run, and once when this script
 stopped reading a Makefile variable that had been added to it. --check is the
 answer to both: it rebuilds every project in memory and compares.
 
+**Two projects are kept by hand and are checked rather than written**, because
+what is in them besides the source list cannot be derived from a Makefile:
+winforms/RStudioGui.vcxproj compiles one file managed and every other file
+native, and Compiler-C/msvc/cc1.vcxproj belongs to another repository. Their
+source lists are compared against the Makefiles all the same - that is the part
+that drifts, and the window's had drifted the whole time nobody was checking
+it. --check also insists the Makefile is made of the variables named here and
+no others, so adding one and forgetting this script fails loudly.
+
 The identifiers are derived from the file names and the product, so
 regenerating an unchanged project produces a byte-identical file and the
 comparison is exact.
@@ -77,6 +86,23 @@ def from_makefile(root, variables):
     return found
 
 
+def composed_of(root, variable):
+    """The $(NAMES) one Makefile variable is made of, as a set.
+
+    This exists because of how this script failed once before: a variable was
+    added to the Makefile, SRC was made to include it, and nothing here read
+    it - so every project quietly built a smaller program than make did. The
+    lists below say which variables to read; this says which ones the Makefile
+    actually uses, and main() insists the two agree. Adding a variable and
+    forgetting this script is then a loud failure instead of a silent one.
+    """
+    text = open(os.path.join(root, "Makefile")).read()
+    match = re.search(r"^%s *:?= (.*?)(?=\n[A-Z#]|\n\n)" % variable, text, re.S | re.M)
+    if not match:
+        sys.exit("could not find %s in %s/Makefile" % (variable, root))
+    return set(re.findall(r"\$\(([A-Za-z0-9_]+)\)", match.group(1)))
+
+
 def by_glob(root, directories):
     """The .cpp in these directories - for a Makefile that says $(wildcard ...).
 
@@ -106,9 +132,16 @@ def headers_under(root, directories):
     return sorted(found)
 
 
+# What the editor is made of, as the Makefile now says it: the core both front
+# ends compile, the terminal's own half, and the Shalimar session. SRC is
+# CORE_SRC and TERMINAL_SRC together and names no files of its own, so reading
+# it would find nothing - which composed_of is here to keep true.
+EDITOR_VARIABLES = ("CORE_SRC", "TERMINAL_SRC", "SHM_SRC")
+
+
 def rstudio_sources():
-    """SRC and SHM_SRC, minus the Windows terminal, which clang here cannot build."""
-    names = from_makefile(HERE, ("SRC", "SHM_SRC"))
+    """The editor's sources, minus the Windows terminal, which clang here cannot build."""
+    names = from_makefile(HERE, EDITOR_VARIABLES)
     names = [n for n in names if not n.endswith("terminal_win.cpp")]
     # $(TERM_SRC) is chosen by the Makefile at build time; on a Mac it is this.
     if "src/terminal.cpp" not in names:
@@ -666,6 +699,62 @@ def workspace_text(specs):
             + "".join(rows) + '</Workspace>\n')
 
 
+# ---- the projects that are kept by hand ------------------------------------
+#
+# Two of them, and neither can be generated for the same kind of reason: what
+# is in them besides the source list is load-bearing and is not derivable from
+# any Makefile.
+#
+# winforms/RStudioGui.vcxproj is C++/CLI. One file is compiled managed and
+# every other file must be compiled native - a /clr translation unit that
+# instantiates the same templates the native ones do corrupts the heap before
+# main is reached, which is the first hazard in that directory's README. Those
+# per-file settings are the project's whole reason for existing.
+#
+# Compiler-C/msvc/cc1.vcxproj belongs to another repository and works.
+#
+# So they are checked rather than written. The source list is the part that
+# drifts - a file added to a Makefile and forgotten here - and it is the part
+# that can be compared. This is what the comment in main() used to promise and
+# nothing did: it said the sources were counted "below", and they were not.
+def hand_kept_sources(path, inside):
+    """The .cpp a hand-kept .vcxproj compiles, as paths inside its repository.
+
+    A .vcxproj names its files relative to itself, so `..\src\Lexer.cpp` in
+    msvc/ and `src/Lexer.cpp` from the Makefile are one file written two ways.
+    """
+    found = set()
+    for named in re.findall(r'<ClCompile Include="([^"]+)"', open(path).read()):
+        joined = os.path.normpath(os.path.join(inside, named.replace("\\", "/")))
+        found.add(joined.replace(os.sep, "/"))
+    return found
+
+
+def window_sources():
+    """What the window's project has to compile: the core, and its own two.
+
+    Not TERMINAL_SRC, which is the other front end's drawing - and this is
+    exactly the split CORE_SRC was made to write down.
+    """
+    core = from_makefile(HERE, ("CORE_SRC", "SHM_SRC"))
+    return set(core) | {"winforms/bridge.cpp", "winforms/Program.cpp"}
+
+
+def drift(path, inside, wanted):
+    """What a hand-kept project and its Makefile disagree about, in words."""
+    if not os.path.exists(path):
+        return "there is no %s" % path
+    there = hand_kept_sources(path, inside)
+    missing = sorted(wanted - there)
+    extra = sorted(there - wanted)
+    said = []
+    if missing:
+        said.append("does not compile " + ", ".join(missing))
+    if extra:
+        said.append("compiles " + ", ".join(extra) + ", which no Makefile names")
+    return "; ".join(said)
+
+
 def named_sources(text, path):
     """Every source file a generated project names, as a set.
 
@@ -701,6 +790,20 @@ def main():
     specs = projects()
     stale = []
 
+    # Before anything is read: the Makefile must be made of the variables this
+    # script knows about and no others. Silence here is what cost two builds.
+    composition = {"SRC": {"CORE_SRC", "TERMINAL_SRC"},
+                   "OBJ": {"SRC", "SHM_SRC", "OBJDIR"}}
+    for variable, expected in composition.items():
+        found = composed_of(HERE, variable)
+        if found != expected:
+            print("%s in the Makefile is made of %s, and this script reads %s."
+                  % (variable, ", ".join(sorted(found)) or "nothing",
+                     ", ".join(sorted(expected))))
+            print("Teach tools/make-projects.py about the difference, or every")
+            print("project here will build something other than what make builds.")
+            return 1
+
     wanted = [(os.path.join(s["out"], "project.pbxproj"), project_text(s), s["product"])
               for s in specs]
     wanted.append((os.path.join(HERE, "RStudio.xcworkspace", "contents.xcworkspacedata"),
@@ -710,9 +813,9 @@ def main():
     #
     # cc1 already has a project on that machine - Compiler-C/msvc/cc1.vcxproj,
     # kept by hand and working - so the solution references it rather than
-    # writing over it. That is the one file here --check cannot vouch for; what
-    # it does instead is count the sources in it against the Makefile's, below.
-    windows_sources = [n for n in from_makefile(HERE, ("SRC", "SHM_SRC"))
+    # writing over it. It is not written here; its sources are checked against
+    # its Makefile at the end of this function, with the window's.
+    windows_sources = [n for n in from_makefile(HERE, EDITOR_VARIABLES)
                        if not n.endswith("terminal.cpp")]
     if "src/terminal_win.cpp" not in windows_sources:
         windows_sources.append("src/terminal_win.cpp")
@@ -739,6 +842,19 @@ def main():
     wanted.append((os.path.join(HERE, "workspace.mk"), workspace_mk_text(),
                    "workspace.mk"))
 
+    # The two kept by hand, checked and never written - see hand_kept_sources.
+    for what, path, inside, wanted_sources in (
+            ("winforms/RStudioGui.vcxproj",
+             os.path.join(HERE, "winforms", "RStudioGui.vcxproj"),
+             "winforms", window_sources()),
+            ("Compiler-C/msvc/cc1.vcxproj",
+             os.path.join(SIBLINGS, "Compiler-C", "msvc", "cc1.vcxproj"),
+             "msvc", set(by_glob(os.path.join(SIBLINGS, "Compiler-C"),
+                                 ("src", "src/backend"))))):
+        wrong = drift(path, inside, wanted_sources)
+        if wrong:
+            stale.append("%s (%s)" % (what, wrong))
+
     for path, text, what in wanted:
         if checking:
             there = open(path).read() if os.path.exists(path) else None
@@ -749,13 +865,17 @@ def main():
         with open(path, "w") as f:
             f.write(text)
 
+    if stale:
+        print("out of date with the Makefiles:\n  " + "\n  ".join(stale))
+        print("A project that builds fewer files than make does is not an error -")
+        print("it is a smaller program, and nothing says so.")
+        print("  python3 tools/make-projects.py       for the generated ones")
+        print("  the two hand-kept ones are edited by hand, on purpose")
+        return 1
+
     if checking:
-        if stale:
-            print("out of date with the Makefiles: " + ", ".join(stale))
-            print("Xcode would build something other than what make builds.")
-            print("  python3 tools/make-projects.py")
-            return 1
-        print("all three projects and the workspace are what the Makefiles say")
+        print("all three projects and the workspace are what the Makefiles say,")
+        print("and so are the two kept by hand - the window's and cc1's")
         return 0
 
     for spec in specs:

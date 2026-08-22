@@ -41,13 +41,30 @@ else
   TERM_SRC := src/terminal.cpp
 endif
 
-SRC := src/main.cpp src/editor.cpp src/buffer.cpp src/compile.cpp \
-       src/indent.cpp src/menu.cpp src/tree.cpp src/syntax.cpp \
+# Two front ends over one core, and this is where that split is written down.
+# CORE_SRC is what both of them compile: every rule the editor has, and none of
+# the drawing. The window compiles exactly this list plus its own two files, so
+# tools/make-projects.py checks winforms/RStudioGui.vcxproj against it - that
+# project is kept by hand, and a file added here and forgotten there is a link
+# error on the one machine that builds the window and nowhere else.
+CORE_SRC := src/buffer.cpp src/compile.cpp \
+       src/indent.cpp src/syntax.cpp \
        src/toolchain.cpp src/json.cpp src/project.cpp src/find.cpp \
        src/utf8.cpp src/workspace.cpp src/symbols.cpp src/demangle_win.cpp \
-       src/path.cpp src/process.cpp src/debugger.cpp src/settings.cpp src/about.cpp src/help.cpp \
+       src/path.cpp src/process.cpp src/debugger.cpp src/settings.cpp src/about.cpp
+
+# The terminal's own half. src/help.cpp is here rather than in the core because
+# only this front end shows the manual - the window's Help menu has Keys and
+# About and no Contents.
+#
+# TERMINAL_SRC and TERM_SRC above are different things: that one is a single
+# file, which of the two terminals this machine has.
+TERMINAL_SRC := src/main.cpp src/editor.cpp src/menu.cpp src/tree.cpp \
+       src/help.cpp \
        src/terminal_common.cpp \
        $(TERM_SRC)
+
+SRC := $(CORE_SRC) $(TERMINAL_SRC)
 
 # The Shalimar half lives apart from the three DWARF debuggers on purpose: a
 # Shalimar program stops itself, so nothing here has anything to say to gdb,

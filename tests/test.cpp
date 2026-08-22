@@ -3030,9 +3030,9 @@ void theThirdLanguage() {
         check(two.load(dir, error), "a project of two loads");
         sources.clear();
         check(two.targetSources(sources, lang, why), "and still says what it builds");
-        check(sources.size() == 1, "which is one of them");
+        check(sources.size() == 2, "keeping both, because the second is where to look");
         check(sources[0].find("hello") != std::string::npos,
-              "the one the target is named after, not the one listed first");
+              "with the target's own first, not the one listed first");
 
         // Two programs and a target named after neither: refused, not guessed.
         writeSource(editor::path::join(dir, "ed1.json"),
@@ -3047,8 +3047,8 @@ void theThirdLanguage() {
               "and is refused rather than guessed at");
         check(why.find("programs and builds one") != std::string::npos,
               "with a reason that says how many there were");
-        check(detail.find("no include") != std::string::npos,
-              "and a detail that says why several cannot be one");
+        check(detail.find("Every Shalimar file has a main()") != std::string::npos,
+              "and a detail that says why the project has to choose");
 
         // Shalimar beside C is the refusal C beside C++ already had.
         writeSource(editor::path::join(dir, "src/bit.c"), "int bit(void) { return 1; }\n");

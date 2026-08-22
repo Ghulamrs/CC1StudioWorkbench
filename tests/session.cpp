@@ -1555,6 +1555,40 @@ void aShalimarProject(const std::string& ed1, const std::string& shc) {
     check(wasShown(refusedIt, "programs and builds one"),
           "a target named after none of them is refused, not guessed at");
 
+    // Two files, one program. Shalimar has no include: shc looks for what the
+    // program calls and does not define in the other files it was given, and
+    // the project is what says which files those are.
+    writeFile(dir / "src" / "shapes.shl",
+              "real tolerance : 1e-9\n"
+              "\n"
+              "fun <real> = area(w: real, h: real) {\n"
+              "  return w * h\n"
+              "}\n"
+              "\n"
+              "fun <int> = nearly(a: real, b: real) {\n"
+              "  if abs(a - b) < tolerance {\n"
+              "    return 1\n"
+              "  }\n"
+              "  return 0\n"
+              "}\n");
+    writeFile(dir / "src" / "hello.shl",
+              "fun <> = main() {\n"
+              "  ? area(6.0, 7.0)\n"
+              "  ? nearly(0.1 + 0.2, 0.3)\n"
+              "}\n");
+    writeFile(dir / "ed1.json",
+              "{\n"
+              "  \"name\": \"hello\",\n"
+              "  \"build\": { \"target\": \"hello\", \"groups\": [\"Sources\"] },\n"
+              "  \"groups\": { \"Sources\": [\"src/shapes.shl\", \"src/hello.shl\"] }\n"
+              "}\n");
+    Screen two = drive(ed1, arguments,
+                       kF10 + times(kRight, 3) + times(kDown, 3) + kEnter + ctrl('q'), dir);
+    check(wasShown(two, "42.0000000"),
+          "a program calling a function in another file of the project builds and runs");
+    check(wasShown(two, "also compiled shapes.shl"),
+          "and the compiler says which file it went to, so nothing is silent");
+
     // Two languages in one target is the same refusal C and C++ already got.
     writeFile(dir / "src" / "bit.c", "int bit(void) { return 1; }\n");
     writeFile(dir / "ed1.json",

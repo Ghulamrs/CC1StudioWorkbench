@@ -323,13 +323,15 @@ Recipe targetRecipe(const Toolchain& tool, ToolchainKind kind,
         return recipe;
     }
 
-    // shc takes one program at a time. Shalimar has no separate compilation
-    // and no way to name another file, so a target made of Shalimar is one
-    // source however many the group holds - the first is the program.
+    // The program first, then the files it may reach into. shc looks for a
+    // function it was not given in the files named after the program, and
+    // beside it when none are - so naming the project's own is what stops it
+    // finding something in a directory the project does not claim.
+    //
+    // The project has already narrowed this to one program; the rest of the
+    // group is where to look.
     if (kind == ToolShc) {
-        recipe.command = quote(programOf(tool, kind)) +
-                         (sources.empty() ? std::string() : " " + quote(sources[0])) +
-                         " -o " + quote(program);
+        recipe.command = quote(programOf(tool, kind)) + named + " -o " + quote(program);
         return recipe;
     }
 

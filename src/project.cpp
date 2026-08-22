@@ -463,12 +463,13 @@ bool Project::targetSources(std::vector<std::string>& sources, Language& lang,
     return true;
 }
 
-// A Shalimar target is one source, and this is which.
+// Which of a Shalimar target's sources is the program, put first.
 //
-// The language has no include, no import and no way to name another file, and
-// shc takes one program at a time - so several .shl in a group are several
-// programs, not the parts of one. A folder of them is the ordinary shape: the
-// app ships twelve examples and each is its own program.
+// The others are not dropped: shc looks for a function the program calls and
+// does not define in the files named after it, so the rest of the group is
+// exactly the place to look. What the project decides is which one has the
+// main() - the language has no way to say so from inside the file, since
+// every program has one.
 //
 // With one source there is nothing to decide. With more, the one whose name
 // matches the target's is the program, and if none does this refuses and says
@@ -479,25 +480,28 @@ bool Project::oneShalimarProgram(std::vector<std::string>& sources, std::string&
     if (sources.size() == 1) return true;
 
     const std::string wanted = target_.name.empty() ? name_ : target_.name;
-    std::vector<std::string> matching;
+    size_t at = sources.size();
     for (size_t i = 0; i < sources.size(); ++i) {
         std::string leaf = path::filename(sources[i]);
         size_t dot = leaf.find_last_of('.');
         if (dot != std::string::npos) leaf.resize(dot);
-        if (leaf == wanted) matching.push_back(sources[i]);
+        if (leaf != wanted) continue;
+        if (at != sources.size()) { at = sources.size(); break; }   // two of them
+        at = i;
     }
 
-    if (matching.size() == 1) {
-        sources = matching;
+    if (at < sources.size()) {
+        std::swap(sources[0], sources[at]);
         return true;
     }
 
     why = "this project has " + std::to_string(sources.size()) +
           " Shalimar programs and builds one";
     if (detail) {
-        *detail = "Shalimar has no include and no separate compilation, so each .shl in "
-                  "a group is a program of its own rather than a part of one. Name the "
-                  "target after the one to build - \"build\": { \"target\": \"" +
+        *detail = "Every Shalimar file has a main(), so the project is what says which "
+                  "one is the program; the others are where shc looks for what it calls "
+                  "and does not define. Name the target after the one to build - "
+                  "\"build\": { \"target\": \"" +
                   (sources.empty() ? std::string("name")
                                    : stemOf(path::filename(sources[0]))) +
                   "\" } - or build any of them with Ctrl-B, which never asks what the "

@@ -154,6 +154,11 @@ private:
     // a group are several programs - the language has no include and shc
     // takes one at a time - so the one named after the target is the program,
     // and where none is, this refuses rather than choosing.
+    // Puts a Shalimar target's program first and leaves the rest of the
+    // group behind it, which is where shc looks for what the program calls
+    // and does not define. The language has no include: finding the rest is
+    // the compiler's work, and naming the project's files is how the editor
+    // says which files those are.
     bool oneShalimarProgram(std::vector<std::string>& sources, std::string& why,
                             std::string* detail) const;
     ToolchainKind toolchain_;

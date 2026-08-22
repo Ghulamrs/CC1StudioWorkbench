@@ -292,6 +292,8 @@ private:
     // switches on the Edit menu. Asked of the editor rather than kept as a
     // flag on the item, so there is nothing that can go stale.
     bool menuItemIsCurrent(Action action) const;
+    // Opens the menu, having first told it what cannot be chosen just now.
+    void openMenu();
     bool needsDraw_;
     // Where the program is to stop, by file and by line counting from one, and
     // where it actually is once it has. Kept by file rather than by buffer so

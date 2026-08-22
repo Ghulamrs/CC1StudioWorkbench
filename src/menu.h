@@ -87,7 +87,18 @@ struct MenuItem {
     std::string label;
     std::string key;     // what to show on the right, or empty
     Action action;
+    // A rule across the box rather than an item: it groups what is above it
+    // from what is below and cannot be chosen or landed on.
+    bool rule;
+
+    MenuItem(const std::string& text = std::string(),
+             const std::string& shortcut = std::string(),
+             Action what = ActionNone)
+        : label(text), key(shortcut), action(what), rule(false) {}
 };
+
+// One of those, for a menu that wants a line drawn in it.
+MenuItem separator();
 
 struct MenuColumn {
     std::string title;
@@ -118,12 +129,27 @@ public:
     // or ActionNone if the key only moved about (or closed the menu).
     Action key(int k);
 
+    // The items that cannot be chosen just now, named by the editor before the
+    // menu opens - a Shalimar program has no call stack to walk and nothing to
+    // watch, so those three are not offered while one is stopped.
+    //
+    // Told to the menu rather than worked out by it: the menu knows about
+    // labels and keys and nothing about debuggers, which is what keeps it
+    // usable from both front ends.
+    void disable(const std::vector<Action>& actions);
+    bool disabled(Action action) const;
+
+    // Whether an item can be landed on at all: a rule never can, and a
+    // disabled item never can, so up and down step over both.
+    bool selectable(const MenuItem& item) const;
+
 private:
     std::vector<MenuColumn> columns_;
     bool active_;
     bool dropped_;
     size_t column_;
     size_t item_;
+    std::vector<Action> disabled_;
 };
 
 }  // namespace editor

@@ -39,10 +39,14 @@ to group, Delete.
 Console, Debug, Assembly.
 **Debug** — Start / continue, Debug project, Toggle breakpoint, Step over, Step
 into, Step out, Up the stack, Down the stack, Watch expression, Stop debugging.
-**Target** — the three architectures.
-**Language** — By extension, C, C++, Shalimar.
+**Language** — By extension, C, C++, Shalimar, Plain text.
 **Tools** — By language, cc1, shc, MSVC (cl), C++ (host). Ours first, then the
 machine's.
+**Target** — the three architectures.
+
+Those last three are one chain and sit in that order: what the file **is**,
+which **compiler** reads it, and which **machine** the output runs on. Target
+is the most downstream of the three, which is why it comes last.
 **Help** — Contents, Keys, About.
 
 ## The command line

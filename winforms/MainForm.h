@@ -506,6 +506,9 @@ private:
         ToolStripMenuItem^ debug = gcnew ToolStripMenuItem("&Debug");
         debug->DropDownItems->Add(Item("Start / continue", Keys::F8,
                                        gcnew EventHandler(this, &MainForm::OnDebug)));
+        // Starting it, walking it, looking at it, leaving it. The terminal's
+        // Debug menu is grouped the same way and by the same four ideas.
+        debug->DropDownItems->Add(gcnew ToolStripSeparator());
         debug->DropDownItems->Add(Item("Toggle breakpoint", Keys::F9,
                                        gcnew EventHandler(this, &MainForm::OnToggleBreak)));
         debug->DropDownItems->Add(Item("Step over", Keys::F7,
@@ -514,6 +517,7 @@ private:
                                        gcnew EventHandler(this, &MainForm::OnStepInto)));
         debug->DropDownItems->Add("Step out", nullptr,
                                   gcnew EventHandler(this, &MainForm::OnStepOut));
+        debug->DropDownItems->Add(gcnew ToolStripSeparator());
 
         // Windows Forms will not take an arrow as a menu shortcut, so these
         // two are caught in ProcessCmdKey with Ctrl-D, Ctrl-K and Ctrl-T, and
@@ -529,6 +533,7 @@ private:
         debug->DropDownItems->Add("Watch expression...", nullptr,
                                   gcnew EventHandler(this, &MainForm::OnWatch));
 
+        debug->DropDownItems->Add(gcnew ToolStripSeparator());
         debug->DropDownItems->Add("Stop debugging", nullptr,
                                   gcnew EventHandler(this, &MainForm::OnDebugStop));
         bar->Items->Add(debug);
@@ -582,7 +587,11 @@ private:
             targetItems_->Add(one);
             target->DropDownItems->Add(one);
         }
-        bar->Items->Add(target);
+        // Added after Tools, not here. The three settings menus read as one
+        // chain - what the file is, which compiler reads it, which machine the
+        // output runs on - and Target is the most downstream of the three. The
+        // column is built here and put on the bar below, which is the smaller
+        // change and keeps this block where the rest of its construction is.
 
         // What the file is read as. The suffix answers it normally; this is
         // for the file whose suffix is wrong, missing, or borrowed - a .txt
@@ -616,20 +625,29 @@ private:
             "cc1", nullptr, gcnew EventHandler(this, &MainForm::OnToolCc1));
         toolCc1Item_->ShortcutKeyDisplayString = "Ctrl+K";
         tools->DropDownItems->Add(toolCc1Item_);
-        toolClItem_ = gcnew ToolStripMenuItem(
-            "MSVC (cl)", nullptr, gcnew EventHandler(this, &MainForm::OnToolCl));
-        toolClItem_->ShortcutKeyDisplayString = "Ctrl+K";
-        tools->DropDownItems->Add(toolClItem_);
+        // shc before cl: cc1 and shc are the two compilers this family wrote and
+        // cl is what the machine already had, which is the division a reader
+        // has in their head. The terminal's Tools menu is in this same order,
+        // and Ctrl+K walks both the same way.
+        //
+        // There is no "C++ (host)" here, and that is right rather than
+        // missing: on Windows the host's C++ compiler *is* cl, so the item
+        // would name the same thing twice.
         toolShcItem_ = gcnew ToolStripMenuItem(
             "shc", nullptr, gcnew EventHandler(this, &MainForm::OnToolShc));
         toolShcItem_->ShortcutKeyDisplayString = "Ctrl+K";
         tools->DropDownItems->Add(toolShcItem_);
+        toolClItem_ = gcnew ToolStripMenuItem(
+            "MSVC (cl)", nullptr, gcnew EventHandler(this, &MainForm::OnToolCl));
+        toolClItem_->ShortcutKeyDisplayString = "Ctrl+K";
+        tools->DropDownItems->Add(toolClItem_);
         tools->DropDownItems->Add(gcnew ToolStripSeparator());
         // Here rather than on View: View is what is shown at this moment, and
         // this is a choice made once and kept, like the compiler above it.
         tools->DropDownItems->Add("Font...", nullptr,
                                   gcnew EventHandler(this, &MainForm::OnFont));
         bar->Items->Add(tools);
+        bar->Items->Add(target);
 
         ToolStripMenuItem^ help = gcnew ToolStripMenuItem("&Help");
         help->DropDownItems->Add(Item("Keys", Keys::F1,
@@ -3675,10 +3693,13 @@ private:
         else OnDebugConfig(nullptr, nullptr);
     }
 
+    // In the order the Tools menu lists them, which is the rule the terminal
+    // keeps too: what the key does and what the menu shows are one thing
+    // rather than two that can drift apart.
     void NextTool() {
         if (toolKind_ == ED1_TOOL_AUTO) OnToolCc1(nullptr, nullptr);
-        else if (toolKind_ == ED1_TOOL_CC1) OnToolCl(nullptr, nullptr);
-        else if (toolKind_ == ED1_TOOL_MSVC) OnToolShc(nullptr, nullptr);
+        else if (toolKind_ == ED1_TOOL_CC1) OnToolShc(nullptr, nullptr);
+        else if (toolKind_ == ED1_TOOL_SHC) OnToolCl(nullptr, nullptr);
         else OnToolAuto(nullptr, nullptr);
     }
 

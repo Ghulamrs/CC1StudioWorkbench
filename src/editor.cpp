@@ -966,6 +966,30 @@ void Editor::drawMessage(std::string& out) const {
 // Asked of the editor's own fields rather than kept as a flag on the item.
 // A flag would have to be set from four or five places and would go stale in
 // exactly the ones nobody remembered.
+// The menu, with what cannot be chosen just now already said.
+//
+// Told to it here rather than worked out inside it, because the menu knows
+// about labels and keys and nothing about debuggers - which is what keeps one
+// menu usable from a terminal and a window both.
+void Editor::openMenu() {
+    std::vector<Action> unavailable;
+
+    // A Shalimar program says where it is and how deep, and nothing else. The
+    // compiler emits no table of a function's names against its frame slots,
+    // so there is no stack to walk and nothing to watch - see
+    // ../Compiler-S/docs/DEBUGGING.md. These three refuse with a sentence when
+    // they are chosen; greying them says the same thing before the choice is
+    // made, which is the better place to say it.
+    if (debuggingShalimar()) {
+        unavailable.push_back(ActionFrameUp);
+        unavailable.push_back(ActionFrameDown);
+        unavailable.push_back(ActionWatch);
+    }
+
+    menu_.disable(unavailable);
+    menu_.open();
+}
+
 bool Editor::menuItemIsCurrent(Action action) const {
     switch (action) {
         // Which language the file is treated as. "By extension" is current
@@ -1011,6 +1035,7 @@ void Editor::drawDropdown(std::string& out, std::vector<size_t>& covered) const 
 
     size_t width = 0;
     for (size_t i = 0; i < col.items.size(); ++i) {
+        if (col.items[i].rule) continue;
         // One column for the mark, one for the gap after it, one between the
         // label and the key, and one at each edge.
         size_t w = col.items[i].label.size() + col.items[i].key.size() + 5;
@@ -1036,6 +1061,17 @@ void Editor::drawDropdown(std::string& out, std::vector<size_t>& covered) const 
 
     for (size_t i = 0; i < col.items.size(); ++i) {
         out += "\x1b[" + number(i + 3) + ";" + number(at + 1) + "H\x1b[m";
+
+        // A rule is drawn across the box rather than written in it, joining
+        // the sides the way the panel's own rules do.
+        if (col.items[i].rule) {
+            out += frame_->teeRight;
+            out += repeated(frame_->across, static_cast<int>(width));
+            out += frame_->teeLeft;
+            covered.push_back(i + 2);
+            continue;
+        }
+
         out += frame_->down;
 
         // The marker sits in the column the leading space used to be, so
@@ -1053,6 +1089,11 @@ void Editor::drawDropdown(std::string& out, std::vector<size_t>& covered) const 
         row.resize(width - col.items[i].key.size() - 1 + (mark.size() - 1), ' ');
         row += col.items[i].key;
         row += " ";
+        // Greyed when it cannot be chosen just now. Faint rather than a
+        // different colour, because the reason is "not available" and not "a
+        // different kind of thing" - and because a colour would have to work
+        // against both a dark and a light terminal.
+        if (menu_.disabled(col.items[i].action)) out += "\x1b[2m";
         if (i == menu_.item()) out += "\x1b[7m";
         out += row;
         out += "\x1b[m";
@@ -3048,7 +3089,7 @@ void Editor::processKey(int key) {
     if (key != ctrl('q')) quitConfirm_ = 0;
 
     switch (key) {
-        case KEY_F10: menu_.open(); return;
+        case KEY_F10: openMenu(); return;
         case KEY_F1:  showKeys(); return;
         case KEY_F2:  nextDocument(-1); return;
         case KEY_F3:  nextDocument(1); return;

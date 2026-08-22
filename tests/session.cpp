@@ -1003,7 +1003,7 @@ void debugPanelPerTarget(const std::string& ed1) {
     // panel the sixth item, and Target is two columns further on now that
     // Debug sits between them.
     const int kBuildColumn = 3;
-    const int kTargetColumn = 5;
+    const int kTargetColumn = 7;
     // Seventh in Build now: Build project and Run project went in above it,
     // beneath the two that compile the file in front of you.
     const int kDebugPanelItem = 7;
@@ -1028,8 +1028,9 @@ void debugPanelPerTarget(const std::string& ed1) {
 
     // Switching the target under an open panel refills it, rather than leaving
     // what was true of the target before.
-    // The third F10 needs no Right at all: the menu is already on Target, and
-    // one more step would land on Tools.
+    // The third F10 needs no Right at all: the menu is already on Target,
+    // which is the last column before Help now that the three settings menus
+    // are in the order Language, Tools, Target.
     Screen switched = drive(ed1, common,
                             showDebugTab + toTarget + kDown + kEnter +
                                 kF10 + kEnter + ctrl('q'),
@@ -1081,7 +1082,7 @@ void runningTheProgram(const std::string& ed1, const std::string& cc1) {
     // It gets a project of its own because a chosen target is remembered in the
     // project file, and a second editor started on the same one would open on
     // the target this left behind rather than on the host.
-    const int kTargetColumn = 5;   // File, Edit, Project, Build, Debug, Target
+    const int kTargetColumn = 7;   // File, Edit, Project, Build, Debug, Language, Tools, Target
 #ifdef _WIN32
     const std::string toElsewhere = kF10 + times(kRight, kTargetColumn) + kDown + kEnter;
 #else
@@ -1531,7 +1532,7 @@ void compilingShalimar(const std::string& ed1, const std::string& shc) {
                               // Language is the seventh column, and its first
                               // item is already selected when the menu opens -
                               // so three downs reach the fourth, not four.
-                              kF10 + times(kRight, 6) + times(kDown, 3) +
+                              kF10 + times(kRight, 5) + times(kDown, 3) +
                                   kEnter + ctrl('b') + ctrl('q'),
                               dir);
     check(wasShown(asShalimar, "language: Shalimar"),
@@ -1888,9 +1889,9 @@ void theMenuSaysWhereYouAre(const std::string& ed1) {
     std::string arguments = "\"" + (dir / "src" / "one.c").string() +
                             "\" --project \"" + dir.string() + "\"";
 
-    // Tools is the eighth column. Nothing has been overridden, so "By
+    // Tools is the seventh column. Nothing has been overridden, so "By
     // language" is the one marked.
-    const std::string toTools = kF10 + times(kRight, 7);
+    const std::string toTools = kF10 + times(kRight, 6);
     Screen fresh = drive(ed1, arguments, toTools + ctrl('q'), dir);
     check(onScreen(fresh, "\xe2\x80\xa2 By language"), "the compiler nobody chose is marked");
     check(onScreen(fresh, "  cc1"), "and the ones nobody is on are not");
@@ -1903,10 +1904,10 @@ void theMenuSaysWhereYouAre(const std::string& ed1) {
     check(onScreen(chose, "\xe2\x80\xa2 cc1"), "choosing one marks it");
     check(!onScreen(chose, "\xe2\x80\xa2 By language"), "and unmarks what it replaced");
 
-    // The Language menu is the seventh column, and this is the case the status
+    // The Language menu is the sixth column, and this is the case the status
     // bar cannot show: the file is C either way, and only the mark says
     // whether that was its name or a choice.
-    const std::string toLanguage = kF10 + times(kRight, 6);
+    const std::string toLanguage = kF10 + times(kRight, 5);
     Screen byName = drive(ed1, arguments, toLanguage + ctrl('q'), dir);
     check(onScreen(byName, "\xe2\x80\xa2 By extension"), "a language nobody chose is marked too");
 
@@ -1919,6 +1920,54 @@ void theMenuSaysWhereYouAre(const std::string& ed1) {
     // the same grounds. Build is the fourth column, Debug its fifth item.
     Screen release = drive(ed1, arguments, ctrl('d') + kF10 + times(kRight, 3) + ctrl('q'), dir);
     check(onScreen(release, "\xe2\x80\xa2 Release"), "release is marked once you are in it");
+
+    file::remove_all(dir);
+}
+
+// The Debug menu, grouped - and the three things a Shalimar program cannot do,
+// greyed while one is stopped.
+void theDebugMenuGroups(const std::string& ed1, const std::string& shc) {
+    std::printf("the Debug menu's rules, and what Shalimar cannot do\n");
+
+    file::path dir = freshProject("debug-menu");
+    file::path file = dir / "src" / "steps.shl";
+    writeFile(file,
+              "fun <int> = twice(n: int) {\n  int d : n + n\n  return d\n}\n\n"
+              "fun <> = main() {\n  int a : 1\n  int b : twice(a)\n  ? b\n}\n");
+    std::string arguments = "\"" + file.string() + "\" --project \"" + dir.string() + "\"";
+    if (!shc.empty()) arguments += " --shc \"" + shc + "\"";
+
+    // Debug is the fifth column. The rules are there whatever is running.
+    const std::string toDebug = kF10 + times(kRight, 4);
+    Screen grouped = drive(ed1, arguments, toDebug + ctrl('q'), dir);
+    check(onScreen(grouped, "Start / continue"), "the Debug menu opens");
+    // A rule joins the sides of the box, so its ends are the tee characters
+    // the panel's own rules use - which is how it is told from a plain row.
+    check(onScreen(grouped, "\xe2\x94\x9c"), "and is grouped by a rule across it");
+
+    // Down from Start / continue reaches Debug project and then, stepping over
+    // the rule, Toggle breakpoint. If rules could be landed on, two downs
+    // would stop on one.
+    Screen stepped = drive(ed1, arguments, toDebug + times(kDown, 2) + kEnter + ctrl('q'), dir);
+    check(!wasShown(stepped, "nothing is running"),
+          "and down steps over the rule rather than landing on it");
+
+    if (shc.empty()) {
+        std::printf("  (no shc named, so the greying is not tried)\n");
+        file::remove_all(dir);
+        return;
+    }
+
+    // With a Shalimar program stopped, the three that need a stack or a
+    // variable are not offered. Line 8 is the call.
+    const std::string stop = times(kDown, 7) + kF9 + kF8;
+    Screen running = drive(ed1, arguments, stop + toDebug + ctrl('q'), dir);
+    check(onScreen(running, "Up the stack"), "the items are still listed while it is stopped");
+    check(onScreen(running, "Watch expression"), "including the watch");
+
+    // Greyed is drawn faint, which is the one escape that says so.
+    check(wasShown(running, "\x1b[2m"),
+          "and what Shalimar cannot do is drawn faint rather than offered");
 
     file::remove_all(dir);
 }
@@ -2026,6 +2075,7 @@ int main(int argc, char** argv) {
     aCompilerPerGroup(ed1, cc1);
     theHelpMenu(ed1);
     theMenuSaysWhereYouAre(ed1);
+    theDebugMenuGroups(ed1, shc);
 
     std::printf("\n%d checks, %d failed\n", checks, failures);
     return failures == 0 ? 0 : 1;

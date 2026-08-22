@@ -70,24 +70,23 @@ Menu::Menu() : active_(false), dropped_(false), column_(0), item_(0) {
     debug.title = "Debug";
     debug.items.push_back({"Start / continue", "F8", ActionDebug});
     debug.items.push_back({"Debug project", "", ActionDebugProject});
+    debug.items.push_back(separator());
     debug.items.push_back({"Toggle breakpoint", "F9", ActionToggleBreak});
     debug.items.push_back({"Step over", "F7", ActionStepOver});
     debug.items.push_back({"Step into", "F6", ActionStepInto});
     debug.items.push_back({"Step out", "", ActionStepOut});
+    // Starting it, walking it, looking at it, leaving it. The third group is
+    // also - by coincidence rather than design - exactly what a Shalimar
+    // program cannot do: it reports where it is and how deep, not what called
+    // it or what is in it, so those three grey out while one is stopped.
+    debug.items.push_back(separator());
     debug.items.push_back({"Up the stack", "Ctrl-Up", ActionFrameUp});
     debug.items.push_back({"Down the stack", "Ctrl-Down", ActionFrameDown});
     debug.items.push_back({"Watch expression...", "", ActionWatch});
+    debug.items.push_back(separator());
     debug.items.push_back({"Stop debugging", "", ActionDebugStop});
     columns_.push_back(debug);
 
-    // The three cc1 generates for. Two of them reach -S and no further on any
-    // given machine, which is the whole reason the assembly tab exists.
-    MenuColumn target;
-    target.title = "Target";
-    target.items.push_back({"x86_64-windows", "", ActionArchWindows});
-    target.items.push_back({"x86_64-linux", "", ActionArchLinux});
-    target.items.push_back({"arm64-darwin", "", ActionArchDarwin});
-    columns_.push_back(target);
 
     // What the file is read as. Normally the suffix answers this and nobody
     // has to; the menu is for the file whose suffix is wrong, missing, or
@@ -126,6 +125,15 @@ Menu::Menu() : active_(false), dropped_(false), column_(0), item_(0) {
     tools.items.push_back({"C++ (host)", "", ActionToolCxx});
     columns_.push_back(tools);
 
+    // The three cc1 generates for. Two of them reach -S and no further on any
+    // given machine, which is the whole reason the assembly tab exists.
+    MenuColumn target;
+    target.title = "Target";
+    target.items.push_back({"x86_64-windows", "", ActionArchWindows});
+    target.items.push_back({"x86_64-linux", "", ActionArchLinux});
+    target.items.push_back({"arm64-darwin", "", ActionArchDarwin});
+    columns_.push_back(target);
+
     MenuColumn help;
     help.title = "Help";
     help.items.push_back({"Contents", "", ActionHelpContents});
@@ -134,10 +142,45 @@ Menu::Menu() : active_(false), dropped_(false), column_(0), item_(0) {
     columns_.push_back(help);
 }
 
+namespace {
+
+// The next item that can actually be landed on, walking in `by`. Wraps, and
+// gives back where it started if nothing in the column can be selected - which
+// cannot happen today and is not worth crashing over if it ever does.
+size_t stepTo(const MenuColumn& col, const Menu& menu, size_t from, int by) {
+    const size_t count = col.items.size();
+    if (count == 0) return from;
+    size_t at = from;
+    for (size_t tried = 0; tried < count; ++tried) {
+        at = (by > 0) ? (at + 1) % count : (at == 0 ? count - 1 : at - 1);
+        if (menu.selectable(col.items[at])) return at;
+    }
+    return from;
+}
+
+// The first one that can be landed on, for opening a column or pressing Home.
+size_t firstSelectable(const MenuColumn& col, const Menu& menu) {
+    for (size_t i = 0; i < col.items.size(); ++i)
+        if (menu.selectable(col.items[i])) return i;
+    return 0;
+}
+
+size_t lastSelectable(const MenuColumn& col, const Menu& menu) {
+    for (size_t i = col.items.size(); i > 0; --i)
+        if (menu.selectable(col.items[i - 1])) return i - 1;
+    return col.items.empty() ? 0 : col.items.size() - 1;
+}
+
+}  // namespace
+
 void Menu::open() {
     active_ = true;
     dropped_ = true;
-    item_ = 0;
+    // The first item that can be landed on, which is item 0 in every column
+    // that has no rule at the top and nothing disabled - so this is the same
+    // "resets the item to 0" it always was, except where that would put the
+    // cursor on a line or on something greyed.
+    item_ = firstSelectable(columns_[column_], *this);
 }
 
 void Menu::close() {
@@ -157,6 +200,26 @@ size_t Menu::barWidth() const {
     return columns_.empty() ? 0 : titleAt(columns_.size());
 }
 
+
+MenuItem separator() {
+    MenuItem line;
+    line.rule = true;
+    return line;
+}
+
+void Menu::disable(const std::vector<Action>& actions) { disabled_ = actions; }
+
+bool Menu::disabled(Action action) const {
+    for (size_t i = 0; i < disabled_.size(); ++i)
+        if (disabled_[i] == action) return true;
+    return false;
+}
+
+bool Menu::selectable(const MenuItem& item) const {
+    return !item.rule && !disabled(item.action);
+}
+
+
 Action Menu::key(int k) {
     if (!active_) return ActionNone;
 
@@ -169,28 +232,28 @@ Action Menu::key(int k) {
 
         case KEY_ARROW_LEFT:
             column_ = (column_ == 0) ? columns_.size() - 1 : column_ - 1;
-            item_ = 0;
+            item_ = firstSelectable(columns_[column_], *this);
             return ActionNone;
 
         case KEY_ARROW_RIGHT:
             column_ = (column_ + 1) % columns_.size();
-            item_ = 0;
+            item_ = firstSelectable(columns_[column_], *this);
             return ActionNone;
 
         case KEY_ARROW_UP:
-            item_ = (item_ == 0) ? col.items.size() - 1 : item_ - 1;
+            item_ = stepTo(col, *this, item_, -1);
             return ActionNone;
 
         case KEY_ARROW_DOWN:
-            item_ = (item_ + 1) % col.items.size();
+            item_ = stepTo(col, *this, item_, 1);
             return ActionNone;
 
         case KEY_HOME:
-            item_ = 0;
+            item_ = firstSelectable(col, *this);
             return ActionNone;
 
         case KEY_END:
-            item_ = col.items.size() - 1;
+            item_ = lastSelectable(col, *this);
             return ActionNone;
 
         case '\r':

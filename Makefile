@@ -43,19 +43,26 @@ SRC := src/main.cpp src/editor.cpp src/buffer.cpp src/compile.cpp \
        src/terminal_common.cpp \
        $(TERM_SRC)
 
+# The Shalimar half lives apart from the three DWARF debuggers on purpose: a
+# Shalimar program stops itself, so nothing here has anything to say to gdb,
+# lldb or cdb, and src/debugger.cpp has nothing to say to it.
+SHM_SRC := src/shalimar/channel.cpp src/shalimar/session.cpp
+
 # The objects go under src/obj rather than beside the sources they came from,
 # so that a listing of src/ is the code and nothing else.
 OBJDIR := src/obj
-OBJ := $(patsubst src/%.cpp,$(OBJDIR)/%.o,$(SRC))
+OBJ := $(patsubst src/%.cpp,$(OBJDIR)/%.o,$(SRC) $(SHM_SRC))
 
 ed1: $(OBJ)
 	$(CXX) $(CXXFLAGS) -o $@ $(OBJ)
 
-$(OBJDIR)/%.o: src/%.cpp | $(OBJDIR)
+# One rule for both, making whatever directory the object goes in. A second
+# pattern rule for the subdirectory would be ambiguous with this one - the
+# stem 'shalimar/channel' matches it too, and which of the two make prefers is
+# not something to have to know.
+$(OBJDIR)/%.o: src/%.cpp
+	@mkdir -p $(dir $@)
 	$(CXX) $(CXXFLAGS) -MMD -MP -c -o $@ $<
-
-$(OBJDIR):
-	mkdir -p $(OBJDIR)
 
 # Which headers each object depends on is the compiler's answer, not a list
 # kept by hand here. The list that used to be here had gone stale: editor.cpp
@@ -84,7 +91,7 @@ tests/test: tests/test.cpp src/compile.cpp src/indent.cpp src/syntax.cpp \
 	    src/syntax.cpp src/toolchain.cpp src/json.cpp src/project.cpp src/find.cpp \
        src/utf8.cpp src/workspace.cpp src/symbols.cpp src/demangle_win.cpp \
 	    src/path.cpp src/process.cpp src/debugger.cpp src/settings.cpp src/about.cpp \
-	    src/buffer.cpp
+	    src/buffer.cpp $(SHM_SRC)
 
 # The other half of the checking: the editor itself, driven by keystrokes.
 # CC1 and SHC name compilers for the build cases; without them those cases

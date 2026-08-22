@@ -28,6 +28,7 @@
 #include "find.h"
 #include "json.h"
 #include "project.h"
+#include "shalimar/session.h"
 #include "toolchain.h"
 #include "workspace.h"
 #include "utf8.h"
@@ -3083,6 +3084,92 @@ void theThirdLanguage() {
     }
 }
 
+// The Shalimar session, driven against a real program. There is no debugger
+// process here and nothing to install: the program stops itself, because the
+// compiler already emits a call before every statement so a runtime error can
+// name its line, and a debug build offers that same position to a session
+// inside it.
+void steppingShalimar() {
+    std::printf("stopping a Shalimar program\n");
+
+    const char* shc = std::getenv("SHC");
+    if (!shc || !*shc) {
+        std::printf("  (no $SHC, so nothing is built to stop inside)\n");
+        return;
+    }
+
+    std::string dir = editor::path::join(editor::path::tempDir(), "ed1-shm-step");
+    editor::path::removeTree(dir);
+    editor::path::makeDirectories(dir);
+    const std::string source = editor::path::join(dir, "steps.shl");
+    writeSource(source,
+                "fun <int> = twice(n: int) {\n"
+                "  int d : n + n\n"
+                "  return d\n"
+                "}\n"
+                "\n"
+                "fun <> = main() {\n"
+                "  int a : 1\n"
+                "  int b : twice(a)\n"
+                "  ? b\n"
+                "}\n");
+
+    const std::string program = editor::path::join(dir, "steps");
+    const std::string build = std::string("\"") + shc + "\" \"" + source +
+                              "\" --debug -o \"" + program + "\" > /dev/null 2>&1";
+    if (std::system(build.c_str()) != 0) {
+        std::printf("  (shc did not build it, so there is nothing to stop inside)\n");
+        editor::path::removeTree(dir);
+        return;
+    }
+
+    shalimar::Session session;
+    check(session.start(program), "the program starts, armed, and says it is ready");
+
+    check(session.breakAt(source, 8), "a breakpoint is set by file and line");
+    editor::Stop at = session.run();
+    check(at.stopped, "and the program stops");
+    check(at.line == 8, "on the line it was set on");
+    check(editor::path::filename(at.file) == "steps.shl", "in the file it was set in");
+
+    std::vector<editor::StackFrame> stack = session.frames();
+    check(stack.size() == 1, "one frame: where it is standing");
+    check(stack[0].function.find("1 call") != std::string::npos,
+          "which says how deep it is, rather than inventing a name for it");
+
+    editor::Stop into = session.stepInto();
+    check(into.stopped && into.line == 2, "stepping into the call reaches its first line");
+
+    // The line after the call, not the line of it: the call's own statement
+    // was entered before the call was made, and stepping out looks for the
+    // next statement shallower than where it is.
+    editor::Stop out = session.stepOut();
+    check(out.stopped && out.line == 9,
+          "and stepping out comes back to the statement after the call");
+
+    editor::Stop over = session.stepOver();
+    check(over.exited, "carrying on from the last statement ends the program");
+    check(over.said.find("2") != std::string::npos,
+          "and what it printed came back with it");
+
+    session.stop();
+
+    // A release build has no code for any of this, so a session on one gets
+    // a program that simply runs. That is the boundary, checked rather than
+    // asserted.
+    const std::string plain = editor::path::join(dir, "plain");
+    const std::string release = std::string("\"") + shc + "\" \"" + source +
+                                "\" -o \"" + plain + "\" > /dev/null 2>&1";
+    if (std::system(release.c_str()) == 0) {
+        shalimar::Session other;
+        check(!other.start(plain),
+              "a release build cannot be stopped: it has no code for it");
+        other.stop();
+    }
+
+    editor::path::removeTree(dir);
+}
+
 int main(int argc, char** argv) {
     paths();
     whereTheProgramIs(argc > 0 ? argv[0] : 0);
@@ -3117,6 +3204,7 @@ int main(int argc, char** argv) {
     whatALinkFailureSays();
     whatTheProjectBuilds();
     theThirdLanguage();
+    steppingShalimar();
 
     std::printf("\n%d checks, %d failed\n", checks, failures);
     return failures == 0 ? 0 : 1;

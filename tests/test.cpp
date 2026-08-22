@@ -2265,8 +2265,10 @@ void theWindowsProjectBuild() {
     check(std::string(ed1_project_target_program(project)).find("sums") != std::string::npos,
           "with the program named after the target");
 
-    // The refusal reaches the window in the two pieces it needs: a line for
-    // the status bar and the rest for the console.
+    // A target of both languages, which the window used to be told was a
+    // refusal and is now told is two parts. The window has to be able to build
+    // what the terminal can: an editor with two front ends that disagree about
+    // what a project is, is two editors.
     writeSource((dir / "extra.cpp").string(), "int twice(int n) { return n * 2; }\n");
     writeSource((dir / "ed1.json").string(),
                 "{\n  \"name\": \"sums\",\n"
@@ -2274,11 +2276,35 @@ void theWindowsProjectBuild() {
                 "  \"build\": { \"target\": \"sums\", \"groups\": [\"Sources\"] }\n}\n");
     check(ed1_project_load(project, dir.string().c_str(), trouble, sizeof trouble) != 0,
           "a project of both languages loads");
-    check(ed1_project_target_ready(project) == 0, "and is refused before a compiler is run");
-    check(std::string(ed1_project_target_why(project)).find("C++") != std::string::npos,
-          "with a line saying which two languages");
-    check(std::string(ed1_project_target_detail(project)).find("cc1") != std::string::npos,
-          "and the rest of it for the console");
+    check(ed1_project_target_ready(project) != 0, "and is ready to build rather than refused");
+    check(ed1_project_target_sources(project) == 3, "with all three of its sources");
+    check(ed1_project_target_parts(project) == 2, "in two parts, one per language");
+    check(ed1_project_part_language(project, 0) == editor::LangC, "the C first");
+    check(ed1_project_part_language(project, 1) == editor::LangCpp, "and the C++ after it");
+    check(ed1_project_part_toolchain(project, 0, "cc1", "cl", "shc", editor::ToolAuto) ==
+              editor::ToolCc1,
+          "which go to cc1");
+    check(ed1_project_part_toolchain(project, 1, "cc1", "cl", "shc", editor::ToolAuto) ==
+              editor::ToolMsvc,
+          "and to cl, without the window being told which");
+    checkEqual(ed1_project_part_group(project, 0), "Sources",
+               "both out of the one group, which is where they were");
+
+    // A group that names its compiler is taken at its word, and the whole group
+    // goes there - which is the override, and the only way to make one compiler
+    // take another's language on purpose.
+    writeSource((dir / "ed1.json").string(),
+                "{\n  \"name\": \"sums\",\n"
+                "  \"groups\": { \"Sources\": { \"files\": [\"add.c\", \"main.c\", "
+                "\"extra.cpp\"], \"toolchain\": \"cl\" } },\n"
+                "  \"build\": { \"target\": \"sums\", \"groups\": [\"Sources\"] }\n}\n");
+    check(ed1_project_load(project, dir.string().c_str(), trouble, sizeof trouble) != 0,
+          "a group that names its compiler loads");
+    check(ed1_project_target_ready(project) != 0, "and is ready");
+    check(ed1_project_target_parts(project) == 1, "as one part, because one compiler takes it");
+    check(ed1_project_part_toolchain(project, 0, "cc1", "cl", "shc", editor::ToolAuto) ==
+              editor::ToolMsvc,
+          "the one the group named");
 
     ed1_project_free(project);
     file::remove_all(dir);
@@ -2731,6 +2757,113 @@ void whatALinkFailureSays() {
     editor::path::removeTree(dir);
 }
 
+// A compiler per group: what ed1.json says, what survives being written back,
+// and the two commands that used to be one.
+void aCompilerPerGroup() {
+    std::printf("a compiler per group, and the link at the end\n");
+
+    file::path dir = file::temp_directory_path() / "ed1-per-group-test";
+    file::remove_all(dir);
+    file::create_directories(dir);
+
+    writeSource((dir / "main.c").string(), "int main(void) { return 0; }\n");
+    writeSource((dir / "engine.cpp").string(), "int spin(void) { return 1; }\n");
+
+    // Two spellings of a group, and the plain one is not deprecated: a project
+    // written before any of this has to keep working, and has to keep looking
+    // the way its author left it after the editor saves it.
+    writeSource((dir / "ed1.json").string(),
+                "{\n  \"name\": \"mix\",\n"
+                "  \"groups\": {\n"
+                "    \"Sources\": [\"main.c\"],\n"
+                "    \"Engine\": { \"files\": [\"engine.cpp\"], \"toolchain\": \"cl\" }\n"
+                "  },\n"
+                "  \"build\": { \"target\": \"mix\", \"groups\": [\"Sources\", \"Engine\"] }\n}\n");
+
+    std::string error;
+    editor::Project project;
+    check(project.load(dir.string(), error), "a project with a group that names a compiler loads");
+    check(project.toolchainFor("Sources") == editor::ToolAuto,
+          "a group that says nothing about a compiler says nothing");
+    check(project.toolchainFor("Engine") == editor::ToolMsvc, "and one that names cl means cl");
+
+    std::string why, detail;
+    std::vector<editor::Part> parts;
+    check(project.targetParts(parts, why, &detail), "the target comes back in parts");
+    check(parts.size() == 2, "one per group");
+    checkEqual(parts[0].group, "Sources", "in the order the build entry names them");
+    checkEqual(parts[1].group, "Engine", "not the order the groups happen to be written in");
+
+    editor::Toolchain tool;
+    check(editor::toolchainOf(tool, parts[0]) == editor::ToolCc1,
+          "the group that named nothing goes by its language");
+    check(editor::toolchainOf(tool, parts[1]) == editor::ToolMsvc,
+          "and the group that named cl goes to cl");
+
+    // The editor's own override still beats both, which is what --cc1 and the
+    // Language menu are: a group's word is a default for the file, not a lock.
+    editor::Toolchain forced;
+    forced.kind = editor::ToolCc1;
+    check(editor::toolchainOf(forced, parts[1]) == editor::ToolMsvc,
+          "a group that named its compiler keeps it");
+
+    // Written back: the plain group stays plain, the named one keeps its name.
+    check(project.save(error), "it saves");
+    std::string written = readWholeFile((dir / "ed1.json").string());
+    check(written.find("\"Sources\"") != std::string::npos, "Sources is still there");
+    // "msvc", not "cl": both are read and msvc is what the project file has
+    // always written for that compiler, at the top level as well as here. One
+    // word out and one word in beats a file whose spelling depends on which
+    // version of the editor last saved it.
+    check(written.find("\"toolchain\": \"msvc\"") != std::string::npos,
+          "and the group that named cl still names it, in the word the file writes");
+    editor::Project again;
+    check(again.load(dir.string(), error), "and reads back");
+    check(again.toolchainFor("Engine") == editor::ToolMsvc, "with the compiler where it was");
+    check(again.toolchainFor("Sources") == editor::ToolAuto,
+          "and the other group no more opinionated than it was");
+
+    // The two commands. objectRecipe stops at objects and names them; the link
+    // is the editor's own, because no compiler here takes an object as an
+    // input - hand cc1 a .o and it reads it as C.
+    {
+        std::vector<std::string> sources;
+        sources.push_back((dir / "main.c").string());
+        std::vector<std::string> objects;
+        editor::Recipe compiled = editor::objectRecipe(
+            tool, editor::ToolCc1, sources, editor::LangC, editor::hostArch(),
+            editor::ConfigDebug, dir.string(), objects);
+        check(objects.size() == 1, "one object per source");
+        check(objects[0].find("main.o") != std::string::npos, "named after the source");
+        check(compiled.command.find("-c") != std::string::npos, "and the command stops at it");
+        // cc1 -c writes into the current directory and has no flag for another,
+        // so the compiler is run from where the objects are meant to go.
+        check(compiled.command.find("cd ") != std::string::npos,
+              "run from the object directory, which is the only way to place them");
+
+        editor::Recipe linked = editor::linkRecipe(tool, objects, false, editor::hostArch(),
+                                                   editor::ConfigDebug,
+                                                   (dir / "mix").string());
+        check(linked.command.find("main.o") != std::string::npos, "the link names the objects");
+        check(linked.command.find("mix") != std::string::npos, "and where the program goes");
+        checkEqual(linked.assemblyPath, (dir / "mix").string(),
+                   "which is what the recipe says it produced");
+#ifdef _WIN32
+        check(linked.command.find("libcmtd.lib") != std::string::npos,
+              "with the C runtime named, since cc1's objects do not name one");
+        check(linked.command.find("legacy_stdio_definitions") != std::string::npos,
+              "including the one printf needs under the UCRT");
+#else
+        check(linked.command.find("-lm") != std::string::npos,
+              "with -lm always, which is what cc1's own driver does");
+        check(linked.command.find(" -g") != std::string::npos,
+              "and -g under debug, which is what runs dsymutil before the objects go");
+#endif
+    }
+
+    file::remove_all(dir);
+}
+
 void whatTheProjectBuilds() {
     std::printf("what a project says it builds\n");
 
@@ -3069,8 +3202,25 @@ void theThirdLanguage() {
         sources.clear();
         check(!mixed.targetSources(sources, lang, why),
               "and is refused: no one compiler can make one program of them");
-        check(why.find("both C and Shalimar") != std::string::npos,
-              "naming which two, so the reader knows which file to move");
+        check(why.find("one group") != std::string::npos,
+              "naming the group, so the reader knows which list to split");
+
+        // And in two groups it is refused for a different reason, which is the
+        // one that is not about the editor: a Shalimar object exports the same
+        // three startup symbols whatever file it came from, so two of them
+        // collide, and the language has no declarations, so a call across a
+        // link could not be checked. Compiler-S/docs/LINKING.md, in full.
+        writeSource(editor::path::join(dir, "ed1.json"),
+                    "{\n  \"name\": \"hello\",\n"
+                    "  \"build\": { \"target\": \"hello\", \"groups\": [\"S\", \"C\"] },\n"
+                    "  \"groups\": { \"S\": [\"src/hello.shl\"], \"C\": [\"src/bit.c\"] }\n}\n");
+        editor::Project apart;
+        check(apart.load(dir, error), "the same two in groups of their own load");
+        std::vector<editor::Part> parts;
+        check(!apart.targetParts(parts, why),
+              "and are still refused, where C and C++ in two groups now are not");
+        check(why.find("whole program") != std::string::npos,
+              "for what a Shalimar object is, rather than for being a second language");
 
         editor::path::removeTree(dir);
     }
@@ -3209,6 +3359,7 @@ int main(int argc, char** argv) {
     operations();
     theOtherShapeOfDiagnostic();
     whatALinkFailureSays();
+    aCompilerPerGroup();
     whatTheProjectBuilds();
     theThirdLanguage();
     steppingShalimar();

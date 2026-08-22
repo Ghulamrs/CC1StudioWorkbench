@@ -5,6 +5,7 @@
 #include <string>
 #include <vector>
 
+#include "project.h"
 #include "toolchain.h"
 
 namespace editor {
@@ -79,6 +80,21 @@ Built buildTarget(const Toolchain& tool, ToolchainKind kind,
                   const std::vector<std::string>& sources, Language lang,
                   const std::string& arch, Configuration config,
                   const std::string& program, LineSink sink = 0, void* context = 0);
+
+// A program from several groups, each with its own compiler. What Project's
+// targetParts hands back, built.
+//
+// One part is still one command - buildTarget, unchanged, which is the only
+// thing shc can do anyway and is what every project that ever worked already
+// did. More than one part is a compile per part and then a link, and the link
+// is the editor's own command because no compiler here takes an object as an
+// input.
+//
+// The objects go in a directory of the editor's making and are removed with it,
+// whether the link worked or not. What survives is the program.
+Built buildParts(const Toolchain& tool, const std::vector<Part>& parts,
+                 const std::string& arch, Configuration config,
+                 const std::string& program, LineSink sink = 0, void* context = 0);
 
 // Runs a program that has already been built, with every line it writes handed
 // to the sink. The project's Run, where the building was its own step and the

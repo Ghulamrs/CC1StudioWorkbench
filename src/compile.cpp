@@ -1,13 +1,17 @@
 #include "compile.h"
 
+#include "path.h"
+
 #include <cstdio>
 #include <cstdlib>
 
 #ifdef _WIN32
+#include <windows.h>
 #define POPEN  _popen
 #define PCLOSE _pclose
 #else
 #include <sys/wait.h>
+#include <unistd.h>
 #define POPEN  popen
 #define PCLOSE pclose
 #endif
@@ -187,6 +191,19 @@ Diagnostic parseDiagnostic(const std::string& text, const std::string& source) {
 }
 
 namespace {
+
+// A directory of this process's own under the machine's temporary one. The
+// process id is in the name so that two editors building at once do not put
+// their objects in the same place and link each other's.
+std::string temporaryDirectory(const char* what) {
+    char id[32];
+#ifdef _WIN32
+    std::snprintf(id, sizeof id, "%lu", static_cast<unsigned long>(GetCurrentProcessId()));
+#else
+    std::snprintf(id, sizeof id, "%ld", static_cast<long>(getpid()));
+#endif
+    return path::join(path::tempDir(), std::string(what) + "-" + id);
+}
 
 // Runs a command with its errors joined to its output, handing the sink each
 // line as it arrives, and gives back what the command exited with - or -1 when
@@ -407,6 +424,100 @@ Built buildTarget(const Toolchain& tool, ToolchainKind kind,
     for (size_t i = 0; i < result.leftovers.size(); ++i)
         std::remove(result.leftovers[i].c_str());
     result.leftovers.clear();
+    return result;
+}
+
+Built buildParts(const Toolchain& tool, const std::vector<Part>& parts,
+                 const std::string& arch, Configuration config,
+                 const std::string& program, LineSink sink, void* context) {
+    Built result;
+
+    if (parts.empty()) {
+        result.output = "nothing to build\n";
+        return result;
+    }
+
+    // One compiler makes the whole of it, which is every project that worked
+    // before this and the only shape shc has. Nothing is split and nothing is
+    // linked separately: the command is the one it always was.
+    if (parts.size() == 1) {
+        return buildTarget(tool, toolchainOf(tool, parts[0]), parts[0].sources,
+                           parts[0].lang, arch, config, program, sink, context);
+    }
+
+    bool withCpp = false;
+    for (size_t i = 0; i < parts.size(); ++i) {
+        ToolchainKind kind = toolchainOf(tool, parts[i]);
+        if (!prepareFor(kind)) {
+            result.output = "no Visual Studio 2022 found - cl cannot be run\n";
+            if (sink) sink(context, "no Visual Studio 2022 found - cl cannot be run");
+            return result;
+        }
+        if (parts[i].lang == LangCpp) withCpp = true;
+    }
+
+    std::string objects = temporaryDirectory("ed1-parts");
+    path::makeDirectories(objects);
+
+    std::vector<std::string> made;
+    for (size_t i = 0; i < parts.size(); ++i) {
+        ToolchainKind kind = toolchainOf(tool, parts[i]);
+
+        // Said before each one, because a build that takes three commands and
+        // reports one is a build nobody can read. The group is named rather
+        // than the compiler alone: two groups may go to the same compiler.
+        if (sink)
+            sink(context, "$ " + parts[i].group + " (" + toolchainName(kind) + ")");
+
+        std::vector<std::string> theirs;
+        Recipe recipe = objectRecipe(tool, kind, parts[i].sources, parts[i].lang,
+                                     arch, config, objects, theirs);
+
+        int rc = runCaptured(recipe.command, result.output, sink, context);
+        if (rc != 0) {
+            // The diagnostic is looked for among this part's own sources, so
+            // the caret lands in the file the compiler was complaining about
+            // rather than in whichever file the target happened to list first.
+            result.diag = parseDiagnostic(result.output, parts[i].sources[0]);
+            if (rc < 0 || (!result.diag.present && looksLikeMissingProgram(result.output))) {
+                std::string hint = std::string(programOf(tool, kind)) +
+                                   " could not be run - name it with --cc1 or --cl, or put "
+                                   "it on PATH";
+                result.output += hint + "\n";
+                if (sink) sink(context, hint);
+            }
+            path::removeTree(objects);
+            return result;
+        }
+        for (size_t o = 0; o < theirs.size(); ++o) made.push_back(theirs[o]);
+    }
+
+    if (sink) sink(context, "$ linking with " + linkerName(withCpp));
+
+    Recipe link = linkRecipe(tool, made, withCpp, arch, config, program);
+    int linked = runCaptured(link.command, result.output, sink, context);
+
+    // The objects are the editor's mess whether the link worked or not - a
+    // failed link leaves them behind just as readily, and a directory of stale
+    // objects is how a later build comes to link something nobody compiled.
+    path::removeTree(objects);
+
+    if (linked != 0) {
+        // A linker's complaint has no line to go to: it is about a name, not a
+        // place. So nothing is parsed out of it and the console is where it is
+        // read, which is what linkFailure already says for the one-command case.
+        if (linked < 0) {
+            std::string hint = linkerName(withCpp) +
+                               " could not be run - it is the host's linker, and on Windows "
+                               "it reaches PATH only after vcvars64.bat";
+            result.output += hint + "\n";
+            if (sink) sink(context, hint);
+        }
+        return result;
+    }
+
+    result.program = program;
+    result.ok = true;
     return result;
 }
 

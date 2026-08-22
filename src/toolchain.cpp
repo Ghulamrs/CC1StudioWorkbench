@@ -354,6 +354,138 @@ Recipe targetRecipe(const Toolchain& tool, ToolchainKind kind,
     return recipe;
 }
 
+// The name of a source with its suffix taken off and its directory dropped:
+// what both compilers call the object they make of it, and so what to name and
+// what to clear away.
+namespace {
+
+std::string objectFor(const std::string& dir, const std::string& source,
+                      const char* suffix) {
+    std::string leaf = path::filename(source);
+    size_t dot = leaf.find_last_of('.');
+    if (dot != std::string::npos) leaf.resize(dot);
+    return path::join(dir, leaf + suffix);
+}
+
+// The same three variables cc1 reads, and for the same reason: whichever
+// assembler and linker this machine reaches cc1 through are the ones that have
+// to take what cc1 wrote. A machine where cc1 needs to be told is a machine
+// where this does too, and two different answers would be worse than none.
+const char* hostDriver() {
+    const char* named = std::getenv("CC1_CC");
+    return (named && *named) ? named : "cc";
+}
+
+const char* hostLinker() {
+    const char* named = std::getenv("CC1_LD");
+    return (named && *named) ? named : "link.exe";
+}
+
+}  // namespace
+
+const char* linkerNameFor(bool windows, bool withCpp) {
+    if (windows) return hostLinker();
+    (void)withCpp;
+    return hostDriver();
+}
+
+std::string linkerName(bool withCpp) {
+#ifdef _WIN32
+    return linkerNameFor(true, withCpp);
+#else
+    return linkerNameFor(false, withCpp);
+#endif
+}
+
+Recipe objectRecipe(const Toolchain& tool, ToolchainKind kind,
+                    const std::vector<std::string>& sources, Language lang,
+                    const std::string& arch, Configuration config,
+                    const std::string& objectDir, std::vector<std::string>& objects) {
+    Recipe recipe;
+    objects.clear();
+
+    std::string named;
+    for (size_t i = 0; i < sources.size(); ++i) named += " " + quote(sources[i]);
+
+    if (kind == ToolMsvc) {
+        // /MT rather than the default /MD, because these objects are going to
+        // be linked beside cc1's and cc1's driver names libcmt. Two CRTs in one
+        // program is LNK4098 at best and two heaps at worst, and the editor is
+        // the only thing here in a position to make them agree.
+        std::string forLanguage = (lang == LangCpp) ? " /TP /EHsc /std:c++14" : " /TC";
+        std::string crt = (config == ConfigDebug) ? " /MTd" : " /MT";
+        std::string pdb = path::join(objectDir, "ed1-target.pdb");
+
+        recipe.command = quote(programOf(tool, kind)) + " /nologo /diagnostics:column /c" +
+                         forLanguage + crt + configFlags(kind, config, arch) +
+                         (config == ConfigDebug ? " /Fd" + quote(pdb) : std::string()) +
+                         " /Fo" + quote(objectDir + kSep) + named;
+
+        for (size_t i = 0; i < sources.size(); ++i)
+            objects.push_back(objectFor(objectDir, sources[i], ".obj"));
+        recipe.leftovers = objects;
+        if (config == ConfigDebug) recipe.leftovers.push_back(pdb);
+        return recipe;
+    }
+
+    // cc1 -c writes one object per input, named after the input, in the
+    // *current directory* - which is the editor's, not the one wanted here. So
+    // the compiler is run from the object directory rather than told about it,
+    // which is the one thing it has no flag for. The sources are absolute, so
+    // moving the working directory does not lose them.
+    recipe.command = "cd " + quote(objectDir) + " && " +
+                     quote(programOf(tool, kind)) + " -c" + named +
+                     configFlags(kind, config, arch);
+
+    for (size_t i = 0; i < sources.size(); ++i)
+        objects.push_back(objectFor(objectDir, sources[i], ".o"));
+    recipe.leftovers = objects;
+    return recipe;
+}
+
+Recipe linkRecipe(const Toolchain& tool, const std::vector<std::string>& objects,
+                  bool withCpp, const std::string& arch, Configuration config,
+                  const std::string& program) {
+    (void)tool;
+    (void)arch;
+    Recipe recipe;
+    recipe.assemblyPath = program;
+
+    std::string named;
+    for (size_t i = 0; i < objects.size(); ++i) named += " " + quote(objects[i]);
+
+#ifdef _WIN32
+    (void)withCpp;
+    // The C runtime is named because cc1's objects do not name it. cl's do -
+    // it writes /DEFAULTLIB directives into every object - and the linker takes
+    // both without complaint as long as they agree, which is what /MT above is
+    // for. legacy_stdio_definitions is not optional for anything that formats
+    // into a buffer: the UCRT made printf an inline wrapper over
+    // __stdio_common_*, and a compiler that declares it as the ordinary
+    // function C says it is - which cc1 does, correctly - has nothing to link
+    // against without it.
+    const char* crt = (config == ConfigDebug)
+                          ? " libcmtd.lib libucrtd.lib libvcruntimed.lib"
+                          : " libcmt.lib libucrt.lib libvcruntime.lib";
+    recipe.command = quote(linkerNameFor(true, withCpp)) +
+                     " /nologo /subsystem:console" +
+                     (config == ConfigDebug ? std::string(" /DEBUG") : std::string()) +
+                     " /out:" + quote(program) + named + crt +
+                     " kernel32.lib legacy_stdio_definitions.lib";
+#else
+    // -g here is not about this link's own output: it is what makes the host
+    // driver run dsymutil, which gathers the DWARF out of the objects into a
+    // .dSYM. Without it a Mac's debug map points at objects that are removed
+    // the moment the link finishes, and the program is not debuggable however
+    // good the assembly was. -lm is passed always rather than guessed at,
+    // which is what cc1's own driver does.
+    recipe.command = quote(linkerNameFor(false, withCpp)) +
+                     (config == ConfigDebug ? std::string(" -g") : std::string()) +
+                     named + " -o " + quote(program) + " -lm";
+#endif
+    return recipe;
+}
+
 Recipe programRecipe(const Toolchain& tool, ToolchainKind kind,
                      const std::string& source, Language lang,
                      const std::string& arch, Configuration config) {

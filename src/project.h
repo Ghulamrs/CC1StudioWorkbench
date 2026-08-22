@@ -16,6 +16,44 @@ namespace editor {
 struct Group {
     std::string name;
     std::vector<std::string> files;   // relative to the root, written with '/'
+    // What compiles them. ToolAuto is the ordinary answer and means "whatever
+    // the language says", which is what every project written before this
+    // said by saying nothing.
+    //
+    // The compiler used to be a property of the project. It is a property of a
+    // group because that is the smallest thing a target is made of: a target
+    // holding C and C++ has no one compiler, and cannot have one, but each of
+    // its groups can - and the objects meet at the linker, which does not care
+    // which compiler wrote them.
+    // The words are "cc1", "cl" (or "msvc", which is what gets written back),
+    // "shc" and "auto".
+    ToolchainKind toolchain;
+
+    Group() : toolchain(ToolAuto) {}
+};
+
+// One compiler's share of a target: a group's sources, and what compiles them.
+// A target is a list of these, in the order its groups are named, and the
+// program is what the linker makes of all their objects.
+//
+// The toolchain is what the *group* named, and ToolAuto - the ordinary answer
+// - still means "the language chooses". It is left that way rather than worked
+// out here because resolve() is where that rule lives and because the editor's
+// own override, --cc1 or the Language menu, has to keep beating the default
+// exactly as it did before any of this. So a caller asks resolve(tool, lang)
+// for a part whose toolchain is ToolAuto, and obeys it otherwise.
+//
+// A group that names no compiler and holds two languages is *split*, one part
+// per language, rather than refused: "a C and C++ project together" is the
+// whole point, and making somebody split the group by hand first would be a
+// worse answer than the one the compilers already give.
+struct Part {
+    std::string group;
+    ToolchainKind toolchain;
+    Language lang;
+    std::vector<std::string> sources;   // absolute, in the order the group names them
+
+    Part() : toolchain(ToolAuto), lang(LangPlain) {}
 };
 
 // What the project builds, when it says so at all. A program has a name and is
@@ -29,6 +67,11 @@ struct Target {
     std::string name;                  // the program, without .exe
     std::vector<std::string> groups;   // whose sources make it
 };
+
+// Which compiler a part actually goes to: what its group named, or - the
+// ordinary answer - what its language says. Written once because three places
+// ask it and two of them getting it right is not enough.
+ToolchainKind toolchainOf(const Toolchain& tool, const Part& part);
 
 // ed1.json, and what it says. Six keys, flat except for the groups, and every
 // one of them has a default - so the smallest project file that works is `{}`,
@@ -92,6 +135,28 @@ public:
     // like a bug.
     bool targetSources(std::vector<std::string>& sources, Language& lang,
                        std::string& why, std::string* detail = 0) const;
+
+    // The same target, said the way it is actually built: one part per group
+    // that has sources in it, each with the compiler that takes them.
+    //
+    // This is what targetSources refuses on behalf of. It succeeds where the
+    // older one refuses - a target holding C and C++ is two parts and one
+    // link - and it refuses two things of its own:
+    //
+    //   a group holding Shalimar and something else, which no compiler takes;
+    //   Shalimar among anything else, which is not an editor's refusal to
+    //     make - see ../Compiler-S/docs/LINKING.md. A Shalimar object exports
+    //     shm_user_main, shm_init_globals and shm_name_files whatever file it
+    //     came from, so two of them collide by construction, and the language
+    //     has no declarations, so a call across a link cannot be checked. A
+    //     Shalimar group is a whole program.
+    bool targetParts(std::vector<Part>& parts, std::string& why,
+                     std::string* detail = 0) const;
+
+    // What compiles a group, without working out its language: what the group
+    // says, or the project's own setting when the group says nothing.
+    ToolchainKind toolchainFor(const std::string& group) const;
+    void setGroupToolchain(const std::string& group, ToolchainKind kind);
 
     // A file name without its suffix.
     static std::string stemOf(const std::string& leaf);

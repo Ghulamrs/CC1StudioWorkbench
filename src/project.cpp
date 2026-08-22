@@ -18,13 +18,34 @@ std::string withSlashes(const std::string& text) { return path::withSlashes(text
 ToolchainKind toolchainFrom(const std::string& word) {
     if (word == "cc1") return ToolCc1;
     if (word == "msvc" || word == "cl") return ToolMsvc;
+    if (word == "shc") return ToolShc;
     return ToolAuto;
 }
 
 const char* toolchainWord(ToolchainKind kind) {
     if (kind == ToolCc1) return "cc1";
     if (kind == ToolMsvc) return "msvc";
+    if (kind == ToolShc) return "shc";
     return "auto";
+}
+
+// What the suffix says, which is what the compilers go by. A .h is C by name
+// and is still not a source, so it comes back as LangPlain and is skipped.
+Language languageOf(const std::string& relative) {
+    size_t dot = relative.find_last_of('.');
+    if (dot == std::string::npos) return LangPlain;
+    std::string suffix = relative.substr(dot);
+    if (suffix == ".c") return LangC;
+    if (suffix == ".cpp" || suffix == ".cc" || suffix == ".cxx") return LangCpp;
+    if (suffix == ".shl" || suffix == ".shm") return LangShalimar;
+    return LangPlain;
+}
+
+const char* languageWord(Language lang) {
+    if (lang == LangC) return "C";
+    if (lang == LangCpp) return "C++";
+    if (lang == LangShalimar) return "Shalimar";
+    return "text";
 }
 
 }  // namespace
@@ -115,7 +136,17 @@ bool Project::load(const std::string& dir, std::string& error) {
     for (size_t i = 0; i < groups.size(); ++i) {
         Group group;
         group.name = groups.keyAt(i);
-        const Json& files = groups.valueAt(i);
+        // Two spellings, and the plain one is not deprecated. A group that has
+        // nothing to say about its compiler is a list of files and is written
+        // back as one; a group that names a compiler needs somewhere to put
+        // the name, and an object is that somewhere.
+        //
+        //   "Sources":  ["src/main.c"]
+        //   "Engine":   { "files": ["src/engine.cpp"], "toolchain": "cl" }
+        const Json& entry = groups.valueAt(i);
+        const Json& files = entry.is(Json::Object) ? entry.get("files") : entry;
+        if (entry.is(Json::Object))
+            group.toolchain = toolchainFrom(entry.get("toolchain").text("auto"));
         for (size_t j = 0; j < files.size(); ++j) {
             std::string relative = withSlashes(files.at(j).text());
             if (relative.empty()) continue;
@@ -173,7 +204,17 @@ bool Project::save(std::string& error) {
         Json files = Json::array();
         for (size_t j = 0; j < groups_[i].files.size(); ++j)
             files.push(Json::fromText(groups_[i].files[j]));
-        groups.set(groups_[i].name, files);
+        // The plain array unless there is something to say, so that adding a
+        // file to a project written before any of this existed leaves the file
+        // looking the way its author left it.
+        if (groups_[i].toolchain == ToolAuto) {
+            groups.set(groups_[i].name, files);
+        } else {
+            Json named = Json::object();
+            named.set("files", files);
+            named.set("toolchain", Json::fromText(toolchainWord(groups_[i].toolchain)));
+            groups.set(groups_[i].name, named);
+        }
     }
     root.set("groups", groups);
 
@@ -344,10 +385,28 @@ bool Project::moveToGroup(const std::string& rel, const std::string& group) {
 // The sources a program is made of, and the language they are in. Headers are
 // passed over - they are in the project to be opened, not to be compiled - and
 // so is anything that is neither C nor C++.
-bool Project::targetSources(std::vector<std::string>& sources, Language& lang,
-                            std::string& why, std::string* detail) const {
-    sources.clear();
-    lang = LangPlain;
+ToolchainKind toolchainOf(const Toolchain& tool, const Part& part) {
+    // The group's word beats the language's, and the editor's own --cc1 or
+    // Language menu still beats both - that last one is inside resolve, and is
+    // why this asks it rather than working the answer out here.
+    if (part.toolchain != ToolAuto) return part.toolchain;
+    return resolve(tool, part.lang);
+}
+
+ToolchainKind Project::toolchainFor(const std::string& group) const {
+    for (size_t i = 0; i < groups_.size(); ++i)
+        if (groups_[i].name == group) return groups_[i].toolchain;
+    return ToolAuto;
+}
+
+void Project::setGroupToolchain(const std::string& group, ToolchainKind kind) {
+    for (size_t i = 0; i < groups_.size(); ++i)
+        if (groups_[i].name == group) { groups_[i].toolchain = kind; return; }
+}
+
+bool Project::targetParts(std::vector<Part>& parts, std::string& why,
+                          std::string* detail) const {
+    parts.clear();
     why.clear();
     if (detail) detail->clear();
 
@@ -362,7 +421,8 @@ bool Project::targetSources(std::vector<std::string>& sources, Language& lang,
         return false;
     }
 
-    bool sawC = false, sawCpp = false, sawShalimar = false;
+    std::vector<std::string> gone;
+
     for (size_t i = 0; i < target_.groups.size(); ++i) {
         size_t at = groups_.size();
         for (size_t g = 0; g < groups_.size(); ++g)
@@ -374,23 +434,72 @@ bool Project::targetSources(std::vector<std::string>& sources, Language& lang,
                 *detail = std::string("The \"build\" entry in ") + fileName() +
                           " names a group the project does not have. Groups are the "
                           "headings in the pane on the left.";
-            sources.clear();
+            parts.clear();
             return false;
         }
 
-        for (size_t f = 0; f < groups_[at].files.size(); ++f) {
-            const std::string& relative = groups_[at].files[f];
-            // What decides is the extension, because that is what the
-            // compilers go by. A .h is C by name and is still not a source.
-            size_t dot = relative.find_last_of('.');
-            std::string suffix = (dot == std::string::npos) ? std::string()
-                                                            : relative.substr(dot);
-            if (suffix == ".c") sawC = true;
-            else if (suffix == ".cpp" || suffix == ".cc" || suffix == ".cxx") sawCpp = true;
-            else if (suffix == ".shl" || suffix == ".shm") sawShalimar = true;
-            else continue;
+        const Group& group = groups_[at];
 
-            sources.push_back(absolute(relative));
+        // What is in it, by language and in the order the group names them.
+        std::vector<std::string> byLanguage[LangCount];
+        bool sawShalimar = false, sawOther = false;
+        for (size_t f = 0; f < group.files.size(); ++f) {
+            Language lang = languageOf(group.files[f]);
+            if (lang == LangPlain) continue;
+            if (lang == LangShalimar) sawShalimar = true; else sawOther = true;
+            std::string full = absolute(group.files[f]);
+            if (!path::exists(full)) gone.push_back(group.files[f]);
+            byLanguage[lang].push_back(full);
+        }
+
+        // Shalimar shares a group with nothing, whatever the group says about
+        // a compiler, because no compiler here takes both - and because the
+        // rest of the refusal below is about the *link*, which this one never
+        // reaches. Said per group, since that is where the fix is.
+        if (sawShalimar && sawOther) {
+            why = target_.groups[i] + " holds Shalimar and C or C++ in one group";
+            if (detail)
+                *detail = "No compiler takes both, so this is not a matter of naming one: "
+                          "shc reads Shalimar and nothing else, and cc1 and cl read C and "
+                          "C++ and not Shalimar. Put the Shalimar in a group of its own.";
+            parts.clear();
+            return false;
+        }
+
+        // A group that names a compiler is one part, and that compiler takes
+        // whatever is in it. Where the group holds C and C++ both, the part is
+        // C++: cl compiles C as C++ under /TP, and somebody who wrote
+        // "toolchain": "cl" on a group holding both asked for exactly that.
+        // A compiler that cannot take the result says so itself, in canCompile's
+        // own words, rather than being second-guessed here.
+        if (group.toolchain != ToolAuto) {
+            Part part;
+            part.group = group.name;
+            part.toolchain = group.toolchain;
+            part.lang = LangPlain;
+            for (int l = 0; l < LangCount; ++l) {
+                if (byLanguage[l].empty()) continue;
+                if (part.lang == LangPlain || l == LangCpp)
+                    part.lang = static_cast<Language>(l);
+                for (size_t f = 0; f < byLanguage[l].size(); ++f)
+                    part.sources.push_back(byLanguage[l][f]);
+            }
+            if (!part.sources.empty()) parts.push_back(part);
+            continue;
+        }
+
+        // And a group that names none is split by language, one part each, in
+        // the order the languages are numbered rather than the order the files
+        // happened to be listed - so the same project gives the same command
+        // line whichever way somebody sorted their group.
+        for (int l = 0; l < LangCount; ++l) {
+            if (byLanguage[l].empty()) continue;
+            Part part;
+            part.group = group.name;
+            part.toolchain = ToolAuto;
+            part.lang = static_cast<Language>(l);
+            part.sources = byLanguage[l];
+            parts.push_back(part);
         }
     }
 
@@ -398,10 +507,6 @@ bool Project::targetSources(std::vector<std::string>& sources, Language& lang,
     // open" and stop, with no line to go to and nothing about the project;
     // this is a fault in the configuration, and the editor is the one holding
     // the list.
-    std::vector<std::string> gone;
-    for (size_t i = 0; i < sources.size(); ++i)
-        if (!path::exists(sources[i])) gone.push_back(relative(sources[i]));
-
     if (!gone.empty()) {
         why = gone[0] + " is in this project and not on disk";
         if (gone.size() > 1) {
@@ -418,35 +523,11 @@ bool Project::targetSources(std::vector<std::string>& sources, Language& lang,
             *detail += ". Put them back, or take them out of the group - a project that "
                        "lists a file it has not got cannot be built from.";
         }
-        sources.clear();
+        parts.clear();
         return false;
     }
 
-    // Naming them is the point of the message. "more than one language" tells
-    // whoever is reading nothing they did not already suspect; "both C and
-    // C++" tells them which file to move.
-    std::vector<std::string> found;
-    if (sawC) found.push_back("C");
-    if (sawCpp) found.push_back("C++");
-    if (sawShalimar) found.push_back("Shalimar");
-
-    if (found.size() > 1) {
-        std::string named = found[0];
-        for (size_t i = 1; i < found.size(); ++i)
-            named += (i + 1 == found.size() ? " and " : ", ") + found[i];
-        why = "this project holds " + (found.size() == 2 ? std::string("both ")
-                                                         : std::string()) +
-              named + ", which cannot make one program";
-        if (detail)
-            *detail = "Each of them has its own compiler - cc1 for C, cl for C++, shc "
-                      "for Shalimar - and there is no one compiler here to give a "
-                      "program made of two of them to. Put each in a project of its "
-                      "own, or build them a file at a time with Ctrl-B, which never "
-                      "asks what the project says.";
-        sources.clear();
-        return false;
-    }
-    if (sources.empty()) {
+    if (parts.empty()) {
         why = "the groups this project builds from hold no source";
         if (detail)
             *detail = "A group can hold anything - headers, notes, a Makefile - and none "
@@ -455,11 +536,79 @@ bool Project::targetSources(std::vector<std::string>& sources, Language& lang,
         return false;
     }
 
-    if (sawShalimar) {
-        lang = LangShalimar;
-        return oneShalimarProgram(sources, why, detail);
+    // Shalimar among the rest. This is the one refusal that is not about the
+    // editor's tidiness and not about a missing feature either: it is what a
+    // Shalimar object *is*. Every one of them exports shm_user_main,
+    // shm_init_globals and shm_name_files whatever file it came from, so two
+    // collide by construction; a Shalimar function reads its own file's
+    // globals, which only that file's shm_init_globals sets up; and the
+    // language has no declarations, so a call that crossed a link could not be
+    // checked - and checking the whole program together is the rule the
+    // cross-file search exists to keep. ../Compiler-S/docs/LINKING.md has it in
+    // full, with what would have to change.
+    bool shalimar = false;
+    for (size_t i = 0; i < parts.size(); ++i)
+        if (parts[i].lang == LangShalimar) shalimar = true;
+
+    if (shalimar && parts.size() > 1) {
+        why = "Shalimar makes a whole program, so it cannot be part of one";
+        if (detail)
+            *detail = "shc compiles, assembles and links in one step, and a Shalimar "
+                      "object is not a piece of something larger: whichever file it came "
+                      "from it exports the same three startup symbols, so two of them "
+                      "collide, and the language has no declarations, so a call across a "
+                      "link could not be checked. Give the Shalimar its own project, or "
+                      "take it out of this target's groups and build it with Ctrl-B. "
+                      "See Compiler-S/docs/LINKING.md.";
+        parts.clear();
+        return false;
     }
-    lang = sawCpp ? LangCpp : LangC;
+
+    if (shalimar) {
+        std::vector<std::string>& only = parts[0].sources;
+        if (!oneShalimarProgram(only, why, detail)) {
+            parts.clear();
+            return false;
+        }
+    }
+    return true;
+}
+
+bool Project::targetSources(std::vector<std::string>& sources, Language& lang,
+                            std::string& why, std::string* detail) const {
+    sources.clear();
+    lang = LangPlain;
+
+    std::vector<Part> parts;
+    if (!targetParts(parts, why, detail)) return false;
+
+    // One compiler, or this is not the question to be asking. Everything that
+    // takes several compilers goes through targetParts and links; this is for
+    // whoever wants the older answer - one command, one language - and it says
+    // so rather than picking a part and being quietly wrong about the rest.
+    if (parts.size() > 1) {
+        std::vector<std::string> named;
+        for (size_t i = 0; i < parts.size(); ++i) {
+            std::string word = languageWord(parts[i].lang);
+            bool already = false;
+            for (size_t j = 0; j < named.size(); ++j)
+                if (named[j] == word) already = true;
+            if (!already) named.push_back(word);
+        }
+        std::string all = named.empty() ? std::string() : named[0];
+        for (size_t i = 1; i < named.size(); ++i)
+            all += (i + 1 == named.size() ? " and " : ", ") + named[i];
+        why = "this target holds " + all + ", so it takes more than one compiler";
+        if (detail)
+            *detail = "That is built rather than refused - each group goes to the compiler "
+                      "that can take it and the objects meet at the linker - but whatever "
+                      "asked this question wanted one command and one language, and there "
+                      "is no honest single answer to give it.";
+        return false;
+    }
+
+    sources = parts[0].sources;
+    lang = parts[0].lang;
     return true;
 }
 

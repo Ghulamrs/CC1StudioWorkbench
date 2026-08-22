@@ -830,18 +830,41 @@ void buildingTheProject(const std::string& ed1, const std::string& cc1) {
     // found, which is the line after the one that is missing it.
     check(onScreen(broken, "8/10"), "and the caret goes there, in a file nothing had opened");
 
-    // Both languages in one target is refused before a compiler is run, on the
-    // message line and in the console, which has room for the reason.
-    writeFile(dir / "src" / "extra.cpp", "int twice(int n) { return n * 2; }\n");
+    // Both languages in one target, which used to be refused with "this project
+    // holds both C and C++, which cannot make one program" and now is not: the
+    // group is split by language, cc1 takes the C and cl takes the C++, and the
+    // objects meet at the linker.
+    //
+    // The main.c above was left broken on purpose by the case before this one,
+    // so it is written again - this case is about the mixture and a syntax
+    // error would stop it before the mixture was reached.
+    writeFile(dir / "src" / "main.c",
+              "#include <stdio.h>\n\n#include \"sum.h\"\n\n"
+              "int twice(int n);\n\n"
+              "int main(void)\n{\n    printf(\"answer %d\\n\", twice(addUp(2, 19)));\n"
+              "    return 0;\n}\n");
+    writeFile(dir / "src" / "extra.cpp",
+              "extern \"C\" int twice(int n) { return n * 2; }\n");
     writeFile(dir / "ed1.json",
               "{\n  \"name\": \"sums\",\n  \"indent\": 4,\n"
               "  \"groups\": {\n"
               "    \"Sources\": [\"src/sum.c\", \"src/main.c\", \"src/extra.cpp\"]\n  },\n"
               "  \"build\": { \"target\": \"sums\", \"groups\": [\"Sources\"] }\n}\n");
     Screen mixed = drive(ed1, arguments, kF4 + ctrl('q'), dir);
-    check(onScreen(mixed, "both C and C++"), "a project of both languages is refused");
-    check(onScreen(mixed, "own compiler"), "with the reason in the console");
-    check(!onScreen(mixed, "error:"), "and no compiler is run to find that out");
+    check(onScreen(mixed, "Sources (cc1)"), "a group of two languages sends the C to cc1");
+    check(onScreen(mixed, "Sources (cl)"), "and the C++ to cl, without being told to");
+    check(!onScreen(mixed, "cannot make one program"),
+          "and is not refused for holding both any more");
+#ifdef _WIN32
+    check(onScreen(mixed, "built sums"), "the two compilers' objects link into one program");
+#else
+    // cl is Windows-only, so this is as far as a Mac or the Linux box can take
+    // it: the editor got to cl and cl was not there. Checked rather than
+    // skipped, because "it reached the second compiler" is most of what this
+    // case is about and is true on all three machines.
+    check(onScreen(mixed, "could not be run") || onScreen(mixed, "cl"),
+          "and on a machine with no cl it is cl that is missing, not the feature");
+#endif
 
     // Debugging the project is the same choice again: the program under the
     // debugger is the one the project builds, not the file in front of you.
@@ -1589,7 +1612,11 @@ void aShalimarProject(const std::string& ed1, const std::string& shc) {
     check(wasShown(two, "also compiled shapes.shl"),
           "and the compiler says which file it went to, so nothing is silent");
 
-    // Two languages in one target is the same refusal C and C++ already got.
+    // Shalimar beside C is still refused, and it is the one refusal that did
+    // not go away when a group got its own compiler - it is not about the
+    // editor at all. Refused twice over, and the two say different things.
+    //
+    // In one group: no compiler takes both, so naming one cannot help.
     writeFile(dir / "src" / "bit.c", "int bit(void) { return 1; }\n");
     writeFile(dir / "ed1.json",
               "{\n"
@@ -1597,9 +1624,27 @@ void aShalimarProject(const std::string& ed1, const std::string& shc) {
               "  \"build\": { \"target\": \"hello\", \"groups\": [\"Sources\"] },\n"
               "  \"groups\": { \"Sources\": [\"src/hello.shl\", \"src/bit.c\"] }\n"
               "}\n");
-    Screen mixed = drive(ed1, arguments, kF4 + ctrl('q'), dir);
-    check(wasShown(mixed, "both C and Shalimar"),
-          "and Shalimar beside C in one target is refused, naming which two");
+    Screen together = drive(ed1, arguments, kF4 + ctrl('q'), dir);
+    check(wasShown(together, "Shalimar and C or C++ in one group"),
+          "Shalimar and C in one group is refused, naming the group");
+
+    // In two groups, where every other pair of languages now works: this is
+    // about what a Shalimar object is. Whichever file it came from it exports
+    // the same three startup symbols, so two of them collide - and the
+    // language has no declarations, so a call across a link could not be
+    // checked. Compiler-S/docs/LINKING.md has it in full.
+    writeFile(dir / "ed1.json",
+              "{\n"
+              "  \"name\": \"hello\",\n"
+              "  \"build\": { \"target\": \"hello\", \"groups\": [\"Sources\", \"C\"] },\n"
+              "  \"groups\": {\n"
+              "    \"Sources\": [\"src/hello.shl\"],\n"
+              "    \"C\": [\"src/bit.c\"]\n"
+              "  }\n"
+              "}\n");
+    Screen apart = drive(ed1, arguments, kF4 + ctrl('q'), dir);
+    check(wasShown(apart, "whole program"),
+          "and in a group of its own it is refused for what a Shalimar object is");
 
     file::remove_all(dir);
 }
@@ -1678,6 +1723,71 @@ void stoppingShalimar(const std::string& ed1, const std::string& shc) {
     file::remove_all(dir);
 }
 
+// A compiler per group, and one link at the end.
+//
+// This is the shape that used to be refused: a target whose groups do not all
+// go to the same compiler. Each group compiles to objects with its own, and the
+// editor names the linker itself, because no compiler here takes an object as
+// an input - hand cc1 a .o and it reads it as C and complains about a stray
+// byte on line 1.
+void aCompilerPerGroup(const std::string& ed1, const std::string& cc1) {
+    std::printf("a compiler per group, and one link\n");
+
+    if (cc1.empty()) {
+        std::printf("  (no cc1 named, so those cases are not tried)\n");
+        return;
+    }
+
+    file::path dir = freshProject("per-group");
+    file::create_directories(dir / "lib");
+    writeFile(dir / "src" / "main.c",
+              "#include <stdio.h>\n\nint helper(int n);\n\n"
+              "int main(void)\n{\n    printf(\"helper %d\\n\", helper(6));\n"
+              "    return 0;\n}\n");
+    writeFile(dir / "lib" / "helper.c", "int helper(int n) { return n * 7; }\n");
+
+    // Two groups, and the second names its compiler by hand. Both go to cc1
+    // here, which is the point: it is two *parts* rather than two languages,
+    // so the object-and-link path is what runs, on a machine where the whole
+    // of it can be checked.
+    writeFile(dir / "ed1.json",
+              "{\n  \"name\": \"two\",\n  \"indent\": 4,\n"
+              "  \"groups\": {\n"
+              "    \"Sources\": [\"src/main.c\"],\n"
+              "    \"Library\": { \"files\": [\"lib/helper.c\"], \"toolchain\": \"cc1\" }\n"
+              "  },\n"
+              "  \"build\": { \"target\": \"two\", \"groups\": [\"Sources\", \"Library\"] }\n}\n");
+
+    std::string arguments = "--project \"" + dir.string() + "\" --cc1 \"" + cc1 + "\"";
+
+    Screen built = drive(ed1, arguments, kF4 + ctrl('q'), dir);
+    check(onScreen(built, "Sources (cc1)"), "each group is compiled under its own name");
+    check(onScreen(built, "Library (cc1)"), "including the one that named its compiler");
+    check(onScreen(built, "linking with"), "and the editor says what it linked with");
+    check(onScreen(built, "built two"), "the program comes out");
+    check(file::exists(dir / "two") || file::exists(dir / "two.exe"),
+          "and is beside the project where it can be found again");
+
+    // The objects are the editor's mess and go with it. A directory of stale
+    // objects is how a later build comes to link something nobody compiled.
+    check(!file::exists(dir / "main.o") && !file::exists(dir / "helper.o"),
+          "and no objects are left lying about the project");
+
+    Screen ran = drive(ed1, arguments,
+                       kF10 + times(kRight, 3) + times(kDown, 3) + kEnter + ctrl('q'), dir);
+    check(wasShown(ran, "helper 42"), "running it runs what the two groups made together");
+
+    // An error in the second group lands in the second group's file. It used
+    // to be looked for among the target's sources starting at the first, which
+    // is right when there is one command and wrong the moment there are two.
+    writeFile(dir / "lib" / "helper.c", "int helper(int n) { return n * ; }\n");
+    Screen broken = drive(ed1, arguments, kF4 + ctrl('q'), dir);
+    check(onScreen(broken, "error"), "an error in the second group is reported");
+    check(onScreen(broken, "helper.c"), "naming the file it is actually in");
+
+    file::remove_all(dir);
+}
+
 int main(int argc, char** argv) {
 #ifdef _WIN32
     std::string ed1 = "ed1.exe";
@@ -1738,6 +1848,7 @@ int main(int argc, char** argv) {
     compilingShalimar(ed1, shc);
     aShalimarProject(ed1, shc);
     stoppingShalimar(ed1, shc);
+    aCompilerPerGroup(ed1, cc1);
 
     std::printf("\n%d checks, %d failed\n", checks, failures);
     return failures == 0 ? 0 : 1;

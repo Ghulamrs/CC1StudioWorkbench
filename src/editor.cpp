@@ -2110,6 +2110,25 @@ bool Editor::saveEveryDirty() {
     return true;
 }
 
+// The compilers a target takes, named in the order its groups are. One is the
+// ordinary case and reads exactly as it always did; two is what the console
+// line says when C and C++ are in one program, and saying "cc1" there while cl
+// was also running would be the console telling half the truth.
+std::string Editor::compilersNamed(const std::vector<Part>& parts) const {
+    std::vector<std::string> named;
+    for (size_t i = 0; i < parts.size(); ++i) {
+        std::string word = toolchainName(toolchainOf(tool_, parts[i]));
+        bool already = false;
+        for (size_t j = 0; j < named.size(); ++j)
+            if (named[j] == word) already = true;
+        if (!already) named.push_back(word);
+    }
+    std::string all = named.empty() ? std::string() : named[0];
+    for (size_t i = 1; i < named.size(); ++i)
+        all += (i + 1 == named.size() ? " and " : ", ") + named[i];
+    return all;
+}
+
 // The project's program: the sources its build entry names, compiled and
 // linked into one thing, left beside the project file where it can be found
 // afterwards.
@@ -2119,10 +2138,9 @@ bool Editor::saveEveryDirty() {
 // is nothing here that has to be guessed, and nothing that has to be closed
 // before the other will work.
 void Editor::buildProject(bool andRun) {
-    std::vector<std::string> sources;
-    Language lang = LangPlain;
+    std::vector<Part> parts;
     std::string why, detail;
-    if (!project_.targetSources(sources, lang, why, &detail)) {
+    if (!project_.targetParts(parts, why, &detail)) {
         // The line says what is wrong and the console says what to do about
         // it: the message line is one line wide and clips what will not fit.
         say(why);
@@ -2138,11 +2156,16 @@ void Editor::buildProject(bool andRun) {
         return;
     }
 
-    ToolchainKind kind = resolve(tool_, lang);
-    if (!canCompile(kind, lang)) { say(refusal(kind, lang)); return; }
-    if (andRun && !runsHere(kind, kArches[arch_])) {
-        say(whyNotRun(kind, kArches[arch_]));
-        return;
+    // Every part is asked, not just the first: a target of C and C++ has two
+    // compilers in it and either of them may be the one that cannot take what
+    // it was given, or cannot produce something this machine can run.
+    for (size_t i = 0; i < parts.size(); ++i) {
+        ToolchainKind kind = toolchainOf(tool_, parts[i]);
+        if (!canCompile(kind, parts[i].lang)) { say(refusal(kind, parts[i].lang)); return; }
+        if (andRun && !runsHere(kind, kArches[arch_])) {
+            say(whyNotRun(kind, kArches[arch_]));
+            return;
+        }
     }
 
     if (!saveEveryDirty()) return;
@@ -2152,18 +2175,26 @@ void Editor::buildProject(bool andRun) {
     console_.clear();
 
     std::string program = project_.targetProgram();
-    console_.push_back("$ " + std::string(toolchainName(kind)) + " " +
-                       number(sources.size()) +
-                       (sources.size() == 1 ? " source -o " : " sources -o ") +
+    size_t count = 0;
+    for (size_t i = 0; i < parts.size(); ++i) count += parts[i].sources.size();
+
+    console_.push_back("$ " + compilersNamed(parts) + " " + number(count) +
+                       (count == 1 ? " source -o " : " sources -o ") +
                        project_.relative(program));
-    for (size_t i = 0; i < sources.size(); ++i)
-        console_.push_back("    " + project_.relative(sources[i]));
+    for (size_t i = 0; i < parts.size(); ++i)
+        for (size_t f = 0; f < parts[i].sources.size(); ++f)
+            console_.push_back("    " + project_.relative(parts[i].sources[f]));
     panelOff_ = 0;
-    say("building " + baseName(program) + " with " + toolchainName(kind) + " ...");
+    say("building " + baseName(program) + " with " + compilersNamed(parts) + " ...");
     refresh();
 
-    Built made = buildTarget(tool_, kind, sources, lang, kArches[arch_], config_,
-                             program, consoleSink, this);
+    Built made = buildParts(tool_, parts, kArches[arch_], config_, program,
+                            consoleSink, this);
+
+    // For the messages below, which are about a compiler and are still true
+    // when there was more than one: whichever one stopped is the one whose
+    // diagnostic came back, and the words name them all rather than guess.
+    const std::string compilers = compilersNamed(parts);
 
     lastDiag_ = made.diag;
 
@@ -2184,12 +2215,12 @@ void Editor::buildProject(bool andRun) {
         say(baseName(made.diag.file) + ":" + number(made.diag.line) + ":" +
             number(made.diag.col) + ": error: " + made.diag.message);
     } else if (!made.ok) {
-        say(std::string(toolchainName(kind)) + " did not build it - see the console");
+        say(compilers + " did not build it - see the console");
     } else if (!andRun) {
         console_.push_back("");
         console_.push_back("[built " + program + "]");
-        say("built " + project_.relative(program) + " from " + number(sources.size()) +
-            (sources.size() == 1 ? " source" : " sources"));
+        say("built " + project_.relative(program) + " from " + number(count) +
+            (count == 1 ? " source" : " sources"));
     } else {
         console_.push_back("");
         Ran result = runBuilt(program, consoleSink, this);
@@ -2482,13 +2513,12 @@ void Editor::debug(bool project) {
 
     // What is going under the debugger, and in what language. For the project
     // that is settled before anything else is asked, because the refusals -
-    // no build entry, both languages at once - are about the project rather
+    // no build entry, a group of two languages - are about the project rather
     // than about debugging, and they read better said first.
-    std::vector<std::string> sources;
-    Language lang = lang_;
+    std::vector<Part> parts;
     if (project) {
         std::string why, detail;
-        if (!project_.targetSources(sources, lang, why, &detail)) {
+        if (!project_.targetParts(parts, why, &detail)) {
             say(why);
             if (!detail.empty()) {
                 panelOpen_ = true;
@@ -2501,24 +2531,52 @@ void Editor::debug(bool project) {
             }
             return;
         }
+    } else {
+        Part one;
+        one.lang = lang_;
+        one.sources.push_back(buf_.path());
+        parts.push_back(one);
     }
 
-    ToolchainKind kind = resolve(tool_, lang);
-    if (!canCompile(kind, lang)) { say(refusal(kind, lang)); return; }
-    if (!runsHere(kind, kArches[arch_])) { say(whyNotRun(kind, kArches[arch_])); return; }
+    for (size_t i = 0; i < parts.size(); ++i) {
+        ToolchainKind each = toolchainOf(tool_, parts[i]);
+        if (!canCompile(each, parts[i].lang)) { say(refusal(each, parts[i].lang)); return; }
+        if (!runsHere(each, kArches[arch_])) { say(whyNotRun(each, kArches[arch_])); return; }
+    }
 
-    // Shalimar is asked about first, because both refusals below are about a
-    // debugger and there is no debugger here to have or to lack. A Shalimar
-    // program carries its own position - shm_line(unit, line) before every
-    // statement, in every build - and a debug build offers it to a session
-    // inside the program. So what "no debugger" would have said is not true of
-    // it, and what "built without -g" would have said is not either: there is
-    // no -g, and what a debug build changes is which runtime archive is
-    // linked. That last one still has to be said, because a release build
-    // genuinely cannot be stopped - it has no code for it - so the sentence
-    // is the same shape with the true reason in it.
-    const bool shalimar = (kind == ToolShc);
-    if (!shalimar && dbg_for(kind, kArches[arch_]) == DebuggerNone) {
+    // Which debugger, when there may be more than one compiler in the program.
+    // Debug information does not mix: cl writes CodeView, cc1 writes DWARF on
+    // two targets and nothing on the third, and shc writes none anywhere by
+    // decision. So a program linked from two compilers has a debugger that can
+    // see part of it, and the honest thing is to start it and say which part -
+    // not to refuse a whole program because one group is invisible.
+    ToolchainKind kind = toolchainOf(tool_, parts[0]);
+    DebuggerKind engine = DebuggerNone;
+    std::vector<std::string> blind;
+    for (size_t i = 0; i < parts.size(); ++i) {
+        ToolchainKind each = toolchainOf(tool_, parts[i]);
+        DebuggerKind theirs = dbg_for(each, kArches[arch_]);
+        if (theirs == DebuggerNone) {
+            blind.push_back(parts[i].group.empty() ? std::string(toolchainName(each))
+                                                   : parts[i].group);
+            continue;
+        }
+        if (engine == DebuggerNone) { engine = theirs; kind = each; }
+    }
+
+    // Shalimar is asked about after that and before the refusals, because both
+    // of them are about a debugger and there is no debugger here to have or to
+    // lack. A Shalimar program carries its own position - shm_line(unit, line)
+    // before every statement, in every build - and a debug build offers it to a
+    // session inside the program. So what "no debugger" would have said is not
+    // true of it, and what "built without -g" would have said is not either:
+    // there is no -g, and what a debug build changes is which runtime archive
+    // is linked. That last one still has to be said, because a release build
+    // genuinely cannot be stopped - it has no code for it - so the sentence is
+    // the same shape with the true reason in it.
+    const bool shalimar = (toolchainOf(tool_, parts[0]) == ToolShc);
+    if (shalimar) kind = ToolShc;
+    if (!shalimar && engine == DebuggerNone) {
         say(dbg_whyNot(kind, kArches[arch_]));
         return;
     }
@@ -2539,8 +2597,17 @@ void Editor::debug(bool project) {
     console_.push_back(project ? "$ building the project for the debugger"
                                : "$ building for the debugger");
     if (project)
-        for (size_t i = 0; i < sources.size(); ++i)
-            console_.push_back("    " + project_.relative(sources[i]));
+        for (size_t i = 0; i < parts.size(); ++i)
+            for (size_t f = 0; f < parts[i].sources.size(); ++f)
+                console_.push_back("    " + project_.relative(parts[i].sources[f]));
+
+    // Said before the build rather than after it, because it is about what the
+    // session will be able to do and whoever pressed F8 is about to find out
+    // the hard way otherwise.
+    for (size_t i = 0; i < blind.size(); ++i)
+        console_.push_back("  (" + blind[i] + " carries no debug information - the "
+                           "debugger cannot stop in it)");
+
     panelOff_ = 0;
     say("building for the debugger ...");
     refresh();
@@ -2550,11 +2617,11 @@ void Editor::debug(bool project) {
     // to be stepped through and cleared away.
     debugTemporary_ = !project;
     if (project)
-        debugBuilt_ = buildTarget(tool_, kind, sources, lang, kArches[arch_], config_,
-                                  project_.targetProgram(), consoleSink, this);
+        debugBuilt_ = buildParts(tool_, parts, kArches[arch_], config_,
+                                 project_.targetProgram(), consoleSink, this);
     else
-        debugBuilt_ = buildProgram(tool_, kind, buf_.path(), lang, kArches[arch_], config_,
-                                   consoleSink, this);
+        debugBuilt_ = buildProgram(tool_, kind, buf_.path(), parts[0].lang, kArches[arch_],
+                                   config_, consoleSink, this);
     lastDiag_ = debugBuilt_.diag;
     if (!debugBuilt_.ok) {
         if (debugBuilt_.diag.present) {
@@ -2589,8 +2656,8 @@ void Editor::debug(bool project) {
             debugBuilt_ = Built();
             return;
         }
-    } else if (!debugger_.start(dbg_for(kind, kArches[arch_]), debugBuilt_.program)) {
-        const char* named = dbg_name(dbg_for(kind, kArches[arch_]));
+    } else if (!debugger_.start(engine, debugBuilt_.program)) {
+        const char* named = dbg_name(engine);
         console_.push_back(std::string(named) + " could not be started");
         say(std::string(named) + " could not be started - is it installed?");
         if (debugTemporary_) removeProgram(debugBuilt_);

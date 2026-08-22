@@ -198,6 +198,12 @@ struct Ed1Project {
     // reads them one string at a time and a returned pointer has to outlive
     // the call that gave it.
     std::vector<std::string> sources;
+    // The same target said the way it is built: one part per group, each with
+    // its own compiler. `sources` above is these flattened, kept because the
+    // managed side lists the files of a build and does not care which compiler
+    // each came from - and because a window that could only build what one
+    // compiler makes would be the window falling behind the terminal again.
+    std::vector<editor::Part> parts;
     std::string program;
     std::string why;
     std::string detail;
@@ -957,12 +963,49 @@ int ed1_project_builds(Ed1Project* project) {
 int ed1_project_target_ready(Ed1Project* project) {
     if (!project) return 0;
 
-    editor::Language lang = editor::LangPlain;
-    bool ok = project->project.targetSources(project->sources, lang, project->why,
-                                             &project->detail);
-    project->language = static_cast<int>(lang);
+    project->sources.clear();
+    bool ok = project->project.targetParts(project->parts, project->why, &project->detail);
+    if (ok)
+        for (size_t i = 0; i < project->parts.size(); ++i)
+            for (size_t f = 0; f < project->parts[i].sources.size(); ++f)
+                project->sources.push_back(project->parts[i].sources[f]);
+
+    // One language for the window's own use - which tab to colour, which
+    // compiler to name in a status bar. The first part's, and a target of two
+    // languages has no single honest answer, which is what
+    // ed1_project_target_parts is for.
+    project->language = ok && !project->parts.empty()
+                            ? static_cast<int>(project->parts[0].lang)
+                            : static_cast<int>(editor::LangPlain);
     project->program = ok ? project->project.targetProgram() : std::string();
     return ok ? 1 : 0;
+}
+
+int ed1_project_target_parts(Ed1Project* project) {
+    return project ? static_cast<int>(project->parts.size()) : 0;
+}
+
+const char* ed1_project_part_group(Ed1Project* project, int index) {
+    if (!project || index < 0 || index >= static_cast<int>(project->parts.size())) return "";
+    return project->parts[static_cast<size_t>(index)].group.c_str();
+}
+
+int ed1_project_part_language(Ed1Project* project, int index) {
+    if (!project || index < 0 || index >= static_cast<int>(project->parts.size())) return 0;
+    return static_cast<int>(project->parts[static_cast<size_t>(index)].lang);
+}
+
+int ed1_project_part_toolchain(Ed1Project* project, int index, const char* cc1,
+                               const char* cl, const char* shc, int kind) {
+    if (!project || index < 0 || index >= static_cast<int>(project->parts.size()))
+        return static_cast<int>(editor::ToolAuto);
+    editor::Toolchain tool;
+    tool.kind = static_cast<editor::ToolchainKind>(kind);
+    if (cc1 && *cc1) tool.cc1 = cc1;
+    if (cl && *cl) tool.cl = cl;
+    if (shc && *shc) tool.shc = shc;
+    return static_cast<int>(
+        editor::toolchainOf(tool, project->parts[static_cast<size_t>(index)]));
 }
 
 const char* ed1_project_target_why(Ed1Project* project) {
@@ -999,10 +1042,15 @@ Ed1Build* ed1_build_target(Ed1Project* project, const char* cc1, const char* cl,
     if (cl && *cl) tool.cl = cl;
     if (shc && *shc) tool.shc = shc;
 
+    // The caller's kind is an override and goes into the Toolchain, where
+    // resolve already knows what to do with it - rather than being applied to
+    // every part by hand, which would quietly ignore a group that named its
+    // own compiler.
+    tool.kind = static_cast<editor::ToolchainKind>(kind);
+
     Ed1Build* out = new Ed1Build();
-    editor::Built made = editor::buildTarget(
-        tool, static_cast<editor::ToolchainKind>(kind), project->sources,
-        static_cast<editor::Language>(project->language), arch ? arch : "",
+    editor::Built made = editor::buildParts(
+        tool, project->parts, arch ? arch : "",
         static_cast<editor::Configuration>(config), project->program);
 
     // The window reads a Build, and what a target build produces is a program

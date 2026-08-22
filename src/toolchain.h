@@ -154,6 +154,50 @@ Recipe targetRecipe(const Toolchain& tool, ToolchainKind kind,
                     const std::string& arch, Configuration config,
                     const std::string& program);
 
+// ---- a compiler per group, and one link at the end -------------------------
+//
+// The two above make a program in one command, which is all a target ever
+// needed while a target was one language. A target holding C and C++ cannot be
+// made that way: cc1 takes the C, cl takes the C++, and neither will take a
+// program that is half the other's. So the step is split - each group compiles
+// to objects with its own compiler, and the objects meet at the linker, which
+// does not care which compiler wrote them.
+//
+// The linker is named here rather than reached through a compiler, because no
+// compiler in this editor takes an object as an input: handing cc1 a .o gets
+// "stray '\377' in program", the object read as C.
+
+// One group's sources to object files, and where they land. `objectDir` is the
+// caller's to make and to clear away; the objects are named after the sources,
+// so `objects` comes back filled without going and looking.
+Recipe objectRecipe(const Toolchain& tool, ToolchainKind kind,
+                    const std::vector<std::string>& sources, Language lang,
+                    const std::string& arch, Configuration config,
+                    const std::string& objectDir, std::vector<std::string>& objects);
+
+// The objects into a program. `withCpp` says whether any of them came from a
+// C++ compiler, which is what decides the runtime the link needs; nothing else
+// about where they came from matters by this point.
+//
+// On Windows this is link.exe with the C runtime named, the same list cc1's own
+// driver names and for the same reason - cc1's objects carry no /DEFAULTLIB
+// directive, so nothing else says which CRT to use. The static one is chosen
+// because that is what cc1 has always linked; cl's objects are compiled /MT or
+// /MTd to match, which is a real difference from cl on its own and is why
+// objectRecipe asks for the configuration.
+//
+// Everywhere else it is 'cc', the same host driver cc1 hands its own linking
+// to, with -lm always and -g under debug - without -g a Mac's debug map points
+// at object files that are deleted the moment the link finishes.
+Recipe linkRecipe(const Toolchain& tool, const std::vector<std::string>& objects,
+                  bool withCpp, const std::string& arch, Configuration config,
+                  const std::string& program);
+
+// What that link will actually run, for the console. The linker is not one of
+// the compilers the editor knows by name, so this is the only place its name is
+// visible to whoever is watching a build.
+std::string linkerName(bool withCpp);
+
 // Puts this process into the environment a Developer Command Prompt would have,
 // once, so that the compiler can be run when the editor was started from an
 // ordinary console. Does nothing anywhere but Windows, and nothing when already

@@ -238,6 +238,17 @@ const char* ed1_project_target_why(Ed1Project* project);
 const char* ed1_project_target_detail(Ed1Project* project);
 int ed1_project_target_language(Ed1Project* project);
 int ed1_project_target_sources(Ed1Project* project);
+
+/* The same target by the parts it is actually built from: one per group, each
+   with its own compiler. A target of C and C++ has two, and there is no single
+   language or compiler that describes it - which is what these are for.
+   ed1_project_part_toolchain takes the same compiler paths and override kind
+   as ed1_build_target, since what a part goes to depends on all of them. */
+int ed1_project_target_parts(Ed1Project* project);
+const char* ed1_project_part_group(Ed1Project* project, int index);
+int ed1_project_part_language(Ed1Project* project, int index);
+int ed1_project_part_toolchain(Ed1Project* project, int index, const char* cc1,
+                               const char* cl, const char* shc, int kind);
 const char* ed1_project_target_source(Ed1Project* project, int index);
 const char* ed1_project_target_program(Ed1Project* project);
 

@@ -185,6 +185,8 @@ private:
     // is put under the debugger: the file in front of you, or the program the
     // project says it builds - the same two things Ctrl-B and F4 choose
     // between, asked the same way and never guessed.
+    // The compilers a target takes, for the console and the message line.
+    std::string compilersNamed(const std::vector<Part>& parts) const;
     void debug(bool project);
     void debugStep(Action how);
     void debugStop();

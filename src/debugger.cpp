@@ -440,9 +440,17 @@ DebuggerKind dbg_for(ToolchainKind kind, const std::string& arch) {
     return dbg_here();
 }
 
+bool dbg_stopsItself(ToolchainKind kind) { return kind == ToolShc; }
+
 std::string dbg_whyNot(ToolchainKind kind, const std::string& arch) {
     if (dbg_for(kind, arch) != DebuggerNone) return std::string();
 
+    // Nothing is missing here, so nothing is named as missing. shc reaches
+    // this only from somewhere that asked in the wrong order - dbg_stopsItself
+    // comes first - and the answer it used to get was the sentence below about
+    // cc1 and MASM, which names a compiler that had nothing to do with it.
+    if (dbg_stopsItself(kind))
+        return "a Shalimar program stops itself - it needs no debugger at all";
     if (kind == ToolMsvc)
         return "cl writes a .pdb and cdb reads one, but cdb is not installed - "
                "add Debugging Tools for Windows";

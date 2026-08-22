@@ -238,12 +238,21 @@ afternoon again.
 Both front ends have it, from that same core: the window has a Debug menu with
 the same keys, a red dot in its gutter where a breakpoint is, an arrow where
 the program is standing and an outline of one on the frame being looked at, and
-the same words in its Debug tab. There is an
-awkwardness worth stating plainly, though. The window only runs on Windows, and
-Windows is exactly where there is nothing to debug - so on the one machine that
-can run the GUI, F8 will always answer "no debugger here". What it does there is
-set breakpoints, which are the editor's own note and need no debugger, and give
-the reason for the rest.
+the same words in its Debug tab.
+
+There used to be an awkwardness here worth stating plainly, and it is half
+gone. The window only runs on Windows, and Windows is where none of the three
+debuggers can read what cc1 writes - so for C, F8 there still answers "no
+debugger here" and sets breakpoints against the day there is one. **For
+Shalimar it stops.** A Shalimar program carries its own session, needs nothing
+installed, and works on all three targets including this one, so the window
+stops on a line of source on the machine where that had never been possible.
+
+Which of the two halves a program goes to is `dbg_stopsItself` and is asked
+**before** `dbg_for`, in the core, by both front ends. That order is the whole
+of it: `dbg_for` answers "none" for shc and is right to, and a front end
+reading that as a refusal refuses the one language that needs nothing to be
+installed. The window read it that way for a day and a half.
 
 That is why `tests/test.cpp` links `winforms/bridge.cpp` and drives the
 window's own seam - `ed1_build_program`, `ed1_debugger_start`, the stop and the
@@ -474,13 +483,26 @@ Shalimar beside C or C++ in one target is refused the same way C beside C++
 already was, and the message names which two so the reader knows which file to
 move.
 
-### No debugger for Shalimar
+### No debug information for Shalimar, and a debugger anyway
 
 `shc` writes no debug information for any target, and that is settled rather
 than pending - see the Known limitations in `../Compiler-S/README.md`. The
-Debug panel says so in words rather than showing an empty pane, and what a
-Shalimar program has instead is a runtime error that names its line and its
-function, which the editor reads and stands the caret on.
+Debug panel says so in words rather than showing an empty pane.
+
+What there is instead is not a consolation. The compiler already emits
+`shm_line(unit, line)` before every statement so that a runtime error can name
+where it happened, and a debug build offers that same position to a session
+inside the program - so **a Shalimar program stops itself**, in both front
+ends, with no debugger anywhere near it. `src/shalimar/` holds all of it and
+`src/debugger.cpp` has nothing to say to any of it.
+
+The one thing it cannot do is read a variable: no table of a function's names
+against its frame slots is emitted, so there is nothing to read one from. The
+Debug tab says which kind of empty that is - "a Shalimar program says where it
+is, not what is in it" - rather than showing a blank list, and the three menu
+items that need a stack or a variable are drawn faint while one is stopped.
+Both halves of the editor get those words from `src/shalimar/session.cpp`, so
+neither can drift into saying something else.
 
 ## The project
 

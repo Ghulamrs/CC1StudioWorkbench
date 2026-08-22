@@ -27,6 +27,30 @@
 
 namespace shalimar {
 
+// What the editor says when something is asked of a Shalimar session that only
+// a debugger could answer. The words live here rather than in either front end
+// because both have to refuse in the same voice: the terminal half wrote them
+// out and the window had no way to ask for them, which is exactly how two
+// editors come to say two different things about one fact.
+//
+// None of them is an apology for a gap. A Shalimar program reports where it is
+// and how deep it is, and that is the whole of what it knows about itself -
+// see README.md.
+
+// Where the variables would be, and why there are none anywhere.
+const char* saysWhereOnly();
+
+// Why there is nothing above the frame it is standing in.
+const char* saysHowDeepOnly();
+
+// Why a release build cannot be stopped, which is not the reason a release C
+// build cannot: there is no -g here to have been left out. The key that
+// changes it is each front end's own, so it is not part of this.
+const char* releaseHasNoSession();
+
+// A program that started and never said it was ready.
+const char* didNotArm();
+
 class Session {
 public:
     // Starts the program with the session armed. `executable` is what the
@@ -34,6 +58,19 @@ public:
     // and will simply run.
     bool start(const std::string& executable);
     bool running() const { return channel_.running(); }
+
+    // Whether the stop in hand is this session's - true from the moment it
+    // starts until it is stopped, and so still true for the stop that says the
+    // program ended. running() has gone false by then: the channel closes when
+    // the program says #exit, which is what makes this a different question
+    // rather than another spelling of the same one.
+    //
+    // Both front ends ask it about one thing: whose printing the console is
+    // being handed. A program's last line arrives with its exit, and taking it
+    // for a debugger's would run it through a filter built for gdb and lldb -
+    // which drops a blank line, and anything shaped like a prompt.
+    bool ownsTheStop() const { return channel_.running() || exited_; }
+
     void stop();
 
     // Before running, or while stopped. The file is matched against the names

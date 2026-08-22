@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    Starts ed1gui, optionally builds, and saves a picture of its window.
+    Starts the window, optionally builds, and saves a picture of it.
 
 .DESCRIPTION
     For looking at the editor on a machine you are not sitting at - which is
@@ -115,14 +115,20 @@ public class Ed1Window {
 }
 "@
 
+# The window is RStudio.exe since 2026-08-22, and was ed1gui.exe before that.
+# Both names are looked for and the new one first, because a machine that has
+# built this before still has the old binary sitting beside the new one - and a
+# script that names only the old one photographs yesterday's editor and reports
+# it as today's. That is the harness fault this project has had most often.
 if ($Editor -eq "") {
     $here = Split-Path -Parent $MyInvocation.MyCommand.Path
-    foreach ($guess in @("$here\x64\Release\ed1gui.exe", "$here\x64\Debug\ed1gui.exe")) {
+    foreach ($guess in @("$here\x64\Release\RStudio.exe", "$here\x64\Debug\RStudio.exe",
+                         "$here\x64\Release\ed1gui.exe", "$here\x64\Debug\ed1gui.exe")) {
         if (Test-Path $guess) { $Editor = $guess; break }
     }
 }
 if ($Editor -eq "" -or -not (Test-Path $Editor)) {
-    Write-Error "no ed1gui.exe - build winforms\ed1gui.vcxproj, or name one with -Editor"
+    Write-Error "no window built - run build.bat gui, or name one with -Editor"
     exit 1
 }
 
@@ -135,7 +141,11 @@ foreach ($file in $Files) {
     $arguments += $full
 }
 
-Get-Process ed1gui -ErrorAction SilentlyContinue | Stop-Process -Force
+# By the name of the editor being started, rather than by a name written out
+# here: naming the old one left the window from the last run standing, and the
+# picture came back from whichever of the two was found first.
+$processName = [System.IO.Path]::GetFileNameWithoutExtension($Editor)
+Get-Process $processName -ErrorAction SilentlyContinue | Stop-Process -Force
 $editorProcess = Start-Process -FilePath $Editor -ArgumentList $arguments -PassThru `
                                -WorkingDirectory $Project
 Start-Sleep -Seconds 6
@@ -156,7 +166,7 @@ $look = [Ed1Window+EnumProc]{
 [void][Ed1Window]::EnumWindows($look, [IntPtr]::Zero)
 
 if ($script:handle -eq [IntPtr]::Zero) {
-    Write-Error "ed1gui started but has no window - is this an interactive session?"
+    Write-Error "the editor started but has no window - is this an interactive session?"
     if (-not $editorProcess.HasExited) { $editorProcess.Kill() }
     exit 1
 }

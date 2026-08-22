@@ -40,11 +40,21 @@ Built, linked into `RStudio`, and driven against a real program by
 stop, a step in, a step out, the program's own printing coming back with it,
 and a release build refusing to be stopped because it has no code for it.
 
-**Wired to the Debug menu.** F9 sets a breakpoint, F8 builds and starts,
-F7 and F6 step, and the Debug tab shows where the program is standing — the
-same keys as the other three languages, routed by `Editor::debugging()` and
-`Editor::debuggingShalimar()` rather than by a flag the editor keeps, so there
-is nothing that can fall out of step with what is actually running.
+**Wired to the Debug menu, in both front ends.** F9 sets a breakpoint, F8
+builds and starts, F7 and F6 step, and the Debug tab shows where the program is
+standing — the same keys as the other three languages, routed by
+`Editor::debugging()` and `Editor::debuggingShalimar()` rather than by a flag
+the editor keeps, so there is nothing that can fall out of step with what is
+actually running.
+
+**The window reaches it through `winforms/bridge.cpp`**, which holds a
+`Session` beside the `Debugger` and asks which of the two is live — the same
+question `Editor` asks, in the same words, so there is one answer and not two.
+`ed1_debugger_start` takes the compiler and the target rather than a debugger
+for that reason: the choosing is native, and the form never learns there are
+two halves. `theWindowStoppingShalimar()` in `tests/test.cpp` drives the whole
+of it through `ed1_` calls, and it stops a program on Windows, where cc1's own
+debugging cannot go at all.
 
 Three things the routing had to say rather than assume:
 
@@ -59,4 +69,8 @@ Three things the routing had to say rather than assume:
 - **No variables, and the tab says so.** An empty list would have read as
   "this line has none" rather than "there are none to have". Watches and
   walking the stack refuse in the same voice, and the tab does not offer keys
-  for them.
+  for them. Those sentences are `saysWhereOnly`, `saysHowDeepOnly`,
+  `releaseHasNoSession` and `didNotArm` in `session.cpp` — written down once
+  because two front ends have to say them, and the terminal half had them
+  written out where the window could not reach them. None of them names a key:
+  which key changes a configuration is each front end's own business.

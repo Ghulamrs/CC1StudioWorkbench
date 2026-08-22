@@ -30,6 +30,7 @@
 #include "about.h"
 #include "compile.h"
 #include "debugger.h"
+#include "shalimar/session.h"
 #include "find.h"
 #include "indent.h"
 #include "project.h"
@@ -229,6 +230,13 @@ struct Ed1Program {
 // time and must not have to hold any of them itself.
 struct Ed1Debugger {
     editor::Debugger debugger;
+    // The other half of stopping a program, and a different half rather than a
+    // second copy: a Shalimar program stops itself, so there is no gdb, lldb or
+    // cdb in it and nothing of Debugger that could have been extended to do it.
+    // Which of the two is live is asked of them - shm.running() - so there is
+    // no third thing here that can fall out of step with what is running.
+    // src/shalimar/README.md has the rest of why.
+    shalimar::Session shm;
     editor::Stop stop;
     std::vector<editor::Variable> locals;
     std::vector<editor::StackFrame> stack;
@@ -240,6 +248,7 @@ struct Ed1Debugger {
     std::string complaint;   // what it said about a value it would not take
     std::string answer;
     std::string output;   // the program's own words, kept for the same reason
+    std::string refusal;  // what a Shalimar session cannot be asked, in words
 
     Ed1Debugger() : looking(0) {}
 };
@@ -709,24 +718,64 @@ const char* ed1_no_debugger_because(int kind, const char* arch) {
     return scratch().c_str();
 }
 
+int ed1_debugger_stops_itself(int kind) {
+    return editor::dbg_stopsItself(static_cast<editor::ToolchainKind>(kind)) ? 1 : 0;
+}
+
+const char* ed1_release_cannot_stop(int kind) {
+    return editor::dbg_stopsItself(static_cast<editor::ToolchainKind>(kind))
+               ? shalimar::releaseHasNoSession()
+               : "release is built without -g";
+}
+
+const char* ed1_why_it_did_not_start(int kind, const char* arch) {
+    if (editor::dbg_stopsItself(static_cast<editor::ToolchainKind>(kind))) {
+        // Nothing was started here except the program itself, so nothing can
+        // be missing from the machine. It was built without --debug, or it
+        // died before it could say it was ready.
+        scratch() = shalimar::didNotArm();
+        return scratch().c_str();
+    }
+    scratch() = std::string(editor::dbg_name(
+                    editor::dbg_for(static_cast<editor::ToolchainKind>(kind),
+                                    arch ? arch : ""))) +
+                " could not be started - is it installed?";
+    return scratch().c_str();
+}
+
 Ed1Debugger* ed1_debugger_new(void) { return new Ed1Debugger(); }
 void ed1_debugger_free(Ed1Debugger* debugger) { delete debugger; }
 
-int ed1_debugger_start(Ed1Debugger* debugger, int debuggerKind, const char* program) {
+int ed1_debugger_start(Ed1Debugger* debugger, int kind, const char* arch,
+                       const char* program) {
     debugger->stop = editor::Stop();
     debugger->locals.clear();
     debugger->stack.clear();
     debugger->looking = 0;
-    return debugger->debugger.start(static_cast<editor::DebuggerKind>(debuggerKind),
+
+    const editor::ToolchainKind tool = static_cast<editor::ToolchainKind>(kind);
+
+    // Asked before dbg_for and not after it: that one answers DebuggerNone for
+    // shc and is right to, there being no debugger in this at all. What starts
+    // is the program, with its session armed.
+    if (editor::dbg_stopsItself(tool))
+        return debugger->shm.start(program ? program : "") ? 1 : 0;
+
+    return debugger->debugger.start(editor::dbg_for(tool, arch ? arch : ""),
                                     program ? program : "") ? 1 : 0;
 }
 
 int ed1_debugger_running(Ed1Debugger* debugger) {
-    return debugger->debugger.running() ? 1 : 0;
+    return (debugger->debugger.running() || debugger->shm.running()) ? 1 : 0;
+}
+
+int ed1_debugging_shalimar(Ed1Debugger* debugger) {
+    return debugger->shm.running() ? 1 : 0;
 }
 
 void ed1_debugger_stop(Ed1Debugger* debugger) {
     debugger->debugger.stop();
+    debugger->shm.stop();
     debugger->stop = editor::Stop();
     debugger->locals.clear();
     debugger->stack.clear();
@@ -735,32 +784,65 @@ void ed1_debugger_stop(Ed1Debugger* debugger) {
 
 int ed1_debugger_break(Ed1Debugger* debugger, const char* file, int line) {
     if (line < 1) return 0;
+    if (debugger->shm.running())
+        return debugger->shm.breakAt(file ? file : "", static_cast<size_t>(line)) ? 1 : 0;
     return debugger->debugger.breakAt(file ? file : "", static_cast<size_t>(line)) ? 1 : 0;
 }
 
 int ed1_debugger_clear(Ed1Debugger* debugger) {
+    if (debugger->shm.running()) return debugger->shm.clearBreakpoints() ? 1 : 0;
     return debugger->debugger.clearBreakpoints() ? 1 : 0;
 }
 
 namespace {
 // Every move ends the same way: keep where it stopped, and ask what is in
 // scope there while it is still standing still.
-void afterMoving(Ed1Debugger* debugger, const editor::Stop& stop) {
+//
+// `itself` is read before the move rather than after it, because a move that
+// ends the program closes the session with it - and what is being asked is
+// which half was moved, not which half is still there.
+void afterMoving(Ed1Debugger* debugger, const editor::Stop& stop, bool itself) {
     debugger->stop = stop;
     debugger->locals.clear();
     debugger->stack.clear();
     debugger->looking = 0;   // every stop starts at the frame it stopped in
     if (!stop.stopped) return;
+
+    // A Shalimar program has no variables to read: the compiler emits no table
+    // of a function's names against its frame slots, and that is a decision
+    // rather than a gap - ../Compiler-S/docs/DEBUGGING.md says so. The empty
+    // list is the truth, and ed1_locals_none_because is what is written over
+    // it. One frame, saying how deep it is, is the whole of the stack.
+    if (itself) {
+        debugger->stack = debugger->shm.frames();
+        return;
+    }
+
     debugger->locals = debugger->debugger.locals();
     debugger->stack = debugger->debugger.frames();
 }
 }  // namespace
 
-void ed1_debugger_run(Ed1Debugger* debugger) { afterMoving(debugger, debugger->debugger.run()); }
-void ed1_debugger_resume(Ed1Debugger* debugger) { afterMoving(debugger, debugger->debugger.resume()); }
-void ed1_debugger_step_over(Ed1Debugger* debugger) { afterMoving(debugger, debugger->debugger.stepOver()); }
-void ed1_debugger_step_into(Ed1Debugger* debugger) { afterMoving(debugger, debugger->debugger.stepInto()); }
-void ed1_debugger_step_out(Ed1Debugger* debugger) { afterMoving(debugger, debugger->debugger.stepOut()); }
+void ed1_debugger_run(Ed1Debugger* debugger) {
+    const bool itself = debugger->shm.running();
+    afterMoving(debugger, itself ? debugger->shm.run() : debugger->debugger.run(), itself);
+}
+void ed1_debugger_resume(Ed1Debugger* debugger) {
+    const bool itself = debugger->shm.running();
+    afterMoving(debugger, itself ? debugger->shm.resume() : debugger->debugger.resume(), itself);
+}
+void ed1_debugger_step_over(Ed1Debugger* debugger) {
+    const bool itself = debugger->shm.running();
+    afterMoving(debugger, itself ? debugger->shm.stepOver() : debugger->debugger.stepOver(), itself);
+}
+void ed1_debugger_step_into(Ed1Debugger* debugger) {
+    const bool itself = debugger->shm.running();
+    afterMoving(debugger, itself ? debugger->shm.stepInto() : debugger->debugger.stepInto(), itself);
+}
+void ed1_debugger_step_out(Ed1Debugger* debugger) {
+    const bool itself = debugger->shm.running();
+    afterMoving(debugger, itself ? debugger->shm.stepOut() : debugger->debugger.stepOut(), itself);
+}
 
 int ed1_stop_stopped(Ed1Debugger* debugger) { return debugger->stop.stopped ? 1 : 0; }
 int ed1_stop_exited(Ed1Debugger* debugger) { return debugger->stop.exited ? 1 : 0; }
@@ -775,6 +857,19 @@ int ed1_stop_no_source(Ed1Debugger* debugger) {
 }
 
 const char* ed1_stop_output(Ed1Debugger* debugger) {
+    // A Shalimar session needs none of the taking apart below. Its channel
+    // keeps the program's own printing on standard output away from the
+    // protocol on standard error, so this is already the program's words and
+    // nothing else - which is the whole reason that channel is not
+    // editor::Process.
+    //
+    // ownsTheStop rather than running: the last stop of all is the one saying
+    // the program ended, and the channel has closed by then. That stop carries
+    // the last line the program printed, which is the line most worth having.
+    if (debugger->shm.ownsTheStop()) {
+        debugger->output = debugger->stop.said;
+        return debugger->output.c_str();
+    }
     // Worked out here and kept, rather than handed back from a temporary: the
     // managed side reads these one string at a time and holds none of them.
     debugger->output = editor::dbg_programOutput(debugger->debugger.kind(), debugger->stop.said);
@@ -899,11 +994,55 @@ void ed1_watch_set(Ed1Debugger* debugger, int index, const char* expression) {
 
 int ed1_debugger_look_at(Ed1Debugger* debugger, int which) {
     if (!reaches(debugger, which)) return 0;
+
+    // A Shalimar session has one frame and no debugger to be asked to go to
+    // it, so going to the frame it is already standing in is the only move
+    // there is - and it is the move the top line of the tab makes. There are
+    // no variables to read afterwards.
+    if (debugger->shm.running()) {
+        debugger->looking = 0;
+        return which == 0 ? 1 : 0;
+    }
+
     if (!debugger->debugger.selectFrame(static_cast<size_t>(which))) return 0;
 
     debugger->looking = static_cast<size_t>(which);
     debugger->locals = debugger->debugger.locals();
     return 1;
+}
+
+// ---- what a Shalimar session cannot be asked, in the words both halves use --
+//
+// Composed here rather than in the window, so that neither front end has to
+// decide which case it is in: it puts up what it is given. The sentences
+// themselves are in src/shalimar/, which is where the fact they state lives.
+
+const char* ed1_locals_none_because(Ed1Debugger* debugger) {
+    debugger->refusal = debugger->shm.running()
+                            ? "  (" + std::string(shalimar::saysWhereOnly()) + ")"
+                            : std::string("  (nothing in scope here)");
+    return debugger->refusal.c_str();
+}
+
+const char* ed1_cannot_watch(Ed1Debugger* debugger) {
+    // A watch is an expression handed to a debugger to work out, and a
+    // Shalimar program has nothing to hand it to: it reports where it is, not
+    // what is in it. Refusing plainly beats accepting one and showing it blank
+    // for the rest of the session.
+    debugger->refusal = debugger->shm.running()
+                            ? std::string(shalimar::saysWhereOnly()) +
+                                  " - nothing to watch with"
+                            : std::string();
+    return debugger->refusal.c_str();
+}
+
+const char* ed1_cannot_walk_stack(Ed1Debugger* debugger) {
+    // Shalimar knows how deep it is and not what it is standing in, so
+    // frames() gives back one frame that says the depth. There is nothing to
+    // walk to, and saying so beats naming that depth as if it were a function.
+    debugger->refusal = debugger->shm.running() ? std::string(shalimar::saysHowDeepOnly())
+                                                : std::string();
+    return debugger->refusal.c_str();
 }
 
 const char* ed1_stop_line_text(const char* file, int line, const char* function) {

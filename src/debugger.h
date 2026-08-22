@@ -47,6 +47,19 @@ const char* dbg_program(DebuggerKind kind);
 // that reads a .pdb.
 DebuggerKind dbg_for(ToolchainKind kind, const std::string& arch);
 
+// Whether a program this compiler builds carries its own way of stopping, and
+// so has no use for any of the three above. Only shc does: a Shalimar program
+// stops itself, and src/shalimar/ holds the whole of how - none of which this
+// file knows anything about.
+//
+// This is asked *before* dbg_for rather than after it, and the order is the
+// point. dbg_for answers DebuggerNone for shc and is right to; a front end
+// that reads that as a refusal refuses the one language that needs no
+// debugger. Both halves of the editor ask this first for that reason, which is
+// why it is here rather than written out as a comparison against ToolShc in
+// each of them.
+bool dbg_stopsItself(ToolchainKind kind);
+
 // Why there is none, when there is none - in the terms that apply to this
 // compiler and this target rather than in general.
 std::string dbg_whyNot(ToolchainKind kind, const std::string& arch);

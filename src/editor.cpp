@@ -1928,7 +1928,7 @@ void Editor::watchExpression() {
     // what is in it. Refusing plainly beats accepting one and showing it blank
     // for the rest of the session.
     if (shm_.running()) {
-        say("a Shalimar program says where it is, not what is in it - nothing to watch with");
+        say(std::string(shalimar::saysWhereOnly()) + " - nothing to watch with");
         return;
     }
 
@@ -2003,7 +2003,7 @@ void Editor::lookAlongStack(int by) {
     // better than the "nothing called ..." below, which would name that
     // depth as if it were a function.
     if (shm_.running()) {
-        say("a Shalimar program reports how deep it is, not what called it");
+        say(shalimar::saysHowDeepOnly());
         return;
     }
     if (by > 0) {
@@ -2453,7 +2453,12 @@ void Editor::showStop(const Stop& where) {
     // the program's standard output away from the protocol on standard error,
     // so `said` is already the program's own printing and nothing else - which
     // is the whole reason that channel is not editor::Process.
-    const std::string printed = debuggingShalimar()
+    //
+    // Asked as ownsTheStop rather than as "is a session running", because the
+    // last stop of all is the one that says the program ended, and by then the
+    // channel has closed. That one carries the last line the program printed,
+    // and it is the line most worth having.
+    const std::string printed = shm_.ownsTheStop()
                                     ? where.said
                                     : dbg_programOutput(debugger_.kind(), where.said);
     if (!printed.empty()) sayLines(console_, printed);
@@ -2572,8 +2577,8 @@ void Editor::writeDebugTab() {
         // gap and a decision, and the second is not something to keep
         // rediscovering.
         debug_.push_back(debuggingShalimar()
-                             ? "  (a Shalimar program says where it is, not what is in it)"
-                             : "  (nothing in scope here)");
+                             ? "  (" + std::string(shalimar::saysWhereOnly()) + ")"
+                             : std::string("  (nothing in scope here)"));
     } else {
         for (size_t i = 0; i < locals_.size(); ++i)
             debug_.push_back(dbg_variableLine(locals_[i]));
@@ -2688,15 +2693,15 @@ void Editor::debug(bool project) {
     // is linked. That last one still has to be said, because a release build
     // genuinely cannot be stopped - it has no code for it - so the sentence is
     // the same shape with the true reason in it.
-    const bool shalimar = (toolchainOf(tool_, parts[0]) == ToolShc);
-    if (shalimar) kind = ToolShc;
-    if (!shalimar && engine == DebuggerNone) {
+    const bool stopsItself = dbg_stopsItself(toolchainOf(tool_, parts[0]));
+    if (stopsItself) kind = ToolShc;
+    if (!stopsItself && engine == DebuggerNone) {
         say(dbg_whyNot(kind, kArches[arch_]));
         return;
     }
     if (config_ != ConfigDebug) {
-        say(shalimar ? "release links a runtime with no debugger in it - Ctrl-D, then F8"
-                     : "release is built without -g - Ctrl-D for debug, then F8");
+        say(stopsItself ? std::string(shalimar::releaseHasNoSession()) + " - Ctrl-D, then F8"
+                     : std::string("release is built without -g - Ctrl-D for debug, then F8"));
         return;
     }
     if (project) {
@@ -2757,14 +2762,14 @@ void Editor::debug(bool project) {
         return;
     }
 
-    if (shalimar) {
+    if (stopsItself) {
         // Nothing is started here except the program itself. If it will not
         // arm, the reason is almost always that it was built without --debug -
         // a release build runs and never says #ready - so that is what is
         // said rather than "could not be started", which would send whoever
         // read it looking for a debugger to install.
         if (!shm_.start(debugBuilt_.program)) {
-            console_.push_back("the program did not arm - it has no debugger in it");
+            console_.push_back(shalimar::didNotArm());
             say("built without --debug, so there is nothing in it to stop - Ctrl-D, then F8");
             if (debugTemporary_) removeProgram(debugBuilt_);
             debugBuilt_ = Built();
@@ -2784,13 +2789,13 @@ void Editor::debug(bool project) {
          file != breaks_.end(); ++file)
         for (std::set<size_t>::iterator line = file->second.lines.begin();
              line != file->second.lines.end(); ++line)
-            if (shalimar ? shm_.breakAt(file->second.path, *line)
-                         : debugger_.breakAt(file->second.path, *line)) ++set;
+            if (stopsItself ? shm_.breakAt(file->second.path, *line)
+                            : debugger_.breakAt(file->second.path, *line)) ++set;
 
     console_.push_back(std::string("started ") +
-                       (shalimar ? "the program itself" : dbg_name(debugger_.kind())) +
+                       (stopsItself ? "the program itself" : dbg_name(debugger_.kind())) +
                        " with " + number(set) + " breakpoint" + (set == 1 ? "" : "s"));
-    showStop(shalimar ? shm_.run() : debugger_.run());
+    showStop(stopsItself ? shm_.run() : debugger_.run());
 }
 
 void Editor::debugStep(Action how) {

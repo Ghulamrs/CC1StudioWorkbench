@@ -4,6 +4,27 @@
 #include <cstring>
 
 namespace shalimar {
+
+// The four sentences, in one place. Each is written to be true on its own and
+// to survive being quoted somewhere this file cannot see - the terminal's
+// message line, the window's status bar, a Debug tab - so none of them names a
+// key or assumes what is around it.
+const char* saysWhereOnly() {
+    return "a Shalimar program says where it is, not what is in it";
+}
+
+const char* saysHowDeepOnly() {
+    return "a Shalimar program reports how deep it is, not what called it";
+}
+
+const char* releaseHasNoSession() {
+    return "release links a runtime with no debugger in it";
+}
+
+const char* didNotArm() {
+    return "the program did not arm - it has no debugger in it";
+}
+
 namespace {
 
 // The leaf of a path, which is what the program reports and what a breakpoint

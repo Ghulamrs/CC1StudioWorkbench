@@ -57,9 +57,15 @@ session inside the program**.
 
 So `F9`, `F8`, `F7` and `F6` work on Shalimar with no debugger installed
 anywhere, on all three targets — including `x86_64-windows`, where cc1's own
-debugging stops. What it cannot do is read a variable: the compiler emits no
-table of a function's names against its frame slots, and the Debug tab says so
-rather than showing an empty list.
+debugging stops. **In the window as well as in the terminal**, which makes
+Shalimar the only language the window can stop on the machine it runs on.
+
+What it cannot do is read a variable: the compiler emits no table of a
+function's names against its frame slots, and the Debug tab says so rather than
+showing an empty list. Watching an expression and walking the stack are refused
+for the same reason and in the same words, and in the window those three items
+of the Debug menu are drawn faint while a Shalimar program is stopped rather
+than offered and then refused.
 
 **A release build cannot be stopped at all.** That is the boundary, not a
 limitation of it: the release runtime has no code in it for stopping. Rebuild

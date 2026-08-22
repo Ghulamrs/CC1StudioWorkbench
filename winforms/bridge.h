@@ -327,14 +327,58 @@ int ed1_debugger_for(int kind, const char* arch);
 const char* ed1_debugger_name(int kind);
 const char* ed1_no_debugger_because(int kind, const char* arch);
 
+/* And the question that comes before it: whether a program this compiler
+   builds carries its own way of stopping and needs no debugger at all. Only
+   shc does - a Shalimar program stops itself.
+
+   The order matters and is the whole of what the window used to get wrong.
+   ed1_debugger_for answers 0 for shc and is right to; reading that as a
+   refusal refuses the one language that needs nothing to be installed. So this
+   is asked first, exactly as the terminal half asks it. */
+int ed1_debugger_stops_itself(int kind);
+
+/* Why a release build cannot be stopped, which is not the same reason for the
+   two: a C build is missing -g, and a Shalimar one links a runtime with no
+   debugger in it - there being no -g here to have left out. The key that
+   changes it is the front end's own and is not part of this sentence. */
+const char* ed1_release_cannot_stop(int kind);
+
+/* And why a start that was asked for did not happen, in the terms that apply:
+   a debugger that is not installed, or a program that never said it was
+   ready. */
+const char* ed1_why_it_did_not_start(int kind, const char* arch);
+
 typedef struct Ed1Debugger Ed1Debugger;
 
 Ed1Debugger* ed1_debugger_new(void);
 void ed1_debugger_free(Ed1Debugger* debugger);
 
-int ed1_debugger_start(Ed1Debugger* debugger, int debuggerKind, const char* program);
+/* Starts whichever of the two applies, and the handle holds both: gdb, lldb or
+   cdb on one side, and a Shalimar program's own session on the other. It takes
+   the compiler and the target rather than a debugger, because which of those
+   two it is, is decided from those - and deciding it here rather than in the
+   window is what keeps one answer to it. Everything below asks the handle
+   which half is live rather than being told. */
+int ed1_debugger_start(Ed1Debugger* debugger, int kind, const char* arch,
+                       const char* program);
 int ed1_debugger_running(Ed1Debugger* debugger);
 void ed1_debugger_stop(Ed1Debugger* debugger);
+
+/* Which half that is. The window asks it for one thing only - whether to offer
+   the keys for what a Shalimar program cannot do - and the three sentences
+   below are what it says instead of offering them. */
+int ed1_debugging_shalimar(Ed1Debugger* debugger);
+
+/* The Debug tab's line where the variables would be, right for whichever half
+   is live: this place has none, or no place ever will. Empty means two
+   different things and the difference is a gap against a decision.
+
+   The two below are empty when the thing can be done, and the reason when it
+   cannot - so the window puts up what it is given rather than deciding for
+   itself which case it is in. */
+const char* ed1_locals_none_because(Ed1Debugger* debugger);
+const char* ed1_cannot_watch(Ed1Debugger* debugger);
+const char* ed1_cannot_walk_stack(Ed1Debugger* debugger);
 
 int ed1_debugger_break(Ed1Debugger* debugger, const char* file, int line);
 int ed1_debugger_clear(Ed1Debugger* debugger);

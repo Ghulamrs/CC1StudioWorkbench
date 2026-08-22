@@ -2309,7 +2309,7 @@ void whatTheDebuggerHeard() {
     }
 
     Ed1Debugger* debugger = ed1_debugger_new();
-    check(ed1_debugger_start(debugger, ed1_debugger_for(editor::ToolCc1, host.c_str()),
+    check(ed1_debugger_start(debugger, editor::ToolCc1, host.c_str(),
                              ed1_program_path(built)) != 0,
           "the debugger starts on a program that talks");
 
@@ -2609,7 +2609,7 @@ void theSeamTheWindowUses() {
           "and leaves it where it said it did, for a debugger to open");
 
     Ed1Debugger* debugger = ed1_debugger_new();
-    check(ed1_debugger_start(debugger, ed1_debugger_for(editor::ToolCc1, host.c_str()),
+    check(ed1_debugger_start(debugger, editor::ToolCc1, host.c_str(),
                              ed1_program_path(built)) != 0,
           "the debugger starts on it");
     check(ed1_debugger_running(debugger) != 0, "and says it is running");
@@ -3673,6 +3673,155 @@ void steppingShalimar() {
     editor::path::removeTree(dir);
 }
 
+// The same program stopped through the seam the window uses, rather than
+// through the Session directly - which is the whole of what the window could
+// not do. Everything here is an ed1_ call and nothing names a C++ type,
+// because that is the only vocabulary the form has.
+void theWindowStoppingShalimar() {
+    std::printf("the window stopping a Shalimar program\n");
+
+    // The order the window has to ask in. dbg_for answers "none" for shc and
+    // is right to; a front end that reads that as a refusal refuses the one
+    // language that needs nothing installed.
+    check(ed1_debugger_stops_itself(editor::ToolShc) != 0,
+          "a Shalimar program is known to stop itself");
+    check(ed1_debugger_stops_itself(editor::ToolCc1) == 0 &&
+              ed1_debugger_stops_itself(editor::ToolMsvc) == 0 &&
+              ed1_debugger_stops_itself(editor::ToolCxx) == 0,
+          "and nothing else is - the other three need a debugger");
+    check(ed1_debugger_for(editor::ToolShc, editor::hostArch()) == 0,
+          "there is no gdb, lldb or cdb in it at all");
+
+    // And when something does ask in the wrong order, what it is told names
+    // shc rather than the compiler that has nothing to do with it. This used
+    // to answer with cc1's MASM, which is a sentence about another language.
+    check(std::string(ed1_no_debugger_because(editor::ToolShc, editor::hostArch()))
+              .find("stops itself") != std::string::npos,
+          "and asking why there is no debugger says so, naming no other compiler");
+
+    // The two release refusals are different sentences because they are
+    // different facts: one build is missing -g and the other never had one.
+    check(std::string(ed1_release_cannot_stop(editor::ToolShc)).find("no debugger in it") !=
+              std::string::npos,
+          "release says what a Shalimar build has not got");
+    check(std::string(ed1_release_cannot_stop(editor::ToolCc1)).find("-g") !=
+              std::string::npos,
+          "where a C build says what was left out of it");
+    check(std::string(ed1_why_it_did_not_start(editor::ToolShc, editor::hostArch()))
+              .find("did not arm") != std::string::npos,
+          "and a start that failed is a program that did not arm, not a debugger to install");
+
+    // Nothing is running yet, so nothing is refused yet: the window may put a
+    // watch down before it starts, as the terminal may.
+    Ed1Debugger* idle = ed1_debugger_new();
+    check(std::string(ed1_cannot_watch(idle)).empty(),
+          "with nothing running, watching is not refused");
+    check(std::string(ed1_locals_none_because(idle)) == "  (nothing in scope here)",
+          "and an empty scope is this place having none");
+    ed1_debugger_free(idle);
+
+    const char* shc = std::getenv("SHC");
+    if (!shc || !*shc) {
+        std::printf("  (no $SHC, so nothing is built to stop inside)\n");
+        return;
+    }
+
+    std::string dir = editor::path::join(editor::path::tempDir(), "ed1-window-shm");
+    editor::path::removeTree(dir);
+    if (!editor::path::makeDirectories(dir)) {
+        std::printf("  (could not make %s - this case is about the seam, not about that)\n",
+                    dir.c_str());
+        return;
+    }
+    const std::string source = editor::path::join(dir, "steps.shl");
+    writeSource(source,
+                "fun <int> = twice(n: int) {\n"
+                "  int d : n + n\n"
+                "  return d\n"
+                "}\n"
+                "\n"
+                "fun <> = main() {\n"
+                "  int a : 1\n"
+                "  int b : twice(a)\n"
+                "  ? b\n"
+                "}\n");
+    if (!editor::path::exists(source)) {
+        std::printf("  (could not write %s - this case is about the seam, not about that)\n",
+                    source.c_str());
+        editor::path::removeTree(dir);
+        return;
+    }
+
+    // Built through the bridge, exactly as the window builds it - and in the
+    // debug configuration, which for shc is what --debug means: the compiler's
+    // output is the same either way and the runtime archive is not.
+    Ed1Program* built = ed1_build_program("cc1", "cl", shc, editor::ToolShc, source.c_str(),
+                                          editor::LangShalimar, editor::hostArch(),
+                                          editor::ConfigDebug);
+    check(ed1_program_ok(built) != 0, "the window's build makes a program");
+    if (ed1_program_ok(built) == 0) {
+        std::printf("   it said: %s\n", ed1_program_output(built));
+        ed1_program_free(built);
+        editor::path::removeTree(dir);
+        return;
+    }
+
+    Ed1Debugger* debugger = ed1_debugger_new();
+    check(ed1_debugger_start(debugger, editor::ToolShc, editor::hostArch(),
+                             ed1_program_path(built)) != 0,
+          "the program starts with its session armed");
+    check(ed1_debugger_running(debugger) != 0,
+          "and the window is told something is running, as it is for the other three");
+    check(ed1_debugging_shalimar(debugger) != 0, "and which of the two halves it is");
+
+    check(ed1_debugger_break(debugger, source.c_str(), 8) != 0,
+          "a breakpoint is set by file and line");
+    ed1_debugger_run(debugger);
+    check(ed1_stop_stopped(debugger) != 0 && ed1_stop_line(debugger) == 8,
+          "running stops on the line it was set on");
+    check(std::string(editor::path::filename(ed1_stop_file(debugger))) == "steps.shl",
+          "in the file it was set in");
+
+    // The three things this cannot do, each said rather than left blank. An
+    // empty variable list would read as "this line has none".
+    check(ed1_locals_count(debugger) == 0, "there are no variables to read");
+    check(std::string(ed1_locals_none_because(debugger)).find("not what is in it") !=
+              std::string::npos,
+          "and the tab is given the reason there are none, not an empty list");
+    check(std::string(ed1_cannot_watch(debugger)).find("nothing to watch with") !=
+              std::string::npos,
+          "watching is refused in the same voice");
+    check(std::string(ed1_cannot_walk_stack(debugger)).find("how deep it is") !=
+              std::string::npos,
+          "and so is walking the stack");
+
+    check(ed1_stack_count(debugger) == 1, "one frame: where it is standing");
+    check(std::string(ed1_stack_function(debugger, 0)).find("1 call") != std::string::npos,
+          "which says how deep it is rather than inventing a name for it");
+
+    ed1_debugger_step_into(debugger);
+    check(ed1_stop_stopped(debugger) != 0 && ed1_stop_line(debugger) == 2,
+          "stepping into the call reaches its first line");
+    ed1_debugger_step_out(debugger);
+    check(ed1_stop_stopped(debugger) != 0 && ed1_stop_line(debugger) == 9,
+          "and stepping out comes back to the statement after the call");
+
+    ed1_debugger_step_over(debugger);
+    check(ed1_stop_exited(debugger) != 0, "carrying on from the last statement ends it");
+
+    // The last thing it printed comes back with the stop that says it ended -
+    // and unfiltered, which is what ownsTheStop is for. Running has gone false
+    // by now, the channel having closed with the program.
+    check(std::string(ed1_stop_output(debugger)).find("2") != std::string::npos,
+          "and what it printed on the way out reaches the console");
+    check(ed1_debugger_running(debugger) == 0, "with nothing running afterwards");
+
+    ed1_debugger_stop(debugger);
+    ed1_debugger_free(debugger);
+    ed1_program_free(built);
+    editor::path::removeTree(dir);
+}
+
 int main(int argc, char** argv) {
     paths();
     whereTheProgramIs(argc > 0 ? argv[0] : 0);
@@ -3712,6 +3861,7 @@ int main(int argc, char** argv) {
     whatTheProjectBuilds();
     theThirdLanguage();
     steppingShalimar();
+    theWindowStoppingShalimar();
 
     std::printf("\n%d checks, %d failed\n", checks, failures);
     return failures == 0 ? 0 : 1;

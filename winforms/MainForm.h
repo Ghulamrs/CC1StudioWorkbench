@@ -167,6 +167,11 @@ private:
     // are native and are freed in OnFormClosed.
     Ed1Debugger* debugger_;
     Ed1Program* built_;
+    // The three Debug items that need a stack or a variable, kept so that they
+    // can be greyed while a Shalimar program is the thing that is stopped.
+    ToolStripMenuItem^ upTheStack_;
+    ToolStripMenuItem^ downTheStack_;
+    ToolStripMenuItem^ watchItem_;
     bool busy_;             // something slow is on another thread
     int pending_;           // which slow thing
     int workResult_;        // what it came back with
@@ -522,16 +527,25 @@ private:
         // Windows Forms will not take an arrow as a menu shortcut, so these
         // two are caught in ProcessCmdKey with Ctrl-D, Ctrl-K and Ctrl-T, and
         // say their key here themselves - as those three do.
-        ToolStripMenuItem^ upTheStack = gcnew ToolStripMenuItem(
+        upTheStack_ = gcnew ToolStripMenuItem(
             "Up the stack", nullptr, gcnew EventHandler(this, &MainForm::OnFrameUp));
-        upTheStack->ShortcutKeyDisplayString = "Ctrl+Up";
-        debug->DropDownItems->Add(upTheStack);
-        ToolStripMenuItem^ downTheStack = gcnew ToolStripMenuItem(
+        upTheStack_->ShortcutKeyDisplayString = "Ctrl+Up";
+        debug->DropDownItems->Add(upTheStack_);
+        downTheStack_ = gcnew ToolStripMenuItem(
             "Down the stack", nullptr, gcnew EventHandler(this, &MainForm::OnFrameDown));
-        downTheStack->ShortcutKeyDisplayString = "Ctrl+Down";
-        debug->DropDownItems->Add(downTheStack);
-        debug->DropDownItems->Add("Watch expression...", nullptr,
-                                  gcnew EventHandler(this, &MainForm::OnWatch));
+        downTheStack_->ShortcutKeyDisplayString = "Ctrl+Down";
+        debug->DropDownItems->Add(downTheStack_);
+        watchItem_ = gcnew ToolStripMenuItem(
+            "Watch expression...", nullptr, gcnew EventHandler(this, &MainForm::OnWatch));
+        debug->DropDownItems->Add(watchItem_);
+
+        // This third group - looking at it - is exactly what a Shalimar
+        // program cannot do, so it is drawn faint while one is stopped rather
+        // than offered and then refused. Asked of the core as the menu opens,
+        // which is the same moment and the same question the terminal's own
+        // menu asks: the answer is never kept anywhere that could go stale.
+        debug->DropDownOpening +=
+            gcnew EventHandler(this, &MainForm::OnDebugMenuOpening);
 
         debug->DropDownItems->Add(gcnew ToolStripSeparator());
         debug->DropDownItems->Add("Stop debugging", nullptr,
@@ -3025,9 +3039,13 @@ private:
                 break;
             }
             case WorkStart:
-                workResult_ = ed1_debugger_start(
-                    debugger_, ed1_debugger_for(workKind_, reinterpret_cast<const char*>(arch)),
-                    ed1_program_path(built_));
+                // The compiler and the target, not a debugger: which of the
+                // two halves this is - gdb, lldb or cdb, or a Shalimar program
+                // with its own session - is decided on the native side, where
+                // the terminal half decides it too.
+                workResult_ = ed1_debugger_start(debugger_, workKind_,
+                                                 reinterpret_cast<const char*>(arch),
+                                                 ed1_program_path(built_));
                 break;
             case WorkGo:       ed1_debugger_run(debugger_); break;
             case WorkResume:   ed1_debugger_resume(debugger_); break;
@@ -3144,13 +3162,23 @@ private:
             what_->Text = FromUtf8(ed1_why_not_run(kind, reinterpret_cast<const char*>(arch)));
             return;
         }
-        if (ed1_debugger_for(kind, reinterpret_cast<const char*>(arch)) == 0) {
+        // Asked in this order, and the order is the point: a Shalimar program
+        // stops itself, so there is no debugger here to have or to lack, and
+        // ed1_debugger_for rightly answers none for it. Reading that as a
+        // refusal is what this window did, and it refused the one language
+        // that needs nothing installed.
+        if (ed1_debugger_stops_itself(kind) == 0 &&
+            ed1_debugger_for(kind, reinterpret_cast<const char*>(arch)) == 0) {
             what_->Text = FromUtf8(
                 ed1_no_debugger_because(kind, reinterpret_cast<const char*>(arch)));
             return;
         }
         if (config_ != ED1_CONFIG_DEBUG) {
-            what_->Text = "release is built without -g - choose Debug build, then F8";
+            // Two different facts wearing one shape: a C build is missing -g,
+            // and a Shalimar one links a runtime with no debugger in it, there
+            // being no -g here to have left out. The key is this window's own.
+            what_->Text =
+                FromUtf8(ed1_release_cannot_stop(kind)) + " - choose Debug build, then F8";
             return;
         }
 
@@ -3194,12 +3222,17 @@ private:
             return;
         }
 
-        what_->Text = "starting the debugger ...";
+        what_->Text = ed1_debugger_stops_itself(kind) != 0
+                          ? "starting the program ..."   // nothing else is started
+                          : "starting the debugger ...";
         if (!WhileBusy(WorkStart)) return;
         if (workResult_ == 0) {
-            what_->Text = FromUtf8(ed1_debugger_name(
-                              ed1_debugger_for(kind, reinterpret_cast<const char*>(arch)))) +
-                          " could not be started - is it installed?";
+            // Which reason applies is the core's answer. A debugger that is not
+            // installed and a program that never said it was ready are not the
+            // same trouble, and sending someone to install something that does
+            // not exist for this language is the worse of the two.
+            what_->Text =
+                FromUtf8(ed1_why_it_did_not_start(kind, reinterpret_cast<const char*>(arch)));
             ed1_program_free(built_);
             built_ = nullptr;
             return;
@@ -3208,6 +3241,16 @@ private:
         SetEveryBreakpoint();
         if (!WhileBusy(WorkGo)) return;
         ShowStop();
+    }
+
+    // What cannot be chosen just now, worked out as the menu opens. The three
+    // in the looking group need a stack to walk or a variable to read, and a
+    // Shalimar program has neither.
+    void OnDebugMenuOpening(Object^, EventArgs^) {
+        bool itsOwn = ed1_debugging_shalimar(debugger_) != 0;
+        upTheStack_->Enabled = !itsOwn;
+        downTheStack_->Enabled = !itsOwn;
+        watchItem_->Enabled = !itsOwn;
     }
 
     void OnStepOver(Object^, EventArgs^) { Step(0); }
@@ -3383,7 +3426,12 @@ private:
 
         int howMany = ed1_locals_count(debugger_);
         if (howMany == 0) {
-            said->Append("  (nothing in scope here)\r\n");
+            // Empty means two different things. Under a debugger this place has
+            // no variables; under a Shalimar session no place ever will, the
+            // compiler emitting no table of a function's names against its
+            // frame slots. Which sentence that is, is the core's answer, so
+            // both halves of the editor say the same one.
+            said->AppendFormat("{0}\r\n", FromUtf8(ed1_locals_none_because(debugger_)));
         } else {
             for (int i = 0; i < howMany; ++i)
                 said->AppendFormat("{0}\r\n", FromUtf8(ed1_local_text(debugger_, i)));
@@ -3412,13 +3460,17 @@ private:
 
         // Setting a variable needs no stack at all, so it is said whether or
         // not there is one: a program standing in main has one frame and
-        // variables like any other.
-        said->Append("\r\nDouble-click a variable, or press enter on it, to set it");
-        if (watching > 0)
-            said->Append("\r\nThe same on a watch changes it, and an empty answer drops it");
-        if (deep > 1) {
-            said->Append("\r\nCtrl+Up looks at what called this   Ctrl+Down comes back down");
-            said->Append("\r\nThe same on a frame looks at it, and on the top line goes back");
+        // variables like any other. None of that is true of Shalimar, and
+        // offering the keys for it would be the panel promising what pressing
+        // them refuses.
+        if (ed1_debugging_shalimar(debugger_) == 0) {
+            said->Append("\r\nDouble-click a variable, or press enter on it, to set it");
+            if (watching > 0)
+                said->Append("\r\nThe same on a watch changes it, and an empty answer drops it");
+            if (deep > 1) {
+                said->Append("\r\nCtrl+Up looks at what called this   Ctrl+Down comes back down");
+                said->Append("\r\nThe same on a frame looks at it, and on the top line goes back");
+            }
         }
         debug_->Text = said->ToString();
 
@@ -3490,6 +3542,11 @@ private:
     // An expression to keep asking about, read again wherever the program gets
     // to next. Asked for in the same box as everything else.
     void OnWatch(Object^, EventArgs^) {
+        // Refused before it is asked for, rather than accepted and then shown
+        // blank for the rest of the session. Empty means it can be done.
+        String^ no = FromUtf8(ed1_cannot_watch(debugger_));
+        if (no->Length > 0) { what_->Text = no; return; }
+
         String^ what = Ask("watch expression", "");
         if (what == nullptr || what->Length == 0) { what_->Text = "nothing to watch"; return; }
 
@@ -3557,6 +3614,12 @@ private:
             what_->Text = "nothing is stopped, so there is no stack to walk";
             return;
         }
+        // One frame, and it says how deep it is rather than what it is called.
+        // There is nothing to walk to, and saying so beats the message below,
+        // which would name that depth as though it were a function.
+        String^ no = FromUtf8(ed1_cannot_walk_stack(debugger_));
+        if (no->Length > 0) { what_->Text = no; return; }
+
         int looking = ed1_looking_at(debugger_);
         if (by > 0) {
             if (looking + 1 >= deep) {

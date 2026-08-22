@@ -116,6 +116,12 @@
     <ClCompile Include="..\src\about.cpp"><CompileAsManaged>false</CompileAsManaged><ExceptionHandling>Sync</ExceptionHandling></ClCompile>
     <ClCompile Include="..\src\compile.cpp"><CompileAsManaged>false</CompileAsManaged><ExceptionHandling>Sync</ExceptionHandling></ClCompile>
     <ClCompile Include="..\src\toolchain.cpp"><CompileAsManaged>false</CompileAsManaged><ExceptionHandling>Sync</ExceptionHandling></ClCompile>
+    <!-- The Shalimar half. The window reaches it through the same seam as
+         everything else: bridge.cpp holds a Session beside the Debugger and
+         asks which of the two is live. Native for the same reason as the
+         rest - both of these instantiate std::string and std::vector. -->
+    <ClCompile Include="..\src\shalimar\channel.cpp"><CompileAsManaged>false</CompileAsManaged><ExceptionHandling>Sync</ExceptionHandling></ClCompile>
+    <ClCompile Include="..\src\shalimar\session.cpp"><CompileAsManaged>false</CompileAsManaged><ExceptionHandling>Sync</ExceptionHandling></ClCompile>
   </ItemGroup>
 
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

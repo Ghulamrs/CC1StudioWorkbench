@@ -851,18 +851,23 @@ void buildingTheProject(const std::string& ed1, const std::string& cc1) {
               "    \"Sources\": [\"src/sum.c\", \"src/main.c\", \"src/extra.cpp\"]\n  },\n"
               "  \"build\": { \"target\": \"sums\", \"groups\": [\"Sources\"] }\n}\n");
     Screen mixed = drive(ed1, arguments, kF4 + ctrl('q'), dir);
-    check(onScreen(mixed, "Sources (cc1)"), "a group of two languages sends the C to cc1");
-    check(onScreen(mixed, "Sources (cl)"), "and the C++ to cl, without being told to");
-    check(!onScreen(mixed, "cannot make one program"),
+    // wasShown, not onScreen: the console panel holds nine rows and a build
+    // that runs two compilers and a linker writes more than that, so the first
+    // compiler's line has scrolled off by the time it is over. What is being
+    // checked is that the editor said it, not that it is still visible.
+    check(wasShown(mixed, "Sources (cc1)"), "a group of two languages sends the C to cc1");
+    check(wasShown(mixed, "Sources (cl)"), "and the C++ to cl, without being told to");
+    check(!wasShown(mixed, "cannot make one program"),
           "and is not refused for holding both any more");
 #ifdef _WIN32
+    check(wasShown(mixed, "linking with"), "and links the two compilers' objects itself");
     check(onScreen(mixed, "built sums"), "the two compilers' objects link into one program");
 #else
     // cl is Windows-only, so this is as far as a Mac or the Linux box can take
     // it: the editor got to cl and cl was not there. Checked rather than
     // skipped, because "it reached the second compiler" is most of what this
     // case is about and is true on all three machines.
-    check(onScreen(mixed, "could not be run") || onScreen(mixed, "cl"),
+    check(wasShown(mixed, "could not be run") || wasShown(mixed, "cl"),
           "and on a machine with no cl it is cl that is missing, not the feature");
 #endif
 

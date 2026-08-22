@@ -36,6 +36,7 @@ cl /nologo /std:c++14 /W4 /WX /EHsc /permissive- /O2 /D_CRT_SECURE_NO_WARNINGS ^
    src\indent.cpp src\menu.cpp src\tree.cpp src\syntax.cpp src\toolchain.cpp ^
    src\json.cpp src\project.cpp src\find.cpp src\utf8.cpp src\workspace.cpp src\symbols.cpp src\demangle_win.cpp ^
    src\path.cpp src\process.cpp src\debugger.cpp src\settings.cpp src\about.cpp ^
+   src\shalimar\channel.cpp src\shalimar\session.cpp ^
    src\terminal_common.cpp ^
    src\terminal_win.cpp
 if errorlevel 1 goto :fail
@@ -71,6 +72,7 @@ cl /nologo /std:c++14 /W4 /WX /EHsc /permissive- /D_CRT_SECURE_NO_WARNINGS ^
    src\json.cpp src\project.cpp src\find.cpp src\buffer.cpp src\utf8.cpp src\workspace.cpp src\symbols.cpp ^
    src\demangle_win.cpp src\path.cpp src\process.cpp src\debugger.cpp ^
    src\settings.cpp src\about.cpp ^
+   src\shalimar\channel.cpp src\shalimar\session.cpp ^
    winforms\bridge.cpp
 if errorlevel 1 goto :fail
 test.exe
@@ -78,8 +80,13 @@ if errorlevel 1 goto :fail
 if not "%1"=="check" goto :done
 
 :session
+rem Its own object directory. src\shalimar\session.cpp and tests\session.cpp
+rem both become session.obj under one /Fo, and the two builds would take it in
+rem turns to overwrite each other's - which works, right up until the day
+rem something links both.
+if not exist src\obj\harness mkdir src\obj\harness
 cl /nologo /std:c++14 /W4 /WX /EHsc /permissive- /D_CRT_SECURE_NO_WARNINGS ^
-   /I src /Fe:session.exe /Fo:src\obj\ tests\session.cpp src\path.cpp
+   /I src /Fe:session.exe /Fo:src\obj\harness\ tests\session.cpp src\path.cpp
 if errorlevel 1 goto :fail
 session.exe winconsole.exe %CC1%
 if errorlevel 1 goto :fail

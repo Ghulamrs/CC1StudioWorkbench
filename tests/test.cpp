@@ -2864,6 +2864,35 @@ void aCompilerPerGroup() {
     file::remove_all(dir);
 }
 
+// A directory handed to cl's /Fo, which wants a separator on the end - and on
+// the machine where /Fo means anything that separator is a backslash, sitting
+// immediately before a closing quote where it escapes it. cl then answers
+// "D8003: missing source filename", which reads as a command with no file in
+// it rather than a command with a quote in the wrong place. It cost an
+// afternoon on the Windows box; it is one check here.
+void aDirectoryInAQuotedArgument() {
+    std::printf("a directory on the end of a quoted argument\n");
+
+    editor::Toolchain tool;
+    std::vector<std::string> sources;
+    sources.push_back("src\\one.cpp");
+    std::vector<std::string> objects;
+    editor::Recipe recipe = editor::objectRecipe(
+        tool, editor::ToolMsvc, sources, editor::LangCpp, "x86_64-windows",
+        editor::ConfigDebug, "C:\\work\\objs", objects);
+
+    // Only where the separator is a backslash - which is only where cl is.
+#ifdef _WIN32
+    check(recipe.command.find("\\\\\"") != std::string::npos,
+          "a trailing backslash is doubled, so it cannot escape the closing quote");
+    check(recipe.command.find("one.cpp") != std::string::npos,
+          "and the source is still an argument of its own");
+#else
+    check(recipe.command.find("one.cpp") != std::string::npos,
+          "the source is named; the quoting question is the Windows separator's");
+#endif
+}
+
 void whatTheProjectBuilds() {
     std::printf("what a project says it builds\n");
 
@@ -3360,6 +3389,7 @@ int main(int argc, char** argv) {
     theOtherShapeOfDiagnostic();
     whatALinkFailureSays();
     aCompilerPerGroup();
+    aDirectoryInAQuotedArgument();
     whatTheProjectBuilds();
     theThirdLanguage();
     steppingShalimar();

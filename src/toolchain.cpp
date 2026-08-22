@@ -35,6 +35,22 @@ std::string tempDir() {
 
 std::string quote(const std::string& s) { return "\"" + s + "\""; }
 
+// A directory for /Fo, which wants a separator on the end of it - and that
+// separator is a backslash on the machine where /Fo means anything.
+//
+// A backslash immediately before a closing quote escapes the quote: the C
+// runtime's own argument rules say 2n backslashes then a quote is n
+// backslashes and a delimiter, so `/Fo"C:\dir\"` reaches cl as one argument
+// with everything after it swallowed - and cl answers "D8003: missing source
+// filename", which reads as a command with no file in it rather than a
+// command with a quote in the wrong place. Doubling it is the whole fix:
+// `/Fo"C:\dir\\"` reaches cl as `/FoC:\dir\`.
+std::string quoteDirectory(const std::string& s) {
+    std::string path = s;
+    if (!path.empty() && path[path.size() - 1] == kSep) path += kSep;
+    return quote(path);
+}
+
 #ifdef _WIN32
 // cmd removes the first and last quote when a command has both a quoted program
 // and quoted arguments. An extra pair around the whole thing is what it eats
@@ -321,7 +337,7 @@ Recipe targetRecipe(const Toolchain& tool, ToolchainKind kind,
                          forLanguage + configFlags(kind, config, arch) +
                          (config == ConfigDebug ? " /Fd" + quote(pdb) : std::string()) +
                          " /Fe" + quote(program) +
-                         " /Fo" + quote(objects + kSep) + named +
+                         " /Fo" + quoteDirectory(objects + kSep) + named +
                          (config == ConfigDebug ? " /link /DEBUG" : std::string());
 
         for (size_t i = 0; i < sources.size(); ++i) {
@@ -419,7 +435,7 @@ Recipe objectRecipe(const Toolchain& tool, ToolchainKind kind,
         recipe.command = quote(programOf(tool, kind)) + " /nologo /diagnostics:column /c" +
                          forLanguage + crt + configFlags(kind, config, arch) +
                          (config == ConfigDebug ? " /Fd" + quote(pdb) : std::string()) +
-                         " /Fo" + quote(objectDir + kSep) + named;
+                         " /Fo" + quoteDirectory(objectDir + kSep) + named;
 
         for (size_t i = 0; i < sources.size(); ++i)
             objects.push_back(objectFor(objectDir, sources[i], ".obj"));

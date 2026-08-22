@@ -130,7 +130,16 @@ printf 'fun <> = main() {\n  ? 6 * 7\n}\n' > probe.shm
 test "$(./probeshm | tr -d '[:space:]')" = "42"
 
 %files
+# Every directory this package makes is listed, not just the top one. rpm
+# removes a directory on uninstall only if the package owned it, so without
+# these, `rpm -e` left /opt/rstudio/{bin,lib,share,share/doc} behind - empty,
+# owned by nothing, and invisible until somebody went looking. A package should
+# leave no trace when it is removed.
 %dir %{prefix_dir}
+%dir %{prefix_dir}/bin
+%dir %{prefix_dir}/lib
+%dir %{prefix_dir}/share
+%dir %{prefix_dir}/share/doc
 %{prefix_dir}/bin/RStudio.exe
 %{prefix_dir}/bin/cc1.exe
 %{prefix_dir}/bin/shc.exe

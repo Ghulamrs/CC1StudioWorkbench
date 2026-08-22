@@ -46,6 +46,11 @@ struct Frame {
     const char* teeUp;
     const char* teeRight;
     const char* teeLeft;
+    // What marks the menu item you are already on. It belongs here with the
+    // rest of the drawing characters because it has the same problem they do:
+    // a console that takes box characters from a second font makes a mess of
+    // them, and --plain is the way out.
+    const char* chosen;
 };
 
 extern const Frame kBoxFrame;
@@ -282,6 +287,11 @@ private:
     Configuration config_;
     size_t arch_;
     bool numbers_;
+    // Whether a menu item names the state the editor is already in - which
+    // language, which compiler, which target, debug or release, and the
+    // switches on the Edit menu. Asked of the editor rather than kept as a
+    // flag on the item, so there is nothing that can go stale.
+    bool menuItemIsCurrent(Action action) const;
     bool needsDraw_;
     // Where the program is to stop, by file and by line counting from one, and
     // where it actually is once it has. Kept by file rather than by buffer so

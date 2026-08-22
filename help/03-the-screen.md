@@ -24,6 +24,23 @@ columns, up and down between items, enter chooses, escape leaves. The menu
 **reopens on the column it was left on**, which is worth knowing when you are
 driving it by muscle memory.
 
+**A dot marks where you already are.** Language, Tools, Target, debug and
+release, and the switches on the Edit menu are all states rather than commands,
+so the item naming the one you are in carries a `•` (a `*` under `--plain`):
+
+```
+┌─────────────────────┐
+│• By language  Ctrl-K │
+│  cc1                 │
+│  shc                 │
+└─────────────────────┘
+```
+
+The status bar carries some of the same news and not all of it. `cc1*` says the
+language chose that compiler and `cc1` says you did — but the language field
+reads `C` for a `.c` file whether that came from its name or from your picking
+`Language ▸ C` by hand, and the menu is the only place that distinguishes them.
+
 **The project pane**, down the left. The groups of the project and the files in
 them — the project's own arrangement, not the directory's. `Ctrl-P` shows and
 hides it, enter opens the file under the cursor.

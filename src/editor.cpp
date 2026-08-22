@@ -52,10 +52,10 @@ const char* const kTeeLeft   = "\xe2\x94\xa4";
 }  // namespace
 
 const Frame kBoxFrame = {kAcross, kDown, kTopLeft, kTopRight, kFootLeft, kFootRight,
-                         kTeeDown, kTeeUp, kTeeRight, kTeeLeft};
+                         kTeeDown, kTeeUp, kTeeRight, kTeeLeft, "\xe2\x80\xa2"};
 const Frame kPlainFrame = {kPlainAcross, kPlainDown, kPlainJoint, kPlainJoint,
                            kPlainJoint, kPlainJoint, kPlainJoint, kPlainJoint,
-                           kPlainJoint, kPlainJoint};
+                           kPlainJoint, kPlainJoint, "*"};
 
 namespace {
 
@@ -913,7 +913,11 @@ void Editor::drawStatus(std::string& out) const {
     right += "  ";
     right += configName(config_);
     right += "  ";
-    right += toolchainName(kind);
+    // toolchainShown, not toolchainName: the build console says clang++ or
+    // g++ because which C++ compiler this machine has is the whole content of
+    // that answer, and a status bar saying "c++" while the console two lines
+    // below said "clang++" was the same fact written two ways.
+    right += toolchainShown(tool_, kind);
     if (tool_.kind == ToolAuto) right += "*";
     // The target is only shown when it means something. cl generates for the
     // host it was installed as, and offering a choice that does nothing would
@@ -951,6 +955,55 @@ void Editor::drawMessage(std::string& out) const {
     out += "\x1b[K";
 }
 
+// Whether a menu item names what the editor is already doing.
+//
+// Only the items that stand for a *state* answer yes. "Save" and "Build
+// project" are things you ask for and are never current; "C++", "cc1",
+// "Release" and "Line numbers" are places you already are, and a menu that
+// showed you five compilers without saying which one you were on was a menu
+// that made you go and look at the status bar.
+//
+// Asked of the editor's own fields rather than kept as a flag on the item.
+// A flag would have to be set from four or five places and would go stale in
+// exactly the ones nobody remembered.
+bool Editor::menuItemIsCurrent(Action action) const {
+    switch (action) {
+        // Which language the file is treated as. "By extension" is current
+        // when nothing was chosen by hand, which is not the same as the
+        // language it happens to be - that is what the status bar says.
+        case ActionLangAuto:     return langChoice_ == LangCount;
+        case ActionLangC:        return langChoice_ == LangC;
+        case ActionLangCpp:      return langChoice_ == LangCpp;
+        case ActionLangShalimar: return langChoice_ == LangShalimar;
+        case ActionLangText:     return langChoice_ == LangPlain;
+
+        // Which compiler runs. Same shape: "By language" is current when
+        // nobody overrode it.
+        case ActionToolAuto: return tool_.kind == ToolAuto;
+        case ActionToolCc1:  return tool_.kind == ToolCc1;
+        case ActionToolShc:  return tool_.kind == ToolShc;
+        case ActionToolMsvc: return tool_.kind == ToolMsvc;
+        case ActionToolCxx:  return tool_.kind == ToolCxx;
+
+        case ActionArchWindows: return kArches[arch_] == std::string("x86_64-windows");
+        case ActionArchLinux:   return kArches[arch_] == std::string("x86_64-linux");
+        case ActionArchDarwin:  return kArches[arch_] == std::string("arm64-darwin");
+
+        case ActionConfigDebug:   return config_ == ConfigDebug;
+        case ActionConfigRelease: return config_ == ConfigRelease;
+
+        // The switches on the Edit menu, which are on or off rather than one
+        // of several - but they are still a state you are in, and leaving them
+        // unmarked while everything else was marked would read as an oversight.
+        case ActionToggleTree:    return treeOpen_;
+        case ActionTogglePanel:   return panelOpen_;
+        case ActionToggleNumbers: return numbers_;
+        case ActionTogglePlain:   return frame_ != &kBoxFrame;
+
+        default: return false;
+    }
+}
+
 void Editor::drawDropdown(std::string& out, std::vector<size_t>& covered) const {
     if (!menu_.dropped()) return;
 
@@ -958,7 +1011,9 @@ void Editor::drawDropdown(std::string& out, std::vector<size_t>& covered) const 
 
     size_t width = 0;
     for (size_t i = 0; i < col.items.size(); ++i) {
-        size_t w = col.items[i].label.size() + col.items[i].key.size() + 4;
+        // One column for the mark, one for the gap after it, one between the
+        // label and the key, and one at each edge.
+        size_t w = col.items[i].label.size() + col.items[i].key.size() + 5;
         if (w > width) width = w;
     }
 
@@ -983,8 +1038,19 @@ void Editor::drawDropdown(std::string& out, std::vector<size_t>& covered) const 
         out += "\x1b[" + number(i + 3) + ";" + number(at + 1) + "H\x1b[m";
         out += frame_->down;
 
-        std::string row = " " + col.items[i].label;
-        row.resize(width - col.items[i].key.size() - 1, ' ');
+        // The marker sits in the column the leading space used to be, so
+        // nothing moves when it appears and the labels stay in one line
+        // whether they are marked or not.
+        //
+        // The dot is three bytes and one column wide, and resize() counts
+        // bytes - so the target grows by what the marker costs over the space
+        // it replaced. Without that the marked rows come out two columns
+        // short and the keys on the right go ragged.
+        const std::string mark = menuItemIsCurrent(col.items[i].action)
+                                     ? std::string(frame_->chosen)
+                                     : std::string(" ");
+        std::string row = mark + " " + col.items[i].label;
+        row.resize(width - col.items[i].key.size() - 1 + (mark.size() - 1), ' ');
         row += col.items[i].key;
         row += " ";
         if (i == menu_.item()) out += "\x1b[7m";

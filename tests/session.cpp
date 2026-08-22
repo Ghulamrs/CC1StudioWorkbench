@@ -1873,6 +1873,56 @@ void aCompilerPerGroup(const std::string& ed1, const std::string& cc1) {
     file::remove_all(dir);
 }
 
+// Which item you are already on, marked in the menu that offers it.
+//
+// The status bar carries some of this - cc1* means the language chose it - but
+// not all: a .c file reads "C" whether that came from its name or from
+// somebody picking Language > C by hand, and there is nowhere else that says
+// which. A menu that lists five compilers without saying which one you are on
+// is a menu that sends you to the other end of the screen to find out.
+void theMenuSaysWhereYouAre(const std::string& ed1) {
+    std::printf("the menu marks what you are already on\n");
+
+    file::path dir = freshProject("menu-marks");
+    writeFile(dir / "src" / "one.c", "int main(void) { return 0; }\n");
+    std::string arguments = "\"" + (dir / "src" / "one.c").string() +
+                            "\" --project \"" + dir.string() + "\"";
+
+    // Tools is the eighth column. Nothing has been overridden, so "By
+    // language" is the one marked.
+    const std::string toTools = kF10 + times(kRight, 7);
+    Screen fresh = drive(ed1, arguments, toTools + ctrl('q'), dir);
+    check(onScreen(fresh, "\xe2\x80\xa2 By language"), "the compiler nobody chose is marked");
+    check(onScreen(fresh, "  cc1"), "and the ones nobody is on are not");
+
+    // Choose cc1 - one down from By language - and the mark moves with it.
+    // The second F10 is bare. A menu reopens on the column it was left on, so
+    // walking right again from Tools lands somewhere else entirely - which is
+    // the hazard this suite has been caught by more than once.
+    Screen chose = drive(ed1, arguments, toTools + kDown + kEnter + kF10 + ctrl('q'), dir);
+    check(onScreen(chose, "\xe2\x80\xa2 cc1"), "choosing one marks it");
+    check(!onScreen(chose, "\xe2\x80\xa2 By language"), "and unmarks what it replaced");
+
+    // The Language menu is the seventh column, and this is the case the status
+    // bar cannot show: the file is C either way, and only the mark says
+    // whether that was its name or a choice.
+    const std::string toLanguage = kF10 + times(kRight, 6);
+    Screen byName = drive(ed1, arguments, toLanguage + ctrl('q'), dir);
+    check(onScreen(byName, "\xe2\x80\xa2 By extension"), "a language nobody chose is marked too");
+
+    Screen byHand = drive(ed1, arguments, toLanguage + kDown + kEnter + kF10 + ctrl('q'), dir);
+    check(onScreen(byHand, "\xe2\x80\xa2 C"), "and choosing C marks C");
+    check(!onScreen(byHand, "\xe2\x80\xa2 By extension"),
+          "which the status bar cannot tell you - it says C either way");
+
+    // Debug and release are a state as much as a command, and are marked on
+    // the same grounds. Build is the fourth column, Debug its fifth item.
+    Screen release = drive(ed1, arguments, ctrl('d') + kF10 + times(kRight, 3) + ctrl('q'), dir);
+    check(onScreen(release, "\xe2\x80\xa2 Release"), "release is marked once you are in it");
+
+    file::remove_all(dir);
+}
+
 // Help, which is the one menu whose whole job is to be readable.
 void theHelpMenu(const std::string& ed1) {
     std::printf("the manual, from the Help menu\n");
@@ -1975,6 +2025,7 @@ int main(int argc, char** argv) {
     stoppingShalimar(ed1, shc);
     aCompilerPerGroup(ed1, cc1);
     theHelpMenu(ed1);
+    theMenuSaysWhereYouAre(ed1);
 
     std::printf("\n%d checks, %d failed\n", checks, failures);
     return failures == 0 ? 0 : 1;

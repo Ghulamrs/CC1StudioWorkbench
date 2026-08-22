@@ -1474,21 +1474,39 @@ const char* const kGdbStepIntoTheCaller =
 
 // Recursion, which is the one thing a rule of "the same line twice is not a
 // move" would get wrong if it were written that way. fact calls itself on the
-// line it is defined on, so stepping in is the same file, the same line and
-// the same function - and it is a real arrival. What tells them apart is the
-// address: it goes back to the callee's prologue rather than on. Captured
-// from cc1's own arm64-darwin build of
-// "int fact(int n) { return n <= 1 ? 1 : n * fact(n - 1); }".
-const char* const kLldbInFact =
-    "Process 22548 stopped\n"
+// line it is defined on, so stepping into itself is the same file, the same
+// line and the same function - and it is a real arrival all the same. What
+// tells the two apart is the address: a step that only shuffled along goes
+// forward, and a step into the call goes back to the callee's prologue.
+//
+// Four `step`s in a row from cc1's own arm64-darwin build of
+// "int fact(int n) { return n <= 1 ? 1 : n * fact(n - 1); }", with the
+// breakpoint left in main so that nothing here is a breakpoint stop and the
+// address is the only thing that can decide.
+const char* const kLldbInFactFirst =
+    "Process 25713 stopped\n"
+    "* thread #1, queue = 'com.apple.main-thread', stop reason = step in\n"
+    "    frame #0: 0x0000000100000430 r`fact(n=4) at fact.c:1:19\n"
+    "-> 1   \tint fact(int n) { return n <= 1 ? 1 : n * fact(n - 1); }\n"
+    "Target 0: (r) stopped.\n";
+
+const char* const kLldbInFactAgain =
+    "Process 25713 stopped\n"
+    "* thread #1, queue = 'com.apple.main-thread', stop reason = step in\n"
+    "    frame #0: 0x0000000100000430 r`fact(n=3) at fact.c:1:19\n"
+    "-> 1   \tint fact(int n) { return n <= 1 ? 1 : n * fact(n - 1); }\n"
+    "Target 0: (r) stopped.\n";
+
+const char* const kLldbInFactShuffled =
+    "Process 25713 stopped\n"
     "* thread #1, queue = 'com.apple.main-thread', stop reason = step in\n"
     "    frame #0: 0x0000000100000460 r`fact(n=2) at fact.c:1:19\n"
     "-> 1   \tint fact(int n) { return n <= 1 ? 1 : n * fact(n - 1); }\n"
     "Target 0: (r) stopped.\n";
 
-const char* const kLldbSteppedIntoItself =
-    "Process 22548 stopped\n"
-    "* thread #1, queue = 'com.apple.main-thread', stop reason = breakpoint 1.1 -14.1\n"
+const char* const kLldbInFactDeeper =
+    "Process 25713 stopped\n"
+    "* thread #1, queue = 'com.apple.main-thread', stop reason = step in\n"
     "    frame #0: 0x0000000100000430 r`fact(n=1) at fact.c:1:19\n"
     "-> 1   \tint fact(int n) { return n <= 1 ? 1 : n * fact(n - 1); }\n"
     "Target 0: (r) stopped.\n";
@@ -1664,12 +1682,19 @@ void aStepThatWentNowhere() {
           "nor is cdb");
 
     // Recursion on one line: the same file, the same line and the same
-    // function, and a real arrival all the same. The address is what says so -
-    // it goes back to the callee's prologue instead of on.
-    editor::Stop inFact = editor::dbg_readStop(editor::DebuggerLldb, kLldbInFact);
-    editor::Stop deeper = editor::dbg_readStop(editor::DebuggerLldb, kLldbSteppedIntoItself);
-    check(!editor::dbg_wentNowhere(editor::DebuggerLldb, inFact, deeper),
+    // function every time, and only some of them a move. Nothing here is a
+    // breakpoint stop, so the address is the only thing that can decide.
+    editor::Stop first = editor::dbg_readStop(editor::DebuggerLldb, kLldbInFactFirst);
+    editor::Stop again = editor::dbg_readStop(editor::DebuggerLldb, kLldbInFactAgain);
+    editor::Stop shuffled = editor::dbg_readStop(editor::DebuggerLldb, kLldbInFactShuffled);
+    editor::Stop deeper = editor::dbg_readStop(editor::DebuggerLldb, kLldbInFactDeeper);
+
+    check(editor::dbg_wentNowhere(editor::DebuggerLldb, again, shuffled),
+          "the same line further along is still a step that went nowhere");
+    check(!editor::dbg_wentNowhere(editor::DebuggerLldb, shuffled, deeper),
           "stepping into a recursive call on the same line is an arrival");
+    check(!editor::dbg_wentNowhere(editor::DebuggerLldb, first, again),
+          "and so is one that arrives at the address it started from");
 
     // And a breakpoint is a stop whatever else is true of it.
     check(!editor::dbg_wentNowhere(editor::DebuggerLldb, atBreak, atBreak),

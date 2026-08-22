@@ -93,6 +93,9 @@ public:
     bool targetSources(std::vector<std::string>& sources, Language& lang,
                        std::string& why, std::string* detail = 0) const;
 
+    // A file name without its suffix.
+    static std::string stemOf(const std::string& leaf);
+
     // Where the program goes: beside the project file, named by the target,
     // with .exe on Windows. A build you can find afterwards, unlike the
     // temporary one a single file is run from.
@@ -146,6 +149,13 @@ private:
     std::vector<Group> groups_;
     Target target_;
     IndentStyle indent_;
+
+    // Narrows a Shalimar target to the one source it can be. Several .shl in
+    // a group are several programs - the language has no include and shc
+    // takes one at a time - so the one named after the target is the program,
+    // and where none is, this refuses rather than choosing.
+    bool oneShalimarProgram(std::vector<std::string>& sources, std::string& why,
+                            std::string* detail) const;
     ToolchainKind toolchain_;
     Configuration config_;
     std::string arch_;

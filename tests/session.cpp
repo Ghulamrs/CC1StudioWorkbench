@@ -1499,6 +1499,77 @@ void compilingShalimar(const std::string& ed1, const std::string& shc) {
     file::remove_all(dir);
 }
 
+// A project made of Shalimar, which is not the same shape as one made of C.
+// The language has no include and no separate compilation, so several .shl in
+// a group are several programs rather than the parts of one - and the project
+// has to say which it builds instead of taking whichever came first.
+void aShalimarProject(const std::string& ed1, const std::string& shc) {
+    std::printf("a project made of Shalimar\n");
+
+    if (shc.empty()) {
+        std::printf("  (no shc named, so those cases are not tried)\n");
+        return;
+    }
+
+    file::path dir = freshProject("shmproject");
+    writeFile(dir / "src" / "hello.shl",
+              "fun <> = main() {\n  ? 6 * 7\n}\n");
+    writeFile(dir / "ed1.json",
+              "{\n"
+              "  \"name\": \"hello\",\n"
+              "  \"build\": { \"target\": \"hello\", \"groups\": [\"Sources\"] },\n"
+              "  \"groups\": { \"Sources\": [\"src/hello.shl\"] }\n"
+              "}\n");
+
+    std::string arguments = "--project \"" + dir.string() + "\" --shc \"" + shc + "\"";
+    Screen built = drive(ed1, arguments, kF4 + ctrl('q'), dir);
+    check(onScreen(built, "built hello"), "F4 builds the project's one program");
+    check(file::exists(dir / "hello") || file::exists(dir / "hello.exe"),
+          "and leaves it beside the project, where it can be found again");
+
+    // Run project: F10, three columns right to Build, three items down.
+    Screen ran = drive(ed1, arguments,
+                       kF10 + times(kRight, 3) + times(kDown, 3) + kEnter + ctrl('q'), dir);
+    check(onScreen(ran, "42"), "running the project runs what came out");
+
+    // A second program in the group, and the target names the first.
+    writeFile(dir / "src" / "other.shl", "fun <> = main() {\n  ? 1\n}\n");
+    writeFile(dir / "ed1.json",
+              "{\n"
+              "  \"name\": \"hello\",\n"
+              "  \"build\": { \"target\": \"hello\", \"groups\": [\"Sources\"] },\n"
+              "  \"groups\": { \"Sources\": [\"src/other.shl\", \"src/hello.shl\"] }\n"
+              "}\n");
+    Screen chose = drive(ed1, arguments, kF4 + ctrl('q'), dir);
+    check(!wasShown(chose, "programs and builds one"),
+          "a target named after one of them builds that one");
+
+    // And a target named after none of them is refused rather than guessed.
+    writeFile(dir / "ed1.json",
+              "{\n"
+              "  \"name\": \"hello\",\n"
+              "  \"build\": { \"target\": \"neither\", \"groups\": [\"Sources\"] },\n"
+              "  \"groups\": { \"Sources\": [\"src/other.shl\", \"src/hello.shl\"] }\n"
+              "}\n");
+    Screen refusedIt = drive(ed1, arguments, kF4 + ctrl('q'), dir);
+    check(wasShown(refusedIt, "programs and builds one"),
+          "a target named after none of them is refused, not guessed at");
+
+    // Two languages in one target is the same refusal C and C++ already got.
+    writeFile(dir / "src" / "bit.c", "int bit(void) { return 1; }\n");
+    writeFile(dir / "ed1.json",
+              "{\n"
+              "  \"name\": \"hello\",\n"
+              "  \"build\": { \"target\": \"hello\", \"groups\": [\"Sources\"] },\n"
+              "  \"groups\": { \"Sources\": [\"src/hello.shl\", \"src/bit.c\"] }\n"
+              "}\n");
+    Screen mixed = drive(ed1, arguments, kF4 + ctrl('q'), dir);
+    check(wasShown(mixed, "both C and Shalimar"),
+          "and Shalimar beside C in one target is refused, naming which two");
+
+    file::remove_all(dir);
+}
+
 int main(int argc, char** argv) {
 #ifdef _WIN32
     std::string ed1 = "ed1.exe";
@@ -1557,6 +1628,7 @@ int main(int argc, char** argv) {
     runningTheProgram(ed1, cc1);
     stoppingAndStepping(ed1, cc1);
     compilingShalimar(ed1, shc);
+    aShalimarProject(ed1, shc);
 
     std::printf("\n%d checks, %d failed\n", checks, failures);
     return failures == 0 ? 0 : 1;

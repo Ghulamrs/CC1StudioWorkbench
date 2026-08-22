@@ -2992,6 +2992,81 @@ void theThirdLanguage() {
               "except for the Windows target, where it is MASM and ml64 wants .asm");
     }
 
+    // A project made of Shalimar is not the shape a project made of C is, and
+    // the difference is the language's rather than the editor's: no include,
+    // no import, no way to name another file, and shc takes one program at a
+    // time. Several .shl in a group are several programs.
+    {
+        editor::Project project;
+        std::string error;
+        std::string dir = editor::path::join(editor::path::tempDir(), "ed1-shmproj");
+        editor::path::removeTree(dir);
+        editor::path::makeDirectories(editor::path::join(dir, "src"));
+        writeSource(editor::path::join(dir, "src/hello.shl"),
+                    "fun <> = main() {\n  ? 1\n}\n");
+        writeSource(editor::path::join(dir, "src/other.shl"),
+                    "fun <> = main() {\n  ? 2\n}\n");
+
+        writeSource(editor::path::join(dir, "ed1.json"),
+                    "{\n  \"name\": \"hello\",\n"
+                    "  \"build\": { \"target\": \"hello\", \"groups\": [\"Sources\"] },\n"
+                    "  \"groups\": { \"Sources\": [\"src/hello.shl\"] }\n}\n");
+        check(project.load(dir, error), "a project of one Shalimar source loads");
+
+        std::vector<std::string> sources;
+        editor::Language lang = editor::LangPlain;
+        std::string why;
+        check(project.targetSources(sources, lang, why),
+              "and says what it builds");
+        check(lang == editor::LangShalimar, "which is Shalimar");
+        check(sources.size() == 1, "and is one source");
+
+        // Two programs, and the target names one of them.
+        writeSource(editor::path::join(dir, "ed1.json"),
+                    "{\n  \"name\": \"hello\",\n"
+                    "  \"build\": { \"target\": \"hello\", \"groups\": [\"Sources\"] },\n"
+                    "  \"groups\": { \"Sources\": [\"src/other.shl\", \"src/hello.shl\"] }\n}\n");
+        editor::Project two;
+        check(two.load(dir, error), "a project of two loads");
+        sources.clear();
+        check(two.targetSources(sources, lang, why), "and still says what it builds");
+        check(sources.size() == 1, "which is one of them");
+        check(sources[0].find("hello") != std::string::npos,
+              "the one the target is named after, not the one listed first");
+
+        // Two programs and a target named after neither: refused, not guessed.
+        writeSource(editor::path::join(dir, "ed1.json"),
+                    "{\n  \"name\": \"hello\",\n"
+                    "  \"build\": { \"target\": \"neither\", \"groups\": [\"Sources\"] },\n"
+                    "  \"groups\": { \"Sources\": [\"src/other.shl\", \"src/hello.shl\"] }\n}\n");
+        editor::Project neither;
+        check(neither.load(dir, error), "a project naming neither loads");
+        sources.clear();
+        std::string detail;
+        check(!neither.targetSources(sources, lang, why, &detail),
+              "and is refused rather than guessed at");
+        check(why.find("programs and builds one") != std::string::npos,
+              "with a reason that says how many there were");
+        check(detail.find("no include") != std::string::npos,
+              "and a detail that says why several cannot be one");
+
+        // Shalimar beside C is the refusal C beside C++ already had.
+        writeSource(editor::path::join(dir, "src/bit.c"), "int bit(void) { return 1; }\n");
+        writeSource(editor::path::join(dir, "ed1.json"),
+                    "{\n  \"name\": \"hello\",\n"
+                    "  \"build\": { \"target\": \"hello\", \"groups\": [\"Sources\"] },\n"
+                    "  \"groups\": { \"Sources\": [\"src/hello.shl\", \"src/bit.c\"] }\n}\n");
+        editor::Project mixed;
+        check(mixed.load(dir, error), "a project of two languages loads");
+        sources.clear();
+        check(!mixed.targetSources(sources, lang, why),
+              "and is refused: no one compiler can make one program of them");
+        check(why.find("both C and Shalimar") != std::string::npos,
+              "naming which two, so the reader knows which file to move");
+
+        editor::path::removeTree(dir);
+    }
+
     // shc names neither the file nor the column, so the caller supplies one.
     {
         editor::Diagnostic d = editor::parseDiagnostic(

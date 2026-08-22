@@ -448,6 +448,32 @@ indented by the C rules walks left one statement at a time. `IndentDialect`
 in `src/indent.h` is what keeps them apart, and `tests/test.cpp` holds the
 program that shows the difference.
 
+### A Shalimar project is one program, and says which
+
+This is the part that is not like C, and the difference belongs to the
+language rather than to the editor. Shalimar has **no include, no import and
+no way to name another file**, and `shc` takes one program at a time. So
+several `.shl` in a group are several programs, not the parts of one - which
+is the ordinary shape for it: the app ships twelve examples and each is its
+own program.
+
+The project therefore names which one it builds:
+
+```json
+"build": { "target": "hello", "groups": ["Sources"] },
+"groups": { "Sources": ["src/other.shl", "src/hello.shl"] }
+```
+
+With one source in the group there is nothing to decide. With more, the one
+whose name matches the target's is the program; **with none matching, the
+build is refused and says how many it was choosing between.** Taking whichever
+came first would build a different program from the one the target names and
+say nothing about it.
+
+Shalimar beside C or C++ in one target is refused the same way C beside C++
+already was, and the message names which two so the reader knows which file to
+move.
+
 ### No debugger for Shalimar
 
 `shc` writes no debug information for any target, and that is settled rather

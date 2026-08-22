@@ -362,7 +362,7 @@ bool Project::targetSources(std::vector<std::string>& sources, Language& lang,
         return false;
     }
 
-    bool sawC = false, sawCpp = false;
+    bool sawC = false, sawCpp = false, sawShalimar = false;
     for (size_t i = 0; i < target_.groups.size(); ++i) {
         size_t at = groups_.size();
         for (size_t g = 0; g < groups_.size(); ++g)
@@ -387,6 +387,7 @@ bool Project::targetSources(std::vector<std::string>& sources, Language& lang,
                                                             : relative.substr(dot);
             if (suffix == ".c") sawC = true;
             else if (suffix == ".cpp" || suffix == ".cc" || suffix == ".cxx") sawCpp = true;
+            else if (suffix == ".shl" || suffix == ".shm") sawShalimar = true;
             else continue;
 
             sources.push_back(absolute(relative));
@@ -421,26 +422,96 @@ bool Project::targetSources(std::vector<std::string>& sources, Language& lang,
         return false;
     }
 
-    if (sawC && sawCpp) {
-        why = "this project holds both C and C++, which cannot make one program";
+    // Naming them is the point of the message. "more than one language" tells
+    // whoever is reading nothing they did not already suspect; "both C and
+    // C++" tells them which file to move.
+    std::vector<std::string> found;
+    if (sawC) found.push_back("C");
+    if (sawCpp) found.push_back("C++");
+    if (sawShalimar) found.push_back("Shalimar");
+
+    if (found.size() > 1) {
+        std::string named = found[0];
+        for (size_t i = 1; i < found.size(); ++i)
+            named += (i + 1 == found.size() ? " and " : ", ") + found[i];
+        why = "this project holds " + (found.size() == 2 ? std::string("both ")
+                                                         : std::string()) +
+              named + ", which cannot make one program";
         if (detail)
-            *detail = "cc1 compiles the C and cl compiles the C++, and there is no one "
-                      "compiler here to give a program halfway between them to. Put the "
-                      "two in projects of their own, or build them a file at a time with "
-                      "Ctrl-B, which never asks what the project says.";
+            *detail = "Each of them has its own compiler - cc1 for C, cl for C++, shc "
+                      "for Shalimar - and there is no one compiler here to give a "
+                      "program made of two of them to. Put each in a project of its "
+                      "own, or build them a file at a time with Ctrl-B, which never "
+                      "asks what the project says.";
         sources.clear();
         return false;
     }
     if (sources.empty()) {
-        why = "the groups this project builds from hold no C or C++";
+        why = "the groups this project builds from hold no source";
         if (detail)
             *detail = "A group can hold anything - headers, notes, a Makefile - and none "
-                      "of that is compiled. Name a group with .c or .cpp files in it.";
+                      "of that is compiled. Name a group with .c, .cpp or .shl files in "
+                      "it.";
         return false;
     }
 
+    if (sawShalimar) {
+        lang = LangShalimar;
+        return oneShalimarProgram(sources, why, detail);
+    }
     lang = sawCpp ? LangCpp : LangC;
     return true;
+}
+
+// A Shalimar target is one source, and this is which.
+//
+// The language has no include, no import and no way to name another file, and
+// shc takes one program at a time - so several .shl in a group are several
+// programs, not the parts of one. A folder of them is the ordinary shape: the
+// app ships twelve examples and each is its own program.
+//
+// With one source there is nothing to decide. With more, the one whose name
+// matches the target's is the program, and if none does this refuses and says
+// which it was choosing between. Taking the first silently would build a
+// different program from the one the name promised, and say nothing.
+bool Project::oneShalimarProgram(std::vector<std::string>& sources, std::string& why,
+                                 std::string* detail) const {
+    if (sources.size() == 1) return true;
+
+    const std::string wanted = target_.name.empty() ? name_ : target_.name;
+    std::vector<std::string> matching;
+    for (size_t i = 0; i < sources.size(); ++i) {
+        std::string leaf = path::filename(sources[i]);
+        size_t dot = leaf.find_last_of('.');
+        if (dot != std::string::npos) leaf.resize(dot);
+        if (leaf == wanted) matching.push_back(sources[i]);
+    }
+
+    if (matching.size() == 1) {
+        sources = matching;
+        return true;
+    }
+
+    why = "this project has " + std::to_string(sources.size()) +
+          " Shalimar programs and builds one";
+    if (detail) {
+        *detail = "Shalimar has no include and no separate compilation, so each .shl in "
+                  "a group is a program of its own rather than a part of one. Name the "
+                  "target after the one to build - \"build\": { \"target\": \"" +
+                  (sources.empty() ? std::string("name")
+                                   : stemOf(path::filename(sources[0]))) +
+                  "\" } - or build any of them with Ctrl-B, which never asks what the "
+                  "project says. This target is called \"" + wanted +
+                  "\" and no source here is.";
+    }
+    sources.clear();
+    return false;
+}
+
+// A file name without its suffix.
+std::string Project::stemOf(const std::string& leaf) {
+    size_t dot = leaf.find_last_of('.');
+    return dot == std::string::npos ? leaf : leaf.substr(0, dot);
 }
 
 std::string Project::targetProgram() const {

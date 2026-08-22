@@ -38,7 +38,7 @@ enum { ED1_LANG_PLAIN = 0, ED1_LANG_C, ED1_LANG_CPP, ED1_LANG_SHALIMAR, ED1_LANG
 // as which language the file is - assembly and plain text are laid out by
 // neither - so it is a value of its own rather than a Language.
 enum { ED1_DIALECT_C = 0, ED1_DIALECT_SHALIMAR };
-enum { ED1_TOOL_AUTO = 0, ED1_TOOL_CC1, ED1_TOOL_MSVC, ED1_TOOL_SHC };
+enum { ED1_TOOL_AUTO = 0, ED1_TOOL_CC1, ED1_TOOL_MSVC, ED1_TOOL_SHC, ED1_TOOL_CXX };
 enum { ED1_CONFIG_DEBUG = 0, ED1_CONFIG_RELEASE };
 
 /* Catches a crash and writes the faulting address and a symbolised stack to

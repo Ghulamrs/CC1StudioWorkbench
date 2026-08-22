@@ -382,10 +382,41 @@ void routing() {
 
     editor::Toolchain automatic;   // ToolAuto by default
 
+    // C is the only language with a decision in it. C++ goes to whichever C++
+    // compiler the machine has, and Shalimar to the only thing that reads it.
     check(editor::resolve(automatic, editor::LangC) == editor::ToolCc1,
           "C goes to cc1, which is what this editor is for");
+#ifdef _WIN32
     check(editor::resolve(automatic, editor::LangCpp) == editor::ToolMsvc,
-          "C++ goes to cl, because cc1 compiles C");
+          "C++ goes to cl, because that is this machine's C++ compiler");
+#else
+    // This used to say ToolMsvc on every machine, which meant a C++ file on a
+    // Mac was routed to a compiler that is not installed there and never could
+    // be - so a project of C and C++ could only ever have been built on
+    // Windows, however well the rest of it worked.
+    check(editor::resolve(automatic, editor::LangCpp) == editor::ToolCxx,
+          "C++ goes to the host's c++, there being no cl here to go to");
+    check(editor::canCompile(editor::ToolCxx, editor::LangCpp), "which can take it");
+    check(editor::canCompile(editor::ToolCxx, editor::LangC),
+          "and can take C too, which is what makes naming it on a C group worth doing");
+    check(editor::runsHere(editor::ToolCxx, editor::hostArch()),
+          "and what it builds runs here, since it takes no target from this editor");
+
+    // By name, not as "c++". Each of these machines has one C++ compiler and
+    // which one is not a mystery on any of them, so the console says which
+    // rather than saying the generic alias and leaving the reader to guess.
+    editor::Toolchain thisMachine;
+#ifdef __APPLE__
+    checkEqual(thisMachine.cxx, "clang++",
+               "a Mac's C++ compiler is clang++, and is called that");
+#else
+    checkEqual(thisMachine.cxx, "g++", "the Linux box's is g++, and is called that");
+#endif
+    checkEqual(editor::toolchainShown(thisMachine, editor::ToolCxx), thisMachine.cxx,
+               "and that is the name a build writes in the console");
+    checkEqual(editor::toolchainShown(thisMachine, editor::ToolCc1), "cc1",
+               "while cc1 is cc1 whatever path it was found at");
+#endif
     check(editor::resolve(automatic, editor::LangPlain) == editor::ToolCc1,
           "anything else falls to cc1, and is refused there rather than here");
 
@@ -2285,8 +2316,8 @@ void theWindowsProjectBuild() {
               editor::ToolCc1,
           "which go to cc1");
     check(ed1_project_part_toolchain(project, 1, "cc1", "cl", "shc", editor::ToolAuto) ==
-              editor::ToolMsvc,
-          "and to cl, without the window being told which");
+              (editor::resolve(editor::Toolchain(), editor::LangCpp)),
+          "and to this machine's C++ compiler, without the window being told which");
     checkEqual(ed1_project_part_group(project, 0), "Sources",
                "both out of the one group, which is where they were");
 

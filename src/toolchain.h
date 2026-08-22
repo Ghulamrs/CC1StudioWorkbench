@@ -17,8 +17,14 @@ enum ToolchainKind {
     ToolCc1,        // C, and the three architectures cc1 generates for
     ToolMsvc,       // C and C++, on the host cl was installed for
     ToolShc,        // Shalimar, and the same three architectures
+    ToolCxx,        // C and C++, through whatever C++ compiler this machine has
     ToolCount
 };
+
+// ToolCxx is added on the end rather than in language order, because
+// winforms/bridge.h pins these numbers with static_asserts and the window
+// reads them. The order they are declared in is not the order they are shown
+// in, and only one of those is anybody's business but this file's.
 
 // Debug or release. What each compiler can actually do about it differs, and
 // the editor says which rather than pretending they are the same:
@@ -26,10 +32,12 @@ enum ToolchainKind {
 //   cl   /Od /D_DEBUG    or  /O2 /DNDEBUG - a real difference in the code
 //   cc1  -g -D_DEBUG=1   or  -DNDEBUG=1   - the define, and on the two targets
 //        that can carry it, real debug information. cc1 still has no -O.
-//   shc  nothing either way. Shalimar has no preprocessor, so there is no
-//        define to set, and no debug information by decision rather than by
-//        omission - the language is for numeric programs written on a phone,
-//        and a symbolic debugger is not something they reach for.
+//   shc  --debug or nothing. Shalimar has no preprocessor and no debug
+//        information by decision, and what --debug changes is which runtime
+//        archive is linked: only one of them has code for stopping the
+//        program. The compiler's output is identical either way.
+//   c++  -g -D_DEBUG=1 or -O2 -DNDEBUG=1 - the host's own compiler, so it has
+//        both a real optimiser and real DWARF.
 //
 // The define is not nothing: it is what assert and every #ifdef NDEBUG in the
 // source are looking for.
@@ -73,24 +81,57 @@ bool emitsDebugInfo(ToolchainKind kind, const std::string& arch);
 // still saying there was none.
 std::vector<std::string> debugNote(ToolchainKind kind, const std::string& arch);
 
+// This machine's C++ compiler, by the name it actually has: clang++ on a Mac,
+// g++ on the Linux box, cl on Windows. Not "c++" - that is a name for not
+// having found out which, and there is nothing to find out: each of these
+// machines has one and it is not a mystery on any of them. It matters because
+// the console says which compiler ran, and "c++" there tells the reader less
+// than the machine already knows.
+const char* hostCxxName();
+
+// And which *toolchain* that is: ToolMsvc on Windows, ToolCxx elsewhere. The
+// two are not interchangeable - ToolCxx is a gcc-style driver and cl takes
+// none of its flags - so "the machine's C++ compiler" has to be resolved to a
+// kind here rather than by pointing ToolCxx at cl and hoping.
+//
+// Everything that means "the C++ one" asks this: the project file's "c++",
+// --toolchain c++, the Tools menu, and resolve() itself for a .cpp file.
+ToolchainKind hostCppToolchain();
+
 struct Toolchain {
     ToolchainKind kind;
     std::string cc1;   // the program to run for the cc1 toolchain
     std::string cl;    // the program to run for the MSVC one
     std::string shc;   // and for Shalimar
+    std::string cxx;   // and this machine's C++ compiler, by name
 
-    Toolchain() : kind(ToolAuto), cc1("cc1"), cl("cl"), shc("shc") {}
+    Toolchain()
+        : kind(ToolAuto), cc1("cc1"), cl("cl"), shc("shc"), cxx(hostCxxName()) {}
 };
 
-// Which one actually runs, once the file's language is known. This is the whole
-// of the routing rule: each language goes to the compiler that can take it -
-// C to cc1, which this editor was written for, C++ to cl, and Shalimar to shc.
-// No two of them overlap, so 'by language' is not a preference here; it is the
-// answer, and naming a compiler by hand is how to override it.
+// Which one actually runs, once the file's language is known.
+//
+// **C is the only language with a decision in it.** C++ goes to the machine's
+// C++ compiler - cl on Windows, c++ elsewhere - and there is nothing to choose
+// there, because that is what a C++ compiler is for and every machine has
+// exactly one worth calling by default. Shalimar goes to shc, which is the only
+// thing that reads it. C is the one that two compilers can both take: cc1,
+// which this editor was written for and which is the default, and the host's,
+// which is a keystroke or one line of ed1.json away.
+//
+// So a group naming its compiler is, in practice, always a group of C saying
+// it wants the other one - and that is why the override exists at all.
 ToolchainKind resolve(const Toolchain& tool, Language lang);
 
 const char* toolchainName(ToolchainKind kind);
 const char* programOf(const Toolchain& tool, ToolchainKind kind);
+
+// What to call it where somebody is reading. The same as toolchainName for
+// three of them - "cc1" says everything there is to say about cc1, whatever
+// path it was found at - and the program's own name for the host's C++
+// compiler, because which one that is *is* the information. "$ Engine (g++)"
+// on the Linux box and "(clang++)" on the Mac, rather than "(c++)" on both.
+std::string toolchainShown(const Toolchain& tool, ToolchainKind kind);
 
 // Whether -arch means anything to it. cc1 generates for three architectures;
 // cl generates for the one it was installed as, and offering a choice that does

@@ -56,6 +56,7 @@ static_assert(ED1_LANG_SHALIMAR == static_cast<int>(editor::LangShalimar), "lang
 static_assert(ED1_LANG_ASM == static_cast<int>(editor::LangAsm), "language numbering has drifted");
 static_assert(ED1_TOOL_MSVC == static_cast<int>(editor::ToolMsvc), "toolchain numbering has drifted");
 static_assert(ED1_TOOL_SHC == static_cast<int>(editor::ToolShc), "toolchain numbering has drifted");
+static_assert(ED1_TOOL_CXX == static_cast<int>(editor::ToolCxx), "toolchain numbering has drifted");
 static_assert(ED1_CONFIG_RELEASE == static_cast<int>(editor::ConfigRelease), "config numbering has drifted");
 
 // A copy the caller owns. Allocated and freed on this side of the seam, which

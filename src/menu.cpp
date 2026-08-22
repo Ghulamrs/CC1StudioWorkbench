@@ -107,14 +107,18 @@ Menu::Menu() : active_(false), dropped_(false), column_(0), item_(0) {
 
     // Which compiler is driven. cc1 is what this was written for; cl is here
     // because the machine it runs on already has it; shc is here because
-    // Shalimar is one of the three languages now. No two of them take the
-    // same language, so 'By language' is the answer rather than a preference,
-    // and the rest of this column is for overriding it.
+    // 'By language' is the answer rather than a preference for two of the
+    // three languages: Shalimar goes to shc because nothing else reads it, and
+    // C++ goes to the machine's C++ compiler because that is what one is for.
+    // C is the only one with a real choice in it - cc1, which this editor was
+    // written for, or the host's - and the rest of this column is mostly for
+    // saying so.
     MenuColumn tools;
     tools.title = "Tools";
     tools.items.push_back({"By language", "Ctrl-K", ActionToolAuto});
     tools.items.push_back({"cc1", "", ActionToolCc1});
     tools.items.push_back({"MSVC (cl)", "", ActionToolMsvc});
+    tools.items.push_back({"C++ (host)", "", ActionToolCxx});
     tools.items.push_back({"shc", "", ActionToolShc});
     columns_.push_back(tools);
 

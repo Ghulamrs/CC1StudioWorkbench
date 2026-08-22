@@ -467,7 +467,7 @@ Built buildParts(const Toolchain& tool, const std::vector<Part>& parts,
         // reports one is a build nobody can read. The group is named rather
         // than the compiler alone: two groups may go to the same compiler.
         if (sink)
-            sink(context, "$ " + parts[i].group + " (" + toolchainName(kind) + ")");
+            sink(context, "$ " + parts[i].group + " (" + toolchainShown(tool, kind) + ")");
 
         std::vector<std::string> theirs;
         Recipe recipe = objectRecipe(tool, kind, parts[i].sources, parts[i].lang,

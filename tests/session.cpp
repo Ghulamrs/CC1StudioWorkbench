@@ -856,20 +856,31 @@ void buildingTheProject(const std::string& ed1, const std::string& cc1) {
     // compiler's line has scrolled off by the time it is over. What is being
     // checked is that the editor said it, not that it is still visible.
     check(wasShown(mixed, "Sources (cc1)"), "a group of two languages sends the C to cc1");
-    check(wasShown(mixed, "Sources (cl)"), "and the C++ to cl, without being told to");
+    // cl where there is one and c++ where there is not, and the point is that
+    // nothing in the project file said either. Written out rather than asked
+    // of the editor's own resolve(): this harness links src/path.cpp and
+    // nothing else on purpose - it drives the editor as a program, and a test
+    // that shares the editor's opinion cannot catch the editor being wrong.
+#if defined(_WIN32)
+    const char* cpp = "cl";
+#elif defined(__APPLE__)
+    const char* cpp = "clang++";
+#else
+    const char* cpp = "g++";
+#endif
+    check(wasShown(mixed, std::string("Sources (") + cpp + ")"),
+          "and the C++ to this machine's C++ compiler, without being told to");
     check(!wasShown(mixed, "cannot make one program"),
           "and is not refused for holding both any more");
-#ifdef _WIN32
     check(wasShown(mixed, "linking with"), "and links the two compilers' objects itself");
     check(onScreen(mixed, "built sums"), "the two compilers' objects link into one program");
-#else
-    // cl is Windows-only, so this is as far as a Mac or the Linux box can take
-    // it: the editor got to cl and cl was not there. Checked rather than
-    // skipped, because "it reached the second compiler" is most of what this
-    // case is about and is true on all three machines.
-    check(wasShown(mixed, "could not be run") || wasShown(mixed, "cl"),
-          "and on a machine with no cl it is cl that is missing, not the feature");
-#endif
+
+    // And it runs, which is the whole of what a mixed target is for: a C main
+    // calling a function cl or c++ compiled, in one program.
+    Screen ranMixed = drive(ed1, arguments,
+                            kF10 + times(kRight, 3) + times(kDown, 3) + kEnter + ctrl('q'),
+                            dir);
+    check(wasShown(ranMixed, "answer 42"), "and runs, C calling into what the C++ compiler made");
 
     // Debugging the project is the same choice again: the program under the
     // debugger is the one the project builds, not the file in front of you.
@@ -1738,6 +1749,18 @@ void stoppingShalimar(const std::string& ed1, const std::string& shc) {
 void aCompilerPerGroup(const std::string& ed1, const std::string& cc1) {
     std::printf("a compiler per group, and one link\n");
 
+    // The machine's real C++ compiler, by name. Written out rather than asked
+    // of the editor: this harness links src/path.cpp and nothing else on
+    // purpose - a test that shares the editor's opinion cannot catch the
+    // editor being wrong about it.
+#if defined(_WIN32)
+    const char* cpp = "cl";
+#elif defined(__APPLE__)
+    const char* cpp = "clang++";
+#else
+    const char* cpp = "g++";
+#endif
+
     if (cc1.empty()) {
         std::printf("  (no cc1 named, so those cases are not tried)\n");
         return;
@@ -1781,6 +1804,60 @@ void aCompilerPerGroup(const std::string& ed1, const std::string& cc1) {
     Screen ran = drive(ed1, arguments,
                        kF10 + times(kRight, 3) + times(kDown, 3) + kEnter + ctrl('q'), dir);
     check(wasShown(ran, "helper 42"), "running it runs what the two groups made together");
+
+    // Three groups and three routings, which is the shape the whole thing was
+    // for. C++ names nothing anywhere - every machine has one C++ compiler and
+    // there is nothing to choose - and the only group that names a compiler is
+    // a group of C that wants the other one. That is the asymmetry: C is the
+    // one language two compilers can both take.
+    {
+        file::path three = freshProject("three-routings");
+        file::create_directories(three / "engine");
+        writeFile(three / "src" / "main.c",
+                  "#include <stdio.h>\n\nint spin(int n);\nint legacy(int n);\n\n"
+                  "int main(void)\n{\n    printf(\"total %d\\n\", spin(3) + legacy(4));\n"
+                  "    return 0;\n}\n");
+        writeFile(three / "src" / "legacy.c", "int legacy(int n) { return n * 10; }\n");
+        // std::vector on purpose: if the C++ runtime did not reach the link,
+        // this is what says so, and it says it at link time rather than by
+        // going wrong later.
+        // <cstddef> and std::size_t, spelled out. Apple's libc++ drags size_t
+        // into scope through <vector> and libstdc++ does not, so the bare name
+        // compiled on the Mac and stopped the build on the Linux box - which
+        // is the third machine earning its keep on the day it was added.
+        writeFile(three / "engine" / "engine.cpp",
+                  "#include <cstddef>\n#include <vector>\n\n"
+                  "extern \"C\" int spin(int n)\n{\n"
+                  "    std::vector<int> v;\n"
+                  "    for (int i = 0; i < n; ++i) v.push_back(i * i);\n"
+                  "    int total = 0;\n"
+                  "    for (std::size_t i = 0; i < v.size(); ++i) total += v[i];\n"
+                  "    return total;\n}\n");
+        writeFile(three / "ed1.json",
+                  "{\n  \"name\": \"three\",\n  \"indent\": 4,\n"
+                  "  \"groups\": {\n"
+                  "    \"Sources\": [\"src/main.c\"],\n"
+                  "    \"Legacy\": { \"files\": [\"src/legacy.c\"], \"toolchain\": \"c++\" },\n"
+                  "    \"Engine\": [\"engine/engine.cpp\"]\n  },\n"
+                  "  \"build\": { \"target\": \"three\", "
+                  "\"groups\": [\"Sources\", \"Legacy\", \"Engine\"] }\n}\n");
+
+        std::string theirs = "--project \"" + three.string() + "\" --cc1 \"" + cc1 + "\"";
+        Screen made = drive(ed1, theirs, kF4 + ctrl('q'), three);
+        check(wasShown(made, "Sources (cc1)"), "a C group that says nothing goes to cc1");
+        check(wasShown(made, std::string("Legacy (") + cpp + ")"),
+              "a C group that names the host's C++ compiler goes there instead");
+        check(wasShown(made, std::string("Engine (") + cpp + ")"),
+              "and a C++ group needs to name nothing, there being one answer");
+        check(onScreen(made, "built three"), "all three link into one program");
+
+        Screen went = drive(ed1, theirs,
+                            kF10 + times(kRight, 3) + times(kDown, 3) + kEnter + ctrl('q'),
+                            three);
+        check(wasShown(went, "total 45"),
+              "which runs - and the std::vector in it says the C++ runtime reached the link");
+        file::remove_all(three);
+    }
 
     // An error in the second group lands in the second group's file. It used
     // to be looked for among the target's sources starting at the first, which

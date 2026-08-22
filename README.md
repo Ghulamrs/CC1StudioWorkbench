@@ -497,19 +497,30 @@ it the pane on the left shows the directory, as it always did.
   "tabs": false,
   "groups": {
     "Rules": ["src/indent.cpp", "src/syntax.cpp"],
+    "Legacy": { "files": ["src/old.c"], "toolchain": "c++" },
     "Examples": ["examples/hello.c", "examples/smart.cpp"]
   }
 }
 ```
 
 Seven keys, flat except the groups, and every one has a default - so `{}` is a
-valid project file. Comments with `//` are allowed, because a file people edit
+valid project file.
+
+**A group is a list of files, or an object that also names a compiler.** The
+plain list is not deprecated and is what a group with nothing to say is written
+back as, so adding a file to a project written before any of this leaves the
+file looking the way its author left it. The words are `cc1`, `cl` (or `msvc`),
+`shc`, `c++`, and `auto`. Comments with `//` are allowed, because a file people edit
 by hand is a file people leave notes in.
 
 Two things are deliberately *not* in it. Where cc1 and cl live is a fact about
 a machine rather than about a project, and a path written into a shared file is
 a path that is wrong on the other machine - those come from `--cc1`, `--cl`,
-`$CC1`, the directory the editor itself is installed in, or PATH. And the indent settings are a number and a flag rather than a
+`--cxx`, `$CC1`, `$CXX`, the directory the editor itself is installed in, or
+PATH. That is also why `"toolchain": "c++"` means *this machine's C++
+compiler* rather than g++ specifically: which one that is - cl, clang++, g++ -
+is a fact about a machine, and the project file does not get to have an opinion
+about it. And the indent settings are a number and a flag rather than a
 nested object, because an object with two members in it is a nest for no gain.
 
 A group is the project's own arrangement, not a directory: moving a file
@@ -553,15 +564,62 @@ out of its program. Say nothing and nothing is built: that is not an error and
 it is what every project written before this says. The program is left beside
 `ed1.json`, so it is still there when the editor is not.
 
-cc1 does the linking itself - `cc1 a.c b.c -o prog`, since several inputs link
-together - and cl does the same when it is not given `/c`.
+Where one compiler makes the whole of it, it does the linking too - `cc1 a.c
+b.c -o prog`, since several inputs link together, and cl the same when it is
+not given `/c`.
 
-**A project holding both C and C++ is refused before a compiler is run.** cc1
-compiles the C and cl compiles the C++, and there is no third thing here to
-give a program halfway between them to. The message line says which two
-languages and the console says what to do about it: two projects, or `Ctrl-B` a
-file at a time. Guessing per file and linking the results would mean two
-compilers' runtimes in one program, which is a worse day than this message.
+### A compiler per group
+
+**A target can hold C and C++ together.** Each group compiles to objects with
+its own compiler and the editor links them, because no compiler here takes an
+object as an input - hand cc1 a `.o` and it reads it as C and complains about a
+stray byte on line 1.
+
+```
+$ cc1 and clang++ 3 sources -o three
+    src/main.c
+    src/legacy.c
+    engine/engine.cpp
+$ Sources (cc1)
+$ Legacy (clang++)
+$ Engine (clang++)
+$ linking with clang++
+[built /home/you/three/three]
+```
+
+**C is the only language with a decision in it**, and that is the whole shape
+of this. C++ goes to the machine's C++ compiler - cl on Windows, clang++ on a
+Mac, g++ on the Linux box - and there is nothing to choose, because that is
+what a C++ compiler is for and every machine has exactly one worth calling.
+Shalimar goes to shc, which is the only thing that reads it. C is the one that
+two compilers can both take: cc1, which this editor was written for and which
+is the default, and the host's.
+
+So a group naming its compiler is, in practice, always a group of C saying it
+wants the other one - which is why `Legacy` above is the only group in that
+project with a `"toolchain"` in it, and why the C++ group needs none.
+
+A group under `auto` holding both languages is **split**, one part per
+language, rather than refused. "A C and C++ project together" is the point, and
+making somebody split the group by hand first would be a worse answer than the
+one the compilers already give. A group that *does* name a compiler is one part
+and that compiler takes all of it - which is the only way to make cl compile C
+as C++ on purpose.
+
+**Shalimar is refused, and it is the one refusal that did not go away.** In a
+group with C, because no compiler takes both. In a group of its own beside C,
+because of what a Shalimar object *is*: every unit exports the same three
+startup symbols whatever file it came from, the runtime archive owns `main`,
+and the language has no declarations for a call across a link to be checked
+against. `../Compiler-S/docs/LINKING.md` has it with the linker output and with
+what would have to change. A project that wants Shalimar beside C is a project
+that builds two programs.
+
+**Debug information does not mix.** cl writes CodeView, cc1 writes DWARF on two
+targets and nothing on the third, and shc writes none anywhere by decision. So
+the debugger is the first one any part has, and the groups it will not be able
+to stop in are named in the console before the build starts rather than
+discovered by pressing F8.
 
 **An error in a file nothing has opened opens it.** cc1 stops at the first one,
 and in a build of six files it is usually not the file you were looking at, so
@@ -675,11 +733,48 @@ On a Mac or on Linux:
 
 ```
 make
-make check
+make check CC1=$HOME/Documents/Claude/Compiler-C/cc1 SHC=$HOME/Documents/Claude/Compiler-S/shc
 ```
 
 Object files go to `src/obj`, so a listing of `src` is the code and nothing
 else.
+
+**Spell those paths with `$HOME`, never `~`.** zsh leaves a tilde alone in
+`make check CC1=~/...` - it is an argument, not an assignment - and make hands
+the literal `~/...` to the test process, where nothing expands it. The tell is
+a build failing with a compiler that works perfectly when you run it by hand.
+
+### The other two machines
+
+Neither has git, so the tree is relayed and built there.
+
+```
+./tools/to-linux.sh              build with g++ and run both suites
+./tools/to-windows.sh            build with cl and run both suites
+./tools/to-windows.sh gui        msbuild the window, which build.bat never does
+```
+
+All three are worth having and each says something the others cannot.
+
+**Linux** is the only one that can say whether the sources are ISO C++14:
+Apple's libc++ hands you C++17 names under `-std=c++14`, so a C++17-ism
+compiles clean on a Mac and passes the host suite. It is also where a C++ group
+goes to **g++**, a routing nowhere else can check - and it caught a `size_t`
+that libc++ drags in through `<vector>` and libstdc++ does not, on the day the
+script was written.
+
+**Windows** is the only machine with cl, and therefore the only one where a
+target of C and C++ meets *that* linker. MSVC at `/W4 /WX` has caught two
+shadowed variables clang accepted. What it cannot do is Shalimar: shc does not
+run there - Compiler-S cross-compiles and ships only assembly to that box - so
+every Shalimar case skips itself with a word.
+
+Both relays copy the **build scripts and the tests** as well as the sources,
+and both exclude what was built here. A stale `build.bat` and a stale
+`test.cpp` have each reported an old, smaller suite that looked green; and the
+first run of the Linux relay carried the Mac's own `.o` files over, where make
+found them newer than the sources and the link failed with "file format not
+recognized" - which reads as a broken box and is nothing of the kind.
 
 ### As a Windows Forms application
 

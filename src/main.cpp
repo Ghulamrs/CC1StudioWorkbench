@@ -30,6 +30,7 @@ int main(int argc, char** argv) {
     std::string config;
     std::string cl;
     std::string shc;
+    std::string cxx;
     long width = 0;
     int plain = 0;
     int tabs = -1;
@@ -44,6 +45,8 @@ int main(int argc, char** argv) {
             cl = argv[++i];
         } else if (std::strcmp(argv[i], "--shc") == 0 && i + 1 < argc) {
             shc = argv[++i];
+        } else if (std::strcmp(argv[i], "--cxx") == 0 && i + 1 < argc) {
+            cxx = argv[++i];
         } else if (std::strcmp(argv[i], "--config") == 0 && i + 1 < argc) {
             config = argv[++i];
         } else if (std::strcmp(argv[i], "--project") == 0 && i + 1 < argc) {
@@ -60,27 +63,34 @@ int main(int argc, char** argv) {
         } else if (std::strcmp(argv[i], "-h") == 0 ||
                    std::strcmp(argv[i], "--help") == 0) {
             std::printf(
-                "usage: %s [file] [--project dir] [--toolchain auto|cc1|msvc|shc]\n"
+                "usage: %s [file] [--project dir] [--toolchain auto|cc1|msvc|shc|c++]\n"
                 "           [--config debug|release] [--cc1 path] [--cl path]\n"
-                "           [--shc path] [--width n] [--tabs] [--case-indent] [--plain]\n"
+                "           [--shc path] [--cxx path]\n"
+                "           [--width n] [--tabs] [--case-indent] [--plain]\n"
                 "  RStudio - the console half, which is ed1 on Linux\n"
                 "  and macOS and winconsole on Windows. ed1gui is the same editor\n"
                 "  in a window, over the same core.\n"
                 "\n"
                 "  --toolchain    auto (the default) lets the file choose: C goes\n"
-                "                 to cc1, C++ to cl, Shalimar to shc. Naming one\n"
-                "                 uses it for everything, and it says so where it\n"
-                "                 cannot take the file\n"
+                "                 to cc1, C++ to this machine's C++ compiler - cl\n"
+                "                 on Windows, c++ elsewhere - and Shalimar to shc.\n"
+                "                 Only C has a real choice in it; the other two go\n"
+                "                 to the only thing that reads them. Naming one uses\n"
+                "                 it for everything, and it says so where it cannot\n"
+                "                 take the file\n"
                 "  --config       debug (the default) or release. For cl that is\n"
                 "                 /Od /Zi /D_DEBUG or /O2 /DNDEBUG; for cc1, -g and\n"
                 "                 the define on the targets that carry a line table,\n"
                 "                 and the define alone on the one that does not\n"
-                "  --cc1, --cl,   the programs to run; $CC1 names the first, and\n"
-                "  --shc          $SHC the third, and\n"
+                "  --cc1, --cl,   the programs to run; $CC1 names the first, $SHC\n"
+                "  --shc, --cxx   the third and $CXX the fourth, and\n"
                 "                 without either a cc1 beside this editor is used,\n"
                 "                 and failing that PATH is asked. cl is\n"
                 "                 also found through Visual Studio 2022 itself, so\n"
-                "                 no Developer Command Prompt is needed\n"
+                "                 no Developer Command Prompt is needed. --cxx is\n"
+                "                 c++ by default, which is clang++ on a Mac and g++\n"
+                "                 on Linux; a project file never names it, because\n"
+                "                 which one it is, is a fact about a machine\n"
                 "  --project      what the pane on the left shows; the file's own\n"
                 "                 directory by default\n"
                 "  --width n      columns per indent step (4)\n"
@@ -140,6 +150,8 @@ int main(int argc, char** argv) {
     if (toolchain == "msvc" || toolchain == "cl") ed.setToolchain(editor::ToolMsvc);
     else if (toolchain == "cc1") ed.setToolchain(editor::ToolCc1);
     else if (toolchain == "shc") ed.setToolchain(editor::ToolShc);
+    else if (toolchain == "c++" || toolchain == "cxx" || toolchain == "g++" ||
+             toolchain == "clang++") ed.setToolchain(editor::hostCppToolchain());
     else if (toolchain == "auto") ed.setToolchain(editor::ToolAuto);
 
     if (config == "release") ed.setConfig(editor::ConfigRelease);
@@ -158,6 +170,13 @@ int main(int argc, char** argv) {
     if (!cc1.empty()) ed.setCc1(cc1);
     if (!cl.empty()) ed.setCl(cl);
     if (!shc.empty()) ed.setShc(shc);
+    // $CXX before --cxx, so the flag wins - the same order the other three
+    // keep, and the same order anybody who has used make expects.
+    if (cxx.empty()) {
+        const char* fromEnv = std::getenv("CXX");
+        if (fromEnv && *fromEnv) cxx = fromEnv;
+    }
+    if (!cxx.empty()) ed.setCxx(cxx);
 
     if (!file.empty()) ed.open(file);
     else ed.openFirstFile();   // something in it, rather than an empty sheet

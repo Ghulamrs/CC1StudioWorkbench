@@ -2117,7 +2117,7 @@ bool Editor::saveEveryDirty() {
 std::string Editor::compilersNamed(const std::vector<Part>& parts) const {
     std::vector<std::string> named;
     for (size_t i = 0; i < parts.size(); ++i) {
-        std::string word = toolchainName(toolchainOf(tool_, parts[i]));
+        std::string word = toolchainShown(tool_, toolchainOf(tool_, parts[i]));
         bool already = false;
         for (size_t j = 0; j < named.size(); ++j)
             if (named[j] == word) already = true;
@@ -2882,6 +2882,16 @@ void Editor::perform(Action action) {
             resetDebug();
             say("compiler: cl, for every file");
             break;
+        case ActionToolCxx:
+            // The machine's C++ compiler, which is a kind rather than a
+            // program: cl on Windows and a gcc-style driver elsewhere, and
+            // they take none of each other's flags.
+            tool_.kind = hostCppToolchain();
+            resetDebug();
+            // Named rather than called "the host's", because which one it is
+            // is the whole content of the answer and it is one string away.
+            say("compiler: " + toolchainShown(tool_, tool_.kind) + ", for every file");
+            break;
         case ActionKeys:         showKeys(); break;
         case ActionAbout:        showAbout(); break;
         case ActionNone:         break;
@@ -2989,14 +2999,17 @@ void Editor::processKey(int key) {
             return;
 
         case ctrl('k'):
-            // Round the three rather than between two, so automatic is never
-            // more than two presses away from wherever you are.
+            // Round them all rather than between two, in the order the Tools
+            // menu lists them, so what the key does and what the menu shows
+            // are one thing rather than two that can disagree.
             perform(tool_.kind == ToolAuto
                         ? ActionToolCc1
                         : (tool_.kind == ToolCc1
                                ? ActionToolMsvc
-                               : (tool_.kind == ToolMsvc ? ActionToolShc
-                                                         : ActionToolAuto)));
+                               : (tool_.kind == ToolMsvc && hostCppToolchain() != ToolMsvc
+                                      ? ActionToolCxx
+                                      : (tool_.kind == ToolShc ? ActionToolAuto
+                                                               : ActionToolShc))));
             return;
         case ctrl('w'): cycleFocus(); return;
 

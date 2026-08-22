@@ -19,6 +19,13 @@ ToolchainKind toolchainFrom(const std::string& word) {
     if (word == "cc1") return ToolCc1;
     if (word == "msvc" || word == "cl") return ToolMsvc;
     if (word == "shc") return ToolShc;
+    // All four spellings mean "the machine's own C++ compiler", and none of
+    // them means g++ *rather than* clang++. Which one that is, is a fact about
+    // a machine, and the rule this file already keeps is that a machine's
+    // facts do not go in a project file - the same reason the paths to cc1 and
+    // cl are not in here. $CXX or --cxx is where that answer lives.
+    if (word == "c++" || word == "cxx" || word == "g++" || word == "clang++")
+        return hostCppToolchain();
     return ToolAuto;
 }
 
@@ -26,6 +33,10 @@ const char* toolchainWord(ToolchainKind kind) {
     if (kind == ToolCc1) return "cc1";
     if (kind == ToolMsvc) return "msvc";
     if (kind == ToolShc) return "shc";
+    // Written back as "c++" - the word that means "this machine's", which is
+    // what was meant however it was spelled. "msvc" above is the other half of
+    // the same file being readable on the machine it was not written on.
+    if (kind == ToolCxx) return "c++";
     return "auto";
 }
 

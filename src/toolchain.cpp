@@ -45,6 +45,15 @@ std::string quote(const std::string& s) { return "\"" + s + "\""; }
 // filename", which reads as a command with no file in it rather than a
 // command with a quote in the wrong place. Doubling it is the whole fix:
 // `/Fo"C:\dir\\"` reaches cl as `/FoC:\dir\`.
+// What to tell a gcc-style compiler the language is, rather than leaving it to
+// the suffix - the same job /TC and /TP do for cl, and needed for the same
+// reason: a header or an oddly named file is compiled as whatever the editor
+// decided it was. Empty for cc1, which reads C and only C and has no such flag.
+std::string languageFlag(ToolchainKind kind, Language lang) {
+    if (kind != ToolCxx) return std::string();
+    return (lang == LangCpp) ? " -x c++" : " -x c";
+}
+
 std::string quoteDirectory(const std::string& s) {
     std::string path = s;
     if (!path.empty() && path[path.size() - 1] == kSep) path += kSep;
@@ -136,11 +145,33 @@ bool importMsvcEnvironment() {
 
 }  // namespace
 
+const char* hostCxxName() {
+#if defined(_WIN32)
+    return "cl";
+#elif defined(__APPLE__)
+    return "clang++";
+#else
+    return "g++";
+#endif
+}
+
+ToolchainKind hostCppToolchain() {
+#ifdef _WIN32
+    return ToolMsvc;
+#else
+    return ToolCxx;
+#endif
+}
+
 ToolchainKind resolve(const Toolchain& tool, Language lang) {
     if (tool.kind != ToolAuto) return tool.kind;
     if (lang == LangShalimar) return ToolShc;
-    // cc1 is a C compiler. Everything it cannot take goes to the one that can.
-    return (lang == LangCpp) ? ToolMsvc : ToolCc1;
+    // cc1 is a C compiler and is what this editor was written for, so C is
+    // its. C++ goes to whichever C++ compiler this machine has - cl where
+    // there is one, the host's otherwise. That used to say ToolMsvc
+    // everywhere, which meant a C++ file on a Mac was routed to a compiler
+    // that is not installed there and never could be.
+    return (lang == LangCpp) ? hostCppToolchain() : ToolCc1;
 }
 
 const char* toolchainName(ToolchainKind kind) {
@@ -148,13 +179,22 @@ const char* toolchainName(ToolchainKind kind) {
         case ToolMsvc: return "cl";
         case ToolCc1:  return "cc1";
         case ToolShc:  return "shc";
+        case ToolCxx:  return "c++";
         default:       return "auto";
     }
+}
+
+std::string toolchainShown(const Toolchain& tool, ToolchainKind kind) {
+    if (kind != ToolCxx) return toolchainName(kind);
+    // The leaf, not the path: --cxx may name /usr/bin/g++-11 and the console
+    // has eighty columns.
+    return path::filename(tool.cxx);
 }
 
 const char* programOf(const Toolchain& tool, ToolchainKind kind) {
     if (kind == ToolMsvc) return tool.cl.c_str();
     if (kind == ToolShc) return tool.shc.c_str();
+    if (kind == ToolCxx) return tool.cxx.c_str();
     return tool.cc1.c_str();
 }
 
@@ -167,7 +207,7 @@ const char* configName(Configuration config) {
     return config == ConfigRelease ? "release" : "debug";
 }
 
-bool optimises(ToolchainKind kind) { return kind == ToolMsvc; }
+bool optimises(ToolchainKind kind) { return kind == ToolMsvc || kind == ToolCxx; }
 
 // The names are written out rather than taken from kArches, which lives above
 // this file and cannot be reached from it. There are three of them and they do
@@ -175,6 +215,9 @@ bool optimises(ToolchainKind kind) { return kind == ToolMsvc; }
 bool emitsDebugInfo(ToolchainKind kind, const std::string& arch) {
     // cl has always been able to. What was missing was being asked.
     if (kind == ToolMsvc) return true;
+    // And the host's C++ compiler under -g, which is where its own debugger
+    // reads from - the same DWARF cc1 learned to write.
+    if (kind == ToolCxx) return true;
     // shc writes none for any target, and that is settled rather than
     // pending: see the Known limitations in ../Compiler-S/README.md.
     if (kind != ToolCc1) return false;
@@ -197,6 +240,12 @@ std::string configFlags(ToolchainKind kind, Configuration config,
     if (kind == ToolShc)
         return config == ConfigDebug ? std::string(" --debug") : std::string();
 
+    // The host's own compiler has both halves for real: an optimiser and
+    // DWARF. It is the only one of the four where release means the code is
+    // different *and* debug means a debugger can read it.
+    if (kind == ToolCxx)
+        return config == ConfigRelease ? " -O2 -DNDEBUG=1" : " -g -D_DEBUG=1";
+
     // /Zi is what makes cl's debug build a debug build. Without it the word
     // meant the optimiser was off and a macro was defined, and nothing that
     // could stop on a line - the same thing that used to be wrong for cc1.
@@ -211,7 +260,13 @@ std::string configFlags(ToolchainKind kind, Configuration config,
 
 std::vector<std::string> debugNote(ToolchainKind kind, const std::string& arch) {
     std::vector<std::string> said;
-    if (emitsDebugInfo(kind, arch)) {
+    if (kind == ToolCxx) {
+        said.push_back("This is the machine's own C++ compiler, so a debug build has real");
+        said.push_back("DWARF in it and lldb or gdb reads it - there was never a question");
+        said.push_back("about that one. What is below is the assembly the build produced,");
+        said.push_back("read back out of itself; the editor stops at -S and assembles");
+        said.push_back("nothing, so nothing has been linked or run.");
+    } else if (emitsDebugInfo(kind, arch)) {
         said.push_back("cc1 writes DWARF for " + arch + " - line tables, types, objects and");
         said.push_back("lexical blocks - so a debugger has something to read here. This");
         said.push_back("editor is not that debugger: it builds to assembly and stops, so");
@@ -241,7 +296,7 @@ std::vector<std::string> debugNote(ToolchainKind kind, const std::string& arch) 
 bool canCompile(ToolchainKind kind, Language lang) {
     if (lang == LangShalimar) return kind == ToolShc;
     if (kind == ToolShc) return false;   // shc compiles Shalimar and nothing else
-    if (lang == LangCpp) return kind == ToolMsvc;
+    if (lang == LangCpp) return kind == ToolMsvc || kind == ToolCxx;
     if (lang == LangC) return true;
     return false;   // assembly and plain text are not compiled from here
 }
@@ -254,7 +309,8 @@ std::string refusal(ToolchainKind kind, Language lang) {
         return std::string("shc compiles Shalimar, not ") + languageName(lang) +
                " - Ctrl-K for automatic";
     if (lang == LangCpp && kind == ToolCc1)
-        return "cc1 compiles C, not C++ - Ctrl-K for automatic, and it picks cl";
+        return std::string("cc1 compiles C, not C++ - Ctrl-K for automatic, and it picks ") +
+               toolchainName(hostCppToolchain());
     if (lang != LangC && lang != LangCpp)
         return std::string("nothing to compile: this is ") + languageName(lang) +
                ", not C or C++";
@@ -275,7 +331,9 @@ bool runsHere(ToolchainKind kind, const std::string& arch) {
     // cl generates for the machine it was installed on and takes no target
     // from this editor at all, so whatever the target menu says, what cl
     // builds is what this machine runs.
-    if (kind == ToolMsvc) return true;
+    // Same for the host's C++ compiler, and for the same reason: it generates
+    // for the machine it is on and this editor never hands it a target.
+    if (kind == ToolMsvc || kind == ToolCxx) return true;
     return arch == hostArch();
 }
 
@@ -365,8 +423,8 @@ Recipe targetRecipe(const Toolchain& tool, ToolchainKind kind,
 
     // cc1 compiles, assembles and links the lot when it is given neither -S
     // nor -c, and -arch is left off for the same reason as below.
-    recipe.command = quote(programOf(tool, kind)) + named + " -o " + quote(program) +
-                     configFlags(kind, config, arch);
+    recipe.command = quote(programOf(tool, kind)) + languageFlag(kind, lang) + named +
+                     " -o " + quote(program) + configFlags(kind, config, arch);
     return recipe;
 }
 
@@ -397,11 +455,24 @@ const char* hostLinker() {
     return (named && *named) ? named : "link.exe";
 }
 
+// CXX is the variable every make on earth reads for this, so it is the one
+// read here. Failing that, the machine's own - clang++ or g++ by name.
+const char* hostCppDriver() {
+    const char* named = std::getenv("CXX");
+    return (named && *named) ? named : hostCxxName();
+}
+
 }  // namespace
 
+// Off Windows the link goes through a compiler driver, and which one is not a
+// detail: a program with C++ in it needs the C++ runtime and the personality
+// routine for exceptions, and cc names neither. c++ does, and links plain C
+// perfectly well - so the rule is "c++ when any of it was C++", which is what
+// withCpp is for. On Windows the linker is named directly, because cl's objects
+// carry /DEFAULTLIB directives that say all of this for themselves.
 const char* linkerNameFor(bool windows, bool withCpp) {
     if (windows) return hostLinker();
-    (void)withCpp;
+    if (withCpp) return hostCppDriver();
     return hostDriver();
 }
 
@@ -448,9 +519,11 @@ Recipe objectRecipe(const Toolchain& tool, ToolchainKind kind,
     // *current directory* - which is the editor's, not the one wanted here. So
     // the compiler is run from the object directory rather than told about it,
     // which is the one thing it has no flag for. The sources are absolute, so
-    // moving the working directory does not lose them.
+    // moving the working directory does not lose them. cc and c++ do exactly
+    // the same thing with -c and several inputs, which is where cc1 got it.
     recipe.command = "cd " + quote(objectDir) + " && " +
-                     quote(programOf(tool, kind)) + " -c" + named +
+                     quote(programOf(tool, kind)) + " -c" +
+                     languageFlag(kind, lang) + named +
                      configFlags(kind, config, arch);
 
     for (size_t i = 0; i < sources.size(); ++i)
@@ -589,9 +662,14 @@ Recipe assemblyRecipe(const Toolchain& tool, ToolchainKind kind,
         return recipe;
     }
 
+    // The host's C++ compiler takes no target from here - it generates for the
+    // machine it is on - so -arch is not passed to it. Everything else about
+    // the invocation is cc1's, which is the point: cc1 was written to be
+    // driven the way this one is.
     recipe.assemblyPath = stem + ".s";
-    recipe.command = quote(program) + " -S " + quote(source) + " -o " +
-                     quote(recipe.assemblyPath) + " -arch " + arch +
+    recipe.command = quote(program) + " -S" + languageFlag(kind, lang) + " " +
+                     quote(source) + " -o " + quote(recipe.assemblyPath) +
+                     (usesArch(kind) ? " -arch " + arch : std::string()) +
                      configFlags(kind, config, arch);
     return recipe;
 }

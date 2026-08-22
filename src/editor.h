@@ -74,6 +74,7 @@ public:
     void setCc1(const std::string& path) { tool_.cc1 = path; }
     void setCl(const std::string& path) { tool_.cl = path; }
     void setShc(const std::string& path) { tool_.shc = path; }
+    void setCxx(const std::string& path) { tool_.cxx = path; }
     void setToolchain(ToolchainKind kind) { tool_.kind = kind; }
     void setConfig(Configuration config) { config_ = config; }
     // The dialect belongs to the file being edited and the rest of the style

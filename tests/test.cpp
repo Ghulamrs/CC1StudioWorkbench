@@ -2072,8 +2072,9 @@ void whatTheDebuggerHeard() {
                 "    return x;\n"
                 "}\n");
 
-    Ed1Program* built = ed1_build_program(cc1, "cl", editor::ToolCc1, source.c_str(),
-                                          editor::LangC, host.c_str(), editor::ConfigDebug);
+    Ed1Program* built = ed1_build_program(cc1, "cl", "shc", editor::ToolCc1,
+                                          source.c_str(), editor::LangC, host.c_str(),
+                                          editor::ConfigDebug);
     if (ed1_program_ok(built) == 0) {
         std::printf("  (cc1 did not build it, so there is nothing to stop inside)\n");
         ed1_program_free(built);
@@ -2347,9 +2348,9 @@ void theSeamTheWindowUses() {
                 "}\n");
 
     // Built through the bridge, exactly as the window builds it.
-    Ed1Program* built = ed1_build_program(cc1, "cl", editor::ToolCc1, source.c_str(),
-                                          editor::LangC, editor::hostArch(),
-                                          editor::ConfigDebug);
+    Ed1Program* built = ed1_build_program(cc1, "cl", "shc", editor::ToolCc1,
+                                          source.c_str(), editor::LangC,
+                                          editor::hostArch(), editor::ConfigDebug);
     check(ed1_program_ok(built) != 0, "the window's build makes a program");
     if (ed1_program_ok(built) == 0) { ed1_program_free(built); editor::path::removeTree(dir); return; }
     check(editor::path::exists(ed1_program_path(built)),

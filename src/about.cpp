@@ -4,7 +4,7 @@ namespace editor {
 namespace about {
 
 const char* name() { return "RStudio"; }
-const char* version() { return "1.1"; }
+const char* version() { return "1.0"; }
 
 std::vector<std::string> lines() {
     std::vector<std::string> said;

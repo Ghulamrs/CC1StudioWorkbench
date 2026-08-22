@@ -1,4 +1,4 @@
-# RStudio 1.1 — the manual
+# RStudio 1.0 — the manual
 
 Ten pages about the editor, and one about each language it drives. Every page
 stands on its own; read them in order the first time and out of order after

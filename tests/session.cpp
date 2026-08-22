@@ -1451,7 +1451,7 @@ void aDirectoryWithNoProject(const std::string& ed1) {
     // that walks them.
     Screen about = drive(ed1, "--project \"" + dir.string() + "\"",
                          kF10 + times(kRight, 8) + times(kDown, 2) + kEnter + ctrl('q'), dir);
-    check(onScreen(about, "RStudio 1.1"), "About names the product and version");
+    check(onScreen(about, "RStudio 1.0"), "About names the product and version");
     check(onScreen(about, "G. R. Akhtar"), "and who it belongs to");
     check(onScreen(about, "Islamabad"), "and where they are, which the last line must not lose");
 
@@ -1891,8 +1891,10 @@ void theHelpMenu(const std::string& ed1) {
     check(onScreen(shown, "three languages"), "and a line saying what that page is about");
     check(wasShown(shown, "help/"), "and says where the pages themselves are");
 
-    // The version is not written out twice. A contents that said 1.0 while
-    // About said 1.1 is the sort of thing nobody notices for a year.
+    // The version is not written out twice: help::contents() asks
+    // about::version() for it. A contents and an About that disagreed about
+    // which version this is would be the sort of thing nobody notices for a
+    // year.
     Screen about = drive(ed1, arguments, kF10 + times(kRight, 8) + times(kDown, 2) + kEnter +
                                              ctrl('q'), dir);
     check(onScreen(about, "RStudio"), "Help > About still names the product");

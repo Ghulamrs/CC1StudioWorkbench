@@ -1,8 +1,17 @@
 #!/usr/bin/env python3
-"""Writes an Xcode project for each of the three programs, and a workspace.
+"""Writes the project files that build ed1, cc1 and shc together.
 
-    python3 tools/make-xcodeproj.py            write them
-    python3 tools/make-xcodeproj.py --check    say whether they are current
+    python3 tools/make-projects.py            write them
+    python3 tools/make-projects.py --check    say whether they are current
+
+Three machines, three shapes, one idea: open one thing and get all three
+programs, with the editor built after the two compilers it drives.
+
+    macOS    RStudio.xcworkspace          ed1, cc1, shc
+    Windows  RStudio.sln                  winconsole, cc1, shc
+    Linux    workspace.mk                 make -f workspace.mk
+
+Was make-xcodeproj.py while Xcode was all it wrote.
 
 Three command line tools, built by clang++, from three separate repositories:
 
@@ -401,6 +410,218 @@ def project_text(spec):
     return "".join(lines)
 
 
+def guid(product):
+    """A stable GUID for a generated .vcxproj, derived from the product name.
+
+    Visual Studio wants one per project and wants the solution to agree with
+    the project file about it. Deriving it means the two cannot disagree and a
+    regenerated project is the same file, which is what --check rests on.
+    """
+    d = hashlib.sha1(("rstudio-vcxproj:" + product).encode()).hexdigest().upper()
+    return "{%s-%s-%s-%s-%s}" % (d[:8], d[8:12], d[12:16], d[16:20], d[20:32])
+
+
+def vcxproj_text(product, sources, defines):
+    """A command line tool for MSVC, held to the same flags build.bat uses.
+
+    /std:c++14 /W4 /WX /EHsc /permissive- - the same four this project has
+    always been built with on that machine, so the solution and build.bat
+    produce the same program rather than two that differ in what they refused.
+    """
+    configurations = "".join(
+        '    <ProjectConfiguration Include="%s|x64">\n'
+        '      <Configuration>%s</Configuration>\n'
+        '      <Platform>x64</Platform>\n'
+        '    </ProjectConfiguration>\n' % (c, c) for c in ("Debug", "Release"))
+
+    per_config = ""
+    for c, debug_libraries, optimisation in (("Debug", "true", "Disabled"),
+                                             ("Release", "false", "MaxSpeed")):
+        per_config += (
+            '  <PropertyGroup Condition="\'$(Configuration)|$(Platform)\'==\'%s|x64\'" '
+            'Label="Configuration">\n'
+            '    <ConfigurationType>Application</ConfigurationType>\n'
+            '    <UseDebugLibraries>%s</UseDebugLibraries>\n'
+            '    <PlatformToolset>v143</PlatformToolset>\n'
+            '    <CharacterSet>MultiByte</CharacterSet>\n'
+            '  </PropertyGroup>\n' % (c, debug_libraries))
+
+    definitions = ";".join(defines + ["%(PreprocessorDefinitions)"])
+    compiled = "".join('    <ClCompile Include="%s" />\n' % s.replace("/", "\\")
+                       for s in sources)
+
+    return (
+        '<?xml version="1.0" encoding="utf-8"?>\n'
+        '<Project DefaultTargets="Build" ToolsVersion="17.0" '
+        'xmlns="http://schemas.microsoft.com/developer/msbuild/2003">\n'
+        '  <ItemGroup Label="ProjectConfigurations">\n%s  </ItemGroup>\n'
+        '  <PropertyGroup Label="Globals">\n'
+        '    <VCProjectVersion>17.0</VCProjectVersion>\n'
+        '    <ProjectGuid>%s</ProjectGuid>\n'
+        '    <RootNamespace>%s</RootNamespace>\n'
+        '    <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>\n'
+        '  </PropertyGroup>\n'
+        '  <Import Project="$(VCTargetsPath)\\Microsoft.Cpp.Default.props" />\n%s'
+        '  <Import Project="$(VCTargetsPath)\\Microsoft.Cpp.props" />\n'
+        '  <PropertyGroup>\n'
+        '    <TargetName>%s</TargetName>\n'
+        '  </PropertyGroup>\n'
+        '  <ItemDefinitionGroup>\n'
+        '    <ClCompile>\n'
+        '      <LanguageStandard>stdcpp14</LanguageStandard>\n'
+        '      <WarningLevel>Level4</WarningLevel>\n'
+        '      <TreatWarningAsError>true</TreatWarningAsError>\n'
+        '      <ExceptionHandling>Sync</ExceptionHandling>\n'
+        '      <ConformanceMode>true</ConformanceMode>\n'
+        '      <PreprocessorDefinitions>%s</PreprocessorDefinitions>\n'
+        '    </ClCompile>\n'
+        '    <Link>\n'
+        '      <SubSystem>Console</SubSystem>\n'
+        '    </Link>\n'
+        '  </ItemDefinitionGroup>\n'
+        '  <ItemGroup>\n%s  </ItemGroup>\n'
+        '  <Import Project="$(VCTargetsPath)\\Microsoft.Cpp.targets" />\n'
+        '</Project>\n'
+        % (configurations, guid(product), product, per_config, product,
+           definitions, compiled))
+
+
+SOLUTION_FOLDER = "{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}"
+
+
+def cc1_guid():
+    """cc1's own GUID, read out of the project it already has.
+
+    Not derived like the other two: that file is hand-kept in Compiler-C and
+    the solution has to name the GUID it actually uses. Reading it is the only
+    way the two cannot drift apart.
+    """
+    where = os.path.join(SIBLINGS, "Compiler-C", "msvc", "cc1.vcxproj")
+    if not os.path.exists(where):
+        sys.exit("no %s - the solution needs cc1's own project" % where)
+    match = re.search(r"<ProjectGuid>(\{[0-9A-Fa-f-]+\})</ProjectGuid>", open(where).read())
+    if not match:
+        sys.exit("no ProjectGuid in %s" % where)
+    return match.group(1).upper()
+
+
+CC1_GUID = cc1_guid()
+
+
+def solution_text(entries):
+    """RStudio.sln - the three, with winconsole depending on both compilers.
+
+    A .sln says a dependency with ProjectSection(ProjectDependencies), which
+    lists the GUIDs a project must be built after. That is the same idea as the
+    Xcode workspace's target dependencies and it is written here for the same
+    reason: a change to a compiler and the change to the editor that goes with
+    it should be one build.
+    """
+    out = ("Microsoft Visual Studio Solution File, Format Version 12.00\n"
+           "# Visual Studio Version 17\n"
+           "VisualStudioVersion = 17.0.31903.59\n"
+           "MinimumVisualStudioVersion = 10.0.40219.1\n")
+
+    for name, path, project_guid, after in entries:
+        out += 'Project("%s") = "%s", "%s", "%s"\n' % (
+            SOLUTION_FOLDER, name, path.replace("/", "\\"), project_guid)
+        if after:
+            out += "\tProjectSection(ProjectDependencies) = postProject\n"
+            for other in after:
+                out += "\t\t%s = %s\n" % (other, other)
+            out += "\tEndProjectSection\n"
+        out += "EndProject\n"
+
+    out += ("Global\n"
+            "\tGlobalSection(SolutionConfigurationPlatforms) = preSolution\n"
+            "\t\tDebug|x64 = Debug|x64\n\t\tRelease|x64 = Release|x64\n"
+            "\tEndGlobalSection\n"
+            "\tGlobalSection(ProjectConfigurationPlatforms) = postSolution\n")
+    for _, _, project_guid, _ in entries:
+        for c in ("Debug", "Release"):
+            out += "\t\t%s.%s|x64.ActiveCfg = %s|x64\n" % (project_guid, c, c)
+            out += "\t\t%s.%s|x64.Build.0 = %s|x64\n" % (project_guid, c, c)
+    out += ("\tEndGlobalSection\n"
+            "\tGlobalSection(SolutionProperties) = preSolution\n"
+            "\t\tHideSolutionNode = FALSE\n\tEndGlobalSection\n"
+            "EndGlobal\n")
+    return out
+
+
+def workspace_mk_text():
+    """The Linux answer, which is a Makefile because that is what Linux has.
+
+    There is no workspace to open on that box and inventing one would be worse
+    than using what is already there: three Makefiles that work. This recurses
+    into all three and gives ed1 the same dependency it has in the other two,
+    so `make -f workspace.mk` builds the compilers and then the editor.
+    """
+    return """# The three programs, built together. Generated by tools/make-projects.py.
+#
+#   make -f workspace.mk           the compilers, then the editor
+#   make -f workspace.mk check     and run every suite
+#   make -f workspace.mk clean
+#
+# This is the Linux half of what RStudio.xcworkspace is on a Mac and
+# RStudio.sln is on Windows: one thing to build, with ed1 after the two
+# compilers it drives. It does not reimplement any of their builds - it calls
+# the Makefile each repository already has, which is the only way this can stay
+# true when one of them changes.
+#
+# The three are expected side by side. That is the one assumption here, and it
+# is the same one the workspace and the solution make.
+
+# Overridable, because they are not called this everywhere. On the Linux box
+# the same two repositories are ~/ansicc and ~/shalimar:
+#
+#   make -f workspace.mk CC1_DIR=$HOME/ansicc SHC_DIR=$HOME/shalimar
+CC1_DIR ?= ../Compiler-C
+SHC_DIR ?= ../Compiler-S
+
+.PHONY: all cc1 shc ed1 check clean
+
+all: ed1
+
+cc1:
+	$(MAKE) -C $(CC1_DIR)
+
+shc:
+	$(MAKE) -C $(SHC_DIR)
+
+# The dependency, said the same way it is said in the other two: the editor is
+# built after the compilers it drives. Nothing of them ends up inside it.
+ed1: cc1 shc
+	$(MAKE)
+
+# Each suite is that project's own, called by the name that project uses -
+# both compilers say `test` and only the editor says `check`. Calling `check`
+# on all three was written first and failed on the first run, which is the
+# argument for running one of these before believing it.
+#
+# And cc1's `test` is a Linux suite. It compares against gcc and runs x86-64
+# binaries, so on a Mac it refuses and names what does run here instead. That
+# refusal is cc1 being right, so this asks the host and runs what that host
+# can - rather than the alternatives, which are to skip cc1 on a Mac or to
+# ignore a failure and lose the real ones with it.
+HOST := $(shell uname -s)
+
+check: ed1
+ifeq ($(HOST),Darwin)
+	cd $(CC1_DIR) && ./tests/arm64.sh
+	cd $(CC1_DIR) && ./tests/fingerprint.sh
+else
+	$(MAKE) -C $(CC1_DIR) test
+endif
+	$(MAKE) -C $(SHC_DIR) test
+	$(MAKE) check CC1=$(abspath $(CC1_DIR))/cc1 SHC=$(abspath $(SHC_DIR))/shc
+
+clean:
+	$(MAKE) -C $(CC1_DIR) clean
+	$(MAKE) -C $(SHC_DIR) clean
+	$(MAKE) clean
+"""
+
+
 def workspace_text(specs):
     """RStudio.xcworkspace - the three projects, opened together.
 
@@ -423,7 +644,40 @@ def main():
     wanted = [(os.path.join(s["out"], "project.pbxproj"), project_text(s), s["product"])
               for s in specs]
     wanted.append((os.path.join(HERE, "RStudio.xcworkspace", "contents.xcworkspacedata"),
-                   workspace_text(specs), "workspace"))
+                   workspace_text(specs), "RStudio.xcworkspace"))
+
+    # ---- Windows -----------------------------------------------------------
+    #
+    # cc1 already has a project on that machine - Compiler-C/msvc/cc1.vcxproj,
+    # kept by hand and working - so the solution references it rather than
+    # writing over it. That is the one file here --check cannot vouch for; what
+    # it does instead is count the sources in it against the Makefile's, below.
+    windows_sources = [n for n in from_makefile(HERE, ("SRC", "SHM_SRC"))
+                       if not n.endswith("terminal.cpp")]
+    if "src/terminal_win.cpp" not in windows_sources:
+        windows_sources.append("src/terminal_win.cpp")
+
+    wanted.append((os.path.join(HERE, "winconsole.vcxproj"),
+                   vcxproj_text("winconsole", sorted(set(windows_sources)),
+                                ["_CRT_SECURE_NO_WARNINGS"]),
+                   "winconsole.vcxproj"))
+    wanted.append((os.path.join(SIBLINGS, "Compiler-S", "shc.vcxproj"),
+                   vcxproj_text("shc", specs[2]["sources"], ["_CRT_SECURE_NO_WARNINGS"]),
+                   "shc.vcxproj"))
+
+    entries = [
+        ("cc1", "../Compiler-C/msvc/cc1.vcxproj", CC1_GUID, []),
+        ("shc", "../Compiler-S/shc.vcxproj", guid("shc"), []),
+        # winconsole after both, which is the dependency this whole thing is
+        # for - said in a .sln the way the workspace says it in a .xcodeproj.
+        ("winconsole", "winconsole.vcxproj", guid("winconsole"), [CC1_GUID, guid("shc")]),
+    ]
+    wanted.append((os.path.join(HERE, "RStudio.sln"), solution_text(entries),
+                   "RStudio.sln"))
+
+    # ---- Linux -------------------------------------------------------------
+    wanted.append((os.path.join(HERE, "workspace.mk"), workspace_mk_text(),
+                   "workspace.mk"))
 
     for path, text, what in wanted:
         if checking:
@@ -439,7 +693,7 @@ def main():
         if stale:
             print("out of date with the Makefiles: " + ", ".join(stale))
             print("Xcode would build something other than what make builds.")
-            print("  python3 tools/make-xcodeproj.py")
+            print("  python3 tools/make-projects.py")
             return 1
         print("all three projects and the workspace are what the Makefiles say")
         return 0
@@ -448,7 +702,9 @@ def main():
         print("%-4s %d sources, %d headers  ->  %s"
               % (spec["product"], len(spec["sources"]), len(spec["headers"]),
                  os.path.relpath(spec["out"], SIBLINGS)))
-    print("RStudio.xcworkspace opens all three")
+    print("RStudio.xcworkspace  opens all three on a Mac")
+    print("RStudio.sln          the same three for Visual Studio 2022")
+    print("workspace.mk         and for make on the Linux box")
     return 0
 
 

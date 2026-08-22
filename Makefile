@@ -107,7 +107,7 @@ check: test session
 # The Xcode project is generated from the source list above rather than kept by
 # hand, so it cannot fall behind it. Run this after adding or removing a file.
 xcodeproj:
-	python3 tools/make-xcodeproj.py
+	python3 tools/make-projects.py
 
 # What gets used, as against what gets built. The binaries land beside their
 # objects because that is where a build puts them; this is where the product

@@ -60,7 +60,7 @@ SHC_THERE="${ED1_LINUX_SHC:-\$HOME/shalimar/shc}"
 tar --no-mac-metadata --exclude 'src/obj' --exclude '*.o' --exclude '*.d' \
     --exclude 'tests/test' --exclude 'tests/session' --exclude 'ed1' \
     -czf "${TMPDIR:-/tmp}/ed1-src.tgz" \
-    src tests winforms examples help Makefile README.md 2>/dev/null || exit 2
+    src tests winforms examples help Makefile workspace.mk README.md 2>/dev/null || exit 2
 
 ssh -n -i "$KEY" "$BOX" "rm -rf ~/$DIR && mkdir -p ~/$DIR" || exit 2
 scp -q -i "$KEY" "${TMPDIR:-/tmp}/ed1-src.tgz" "$BOX:~/$DIR/" || exit 2
@@ -71,4 +71,8 @@ ssh -n -i "$KEY" "$BOX" "cd ~/$DIR && tar xzf ed1-src.tgz 2>/dev/null; find . -n
     make -j2 2>&1 | grep -E 'error|Error' ; \
     [ -x ./ed1 ] || { echo 'no ed1 was built'; exit 2; } ; \
     if [ \"$WHAT\" = build ]; then echo 'built ed1'; exit 0; fi ; \
-    make check CC1=$CC1_THERE SHC=$SHC_THERE"
+    if [ \"$WHAT\" = workspace ]; then \
+        make -f workspace.mk check CC1_DIR=\$HOME/ansicc SHC_DIR=\$HOME/shalimar ; \
+    else \
+        make check CC1=$CC1_THERE SHC=$SHC_THERE ; \
+    fi"

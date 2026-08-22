@@ -41,11 +41,28 @@ cl /nologo /std:c++14 /W4 /WX /EHsc /permissive- /O2 /D_CRT_SECURE_NO_WARNINGS ^
    src\terminal_win.cpp
 if errorlevel 1 goto :fail
 
+if "%1"=="solution" goto :solution
 if "%1"=="product" goto :product
 if "%1"=="test" goto :unit
 if "%1"=="check" goto :unit
 if "%1"=="session" goto :session
 goto :done
+
+:solution
+rem The three programs as one solution: cc1, shc, and this editor's console
+rem half, with winconsole depending on both compilers so a change to one and
+rem the change to the editor that goes with it are a single build.
+rem
+rem Run from here rather than by calling msbuild directly, because msbuild is
+rem on PATH only after vcvars64.bat - which the top of this file has already
+rem found. One place knows where Visual Studio is.
+rem
+rem RStudio.sln reaches ..\Compiler-C and ..\Compiler-S, so all three have to
+rem be checked out beside each other on this machine.
+msbuild RStudio.sln /p:Configuration=Release /p:Platform=x64 /v:minimal /m
+if errorlevel 1 goto :fail
+echo built the solution
+exit /b 0
 
 :product
 rem The product, as against the build: one directory holding what you would

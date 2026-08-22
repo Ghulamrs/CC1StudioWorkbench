@@ -3,7 +3,7 @@
 namespace editor {
 namespace about {
 
-const char* name() { return "CC1 Studio Workbench"; }
+const char* name() { return "RStudio"; }
 const char* version() { return "1.1"; }
 
 std::vector<std::string> lines() {

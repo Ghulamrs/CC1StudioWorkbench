@@ -1407,7 +1407,7 @@ void aDirectoryWithNoProject(const std::string& ed1) {
     // well as in the window, since the two show the same lines from the core.
     Screen about = drive(ed1, "--project \"" + dir.string() + "\"",
                          kF10 + times(kRight, 7) + kDown + kEnter + ctrl('q'), dir);
-    check(onScreen(about, "CC1 Studio Workbench 1.1"), "About names the product and version");
+    check(onScreen(about, "RStudio 1.1"), "About names the product and version");
     check(onScreen(about, "G. R. Akhtar"), "and who it belongs to");
     check(onScreen(about, "Islamabad"), "and where they are, which the last line must not lose");
 

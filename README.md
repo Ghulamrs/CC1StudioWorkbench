@@ -1,13 +1,17 @@
-# CC1 Studio Workbench
+# RStudio
 
-An editor that drives [cc1](../Compiler-C), and nothing else. It runs on
-Windows, which is what it is for, and on a Mac and a Linux box, which are where
-it is written and checked.
+An editor for three languages of our own: **C** and **C++** through
+[cc1](../Compiler-C) and `cl`, and **Shalimar** through [shc](../Compiler-S).
+It runs on Windows, which is what it is for, and on a Mac and a Linux box,
+which are where it is written and checked.
 
 Two programs over one core: **`ed1`**, which is a terminal editor, and
 **`ed1gui`**, which is the same editor in a window. Those are the names of the
 binaries and of nothing else - every rule they share lives in `src/`, and the
 name above is what the pair of them is called.
+
+> Called CC1 Studio Workbench until 2026-08-22, when the third language
+> arrived and the old name stopped describing it.
 
 It is not [CC1 Studio](../CC1Studio), which is a different thing for the same
 compiler: that one is an extension that teaches VS Code about cc1, and this one

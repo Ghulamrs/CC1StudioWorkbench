@@ -117,7 +117,7 @@ protected:
     // managed type is refused outright - C3145 - since there would be nothing
     // rooting it for the collector. That is a fourth mixed-mode hazard to put
     // beside the three in the README.
-    static String^ ProductName() { return "CC1 Studio Workbench"; }
+    static String^ ProductName() { return "RStudio"; }
 
     ~MainForm() { this->!MainForm(); }
     !MainForm() {

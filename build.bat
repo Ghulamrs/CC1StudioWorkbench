@@ -59,7 +59,7 @@ if exist winforms\x64\Release\ed1gui.exe copy /y winforms\x64\Release\ed1gui.exe
 copy /y README.md "%PRODUCT%\" >nul
 copy /y examples\*.c "%PRODUCT%\examples\" >nul
 copy /y examples\*.cpp "%PRODUCT%\examples\" >nul
-echo CC1 Studio Workbench is in %PRODUCT%
+echo RStudio is in %PRODUCT%
 goto :done
 
 

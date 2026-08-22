@@ -60,7 +60,7 @@ int main(int argc, char** argv) {
                 "usage: %s [file.c] [--project dir] [--toolchain auto|cc1|msvc]\n"
                 "           [--config debug|release] [--cc1 path] [--cl path]\n"
                 "           [--width n] [--tabs] [--case-indent] [--plain]\n"
-                "  CC1 Studio Workbench - the console half, which is ed1 on Linux\n"
+                "  RStudio - the console half, which is ed1 on Linux\n"
                 "  and macOS and winconsole on Windows. ed1gui is the same editor\n"
                 "  in a window, over the same core.\n"
                 "\n"

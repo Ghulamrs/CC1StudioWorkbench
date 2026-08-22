@@ -1,4 +1,4 @@
-# CC1 Studio Workbench - an editor that drives the cc1 compiler. ed1 is the
+# RStudio - an editor that drives the cc1 compiler and shc. ed1 is the
 # terminal half and ed1gui the window; this builds ed1.
 #
 # Everything except one file is ordinary C++14 and builds anywhere. The
@@ -114,7 +114,7 @@ product: ed1
 	cp ed1 "$(PRODUCT)/bin/"
 	cp README.md "$(PRODUCT)/"
 	cp examples/*.c examples/*.cpp "$(PRODUCT)/examples/"
-	@echo "CC1 Studio Workbench is in $(PRODUCT)"
+	@echo "RStudio is in $(PRODUCT)"
 
 clean:
 	rm -rf $(OBJDIR)

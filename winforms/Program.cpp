@@ -17,7 +17,7 @@ using namespace System::Windows::Forms;
 
 static void Note(String^ what) {
     try {
-        System::IO::File::AppendAllText("ed1gui.log",
+        System::IO::File::AppendAllText("RStudioGui.log",
                                         DateTime::Now.ToString("HH:mm:ss") + "  " + what +
                                             Environment::NewLine);
     } catch (Exception^) {
@@ -44,7 +44,7 @@ int main(array<String^>^ arguments) {
         Application::EnableVisualStyles();
         Application::SetCompatibleTextRenderingDefault(false);
 
-        // ed1gui [project-directory] [file ...] - every file named gets a tab.
+        // RStudioGui [project-directory] [file ...] - every file named gets a tab.
         String^ directory = arguments->Length > 0 ? arguments[0] : nullptr;
         array<String^>^ files =
             gcnew array<String^>(arguments->Length > 1 ? arguments->Length - 1 : 0);

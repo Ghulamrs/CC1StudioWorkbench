@@ -58,7 +58,7 @@ SHC_THERE="${ED1_LINUX_SHC:-\$HOME/shalimar/shc}"
 # found it newer than tests/test.cpp - "cannot execute binary file", which
 # reads as a broken box and is the Mac's own binary being run on Linux.
 tar --no-mac-metadata --exclude 'src/obj' --exclude '*.o' --exclude '*.d' \
-    --exclude 'tests/test' --exclude 'tests/session' --exclude 'ed1' \
+    --exclude 'tests/test' --exclude 'tests/session' --exclude 'RStudio' \
     -czf "${TMPDIR:-/tmp}/ed1-src.tgz" \
     src tests winforms examples help Makefile workspace.mk README.md 2>/dev/null || exit 2
 
@@ -69,8 +69,8 @@ scp -q -i "$KEY" "${TMPDIR:-/tmp}/ed1-src.tgz" "$BOX:~/$DIR/" || exit 2
 # box's business rather than this script's, and that box is small.
 ssh -n -i "$KEY" "$BOX" "cd ~/$DIR && tar xzf ed1-src.tgz 2>/dev/null; find . -name '._*' -delete && \
     make -j2 2>&1 | grep -E 'error|Error' ; \
-    [ -x ./ed1 ] || { echo 'no ed1 was built'; exit 2; } ; \
-    if [ \"$WHAT\" = build ]; then echo 'built ed1'; exit 0; fi ; \
+    [ -x ./RStudio ] || { echo 'no RStudio was built'; exit 2; } ; \
+    if [ \"$WHAT\" = build ]; then echo 'built RStudio'; exit 0; fi ; \
     if [ \"$WHAT\" = workspace ]; then \
         make -f workspace.mk check CC1_DIR=\$HOME/ansicc SHC_DIR=\$HOME/shalimar ; \
     else \

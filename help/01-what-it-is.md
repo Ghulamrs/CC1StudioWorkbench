@@ -14,9 +14,9 @@ produced, and a breakpoint works the same whichever of the three you are in.
 
 | | runs on | what it is |
 | --- | --- | --- |
-| `ed1` | macOS, Linux | the terminal editor |
-| `winconsole.exe` | Windows | the same editor, over the Windows console |
-| `ed1gui.exe` | Windows | the same editor in a window |
+| `RStudio` | macOS, Linux | the terminal editor |
+| `RStudio.exe` | Windows | the same editor, over the Windows console |
+| `RStudioGui.exe` | Windows | the same editor in a window |
 
 **Every rule lives in `src/` and all three call it.** Laying a line out,
 colouring it, reading `ed1.json`, choosing a compiler, driving a debugger —
@@ -28,7 +28,7 @@ are worse than one editor with two windows: the "nearly" is where the bugs
 live. When something is asked for in one, the answer is to lift it into the
 core and rewire the other.
 
-The names `ed1` and `ed1gui` belong to the binaries. **RStudio** is what the
+The names `RStudio` and `RStudioGui` belong to the binaries. **RStudio** is what the
 pair is called, and it is what `Help ▸ About` prints.
 
 > Called *CC1 Studio Workbench* until 2026-08-22, when Shalimar became the

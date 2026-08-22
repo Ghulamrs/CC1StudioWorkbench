@@ -7,7 +7,7 @@
 // program for both machines rather than a shell script and a PowerShell script
 // that would drift apart.
 //
-//   usage: session [path-to-ed1] [path-to-cc1]
+//   usage: session [path-to-RStudio] [path-to-cc1]
 
 #include <cstdio>
 #include <cstdlib>
@@ -1915,9 +1915,9 @@ void theHelpMenu(const std::string& ed1) {
 
 int main(int argc, char** argv) {
 #ifdef _WIN32
-    std::string ed1 = "ed1.exe";
+    std::string ed1 = "RStudio.exe";
 #else
-    std::string ed1 = "./ed1";
+    std::string ed1 = "./RStudio";
 #endif
     std::string cc1;
     std::string shc;

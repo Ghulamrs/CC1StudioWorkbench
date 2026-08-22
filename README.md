@@ -5,8 +5,8 @@ An editor for three languages of our own: **C** and **C++** through
 It runs on Windows, which is what it is for, and on a Mac and a Linux box,
 which are where it is written and checked.
 
-Two programs over one core: **`ed1`**, which is a terminal editor, and
-**`ed1gui`**, which is the same editor in a window. Those are the names of the
+Two programs over one core: **`RStudio`**, which is a terminal editor, and
+**`RStudioGui`**, which is the same editor in a window. Those are the names of the
 binaries and of nothing else - every rule they share lives in `src/`, and the
 name above is what the pair of them is called.
 
@@ -256,7 +256,7 @@ and neither is guessable. It must be put in synchronous mode with `script
 lldb.debugger.SetAsync(False)`, or over a pipe it forwards each command to the
 program instead of running it, and every answer after `run` is an echo. And the
 marker used to know an answer is complete has to be printed in two halves -
-`print("<<ed1" + "-done>>")` - because lldb echoes the command that contains it,
+`print("<<RStudio" + "-done>>")` - because lldb echoes the command that contains it,
 so a marker written whole appears before the answer rather than after it, and
 every reply read that way is the one before the one asked for.
 
@@ -396,7 +396,7 @@ Each compiler is also *told* which language it is being handed - `/TC` or
 because that is what this arena holds itself to: cc1 is written in it, so the
 editor is built in it, and C++ compiled here is compiled as it.
 
-**cl is found without a Developer Command Prompt.** ed1 asks Visual Studio 2022
+**cl is found without a Developer Command Prompt.** RStudio asks Visual Studio 2022
 where it lives, runs `vcvars64` once, and keeps the environment for the rest of
 the session. Started from an ordinary console with `cl` nowhere on PATH, it
 still builds C++. With `cl` in use the target chooser goes quiet, because cl
@@ -489,7 +489,7 @@ it the pane on the left shows the directory, as it always did.
 
 ```json
 {
-  "name": "ed1",
+  "name": "RStudio",
   "toolchain": "auto",
   "config": "debug",
   "arch": "x86_64-windows",
@@ -674,7 +674,7 @@ Three tabs:
 ## Trying it
 
 ```
-ed1 examples/smart.cpp --project examples --toolchain msvc
+RStudio examples/smart.cpp --project examples --toolchain msvc
 ```
 
 `examples/smart.cpp` is the one to open first. It is a small owning class - one
@@ -699,9 +699,9 @@ builds it.
 
 | | what it is | built from | built by |
 | --- | --- | --- | --- |
-| **ed1** | the console editor on Linux and macOS | `src/*.cpp` with `src/terminal.cpp` | `make` |
+| **RStudio** | the console editor on Linux and macOS | `src/*.cpp` with `src/terminal.cpp` | `make` |
 | **WinConsole** | the console editor on Windows | the same `src/*.cpp` with `src/terminal_win.cpp` | `build.bat` |
-| **ed1gui** | the C++/CLI window, WinForms | `winforms/*.cpp` and the core files named in `winforms/ed1gui.vcxproj` | `msbuild winforms\ed1gui.vcxproj` |
+| **RStudioGui** | the C++/CLI window, WinForms | `winforms/*.cpp` and the core files named in `winforms/RStudioGui.vcxproj` | `msbuild winforms\RStudioGui.vcxproj` |
 
 **The two consoles are one front end and two terminals.** `src/editor.cpp` draws
 the screen for both; `src/terminal.cpp` and `src/terminal_win.cpp` are the halves
@@ -709,9 +709,9 @@ that differ, and only they know anything about the machine. That is why the box
 the panes are drawn in arrived on Windows the day it arrived on Linux - it is
 not two pieces of work and there is no version of it that is only on one of
 them. The binary takes its name from the command it was started as, so the
-usage line says `ed1` where it is ed1 and `winconsole` where it is WinConsole.
+usage line names the program it was started as, which is `RStudio` on all three.
 
-**The window shares the core and nothing else.** `ed1gui.vcxproj` compiles
+**The window shares the core and nothing else.** `RStudioGui.vcxproj` compiles
 `bridge.cpp`, `Program.cpp` and `MainForm.h` together with `buffer`, `indent`,
 `syntax`, `find`, `utf8`, `json`, `project`, `workspace`, `symbols`, `compile`,
 `toolchain`, `path`, `process`, `debugger`, `settings` and `about` - and not
@@ -764,8 +764,8 @@ change to the other. There is one thing to open on each machine that builds
 all three, with the editor built *after* the compilers it drives:
 
 ```
-RStudio.xcworkspace                    macOS - ed1, cc1, shc
-RStudio.sln                            Visual Studio 2022 - winconsole, cc1, shc
+RStudio.xcworkspace                    macOS - RStudio, cc1, shc
+RStudio.sln                            Visual Studio 2022 - RStudio, cc1, shc
 make -f workspace.mk                   Linux - the same, since make is what Linux has
 make -f workspace.mk check             and every suite, all three projects
 ```
@@ -825,7 +825,7 @@ recognized" - which reads as a broken box and is nothing of the kind.
 ### As a Windows Forms application
 
 ```
-winforms\ed1gui.vcxproj
+winforms\RStudioGui.vcxproj
 ```
 
 An ordinary macOS-style menu-and-panes window: the project down the left, the
@@ -1091,7 +1091,7 @@ read out of the Makefile. A hand-kept project drifts - someone adds a file to
 the Makefile, forgets the other one, and Xcode quietly builds yesterday's
 editor. There is one source list and it is the Makefile's.
 
-One thing to know before reaching for the Run button: ed1 is a terminal
+One thing to know before reaching for the Run button: RStudio is a terminal
 program, and Xcode's console is a pipe rather than a terminal. Started from
 there it cannot put the terminal into raw mode and will print escape sequences
 instead of drawing. Build and debug it in Xcode; run it in Terminal, and attach
@@ -1170,7 +1170,7 @@ thing for cmd to eat. Until then the compiler was never reached, and cmd said
 ## Usage
 
 ```
-ed1 [file.c] [--project dir] [--toolchain cc1|msvc] [--compiler path]
+RStudio [file.c] [--project dir] [--toolchain cc1|msvc] [--compiler path]
     [--cc1 path] [--width n] [--tabs] [--case-indent]
 ```
 

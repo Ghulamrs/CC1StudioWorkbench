@@ -35,7 +35,7 @@ in `../../../Compiler-S/docs/DEBUGGING.md`.
 
 ## Where this stands
 
-Built, linked into `ed1`, and driven against a real program by
+Built, linked into `RStudio`, and driven against a real program by
 `steppingShalimar()` in `tests/test.cpp`: a breakpoint by file and line, a
 stop, a step in, a step out, the program's own printing coming back with it,
 and a release build refusing to be stopped because it has no code for it.

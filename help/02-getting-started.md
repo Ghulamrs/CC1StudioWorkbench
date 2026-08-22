@@ -3,13 +3,13 @@
 ## Running it
 
 ```
-ed1                          open the project you were last in
-ed1 file.c                   open a file
-ed1 --project some/dir       open a directory as the project
+RStudio                          open the project you were last in
+RStudio file.c                   open a file
+RStudio --project some/dir       open a directory as the project
 ```
 
-On Windows the terminal editor is `winconsole.exe` and the window is
-`ed1gui.exe`; both take the same arguments.
+On Windows the terminal editor is `RStudio.exe` and the window is
+`RStudioGui.exe`; both take the same arguments.
 
 **With nothing named it opens the project it was last in**, and failing that
 it makes one. The first file of the project is opened too, so you arrive

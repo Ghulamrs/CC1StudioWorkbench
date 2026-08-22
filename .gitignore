@@ -2,8 +2,9 @@
 *.d
 *.obj
 obj/
-ed1
-ed1.exe
+RStudio
+RStudio.exe
+RStudioGui.exe
 test
 test.exe
 tests/test
@@ -29,3 +30,7 @@ gui.png
 
 # Xcode's own build directory, when the project is built in place
 build/
+
+# What make -f workspace.mk bin puts together: the editor and the two
+# compilers, copied from where each was built.
+bin/

@@ -1,5 +1,9 @@
-# RStudio - an editor that drives the cc1 compiler and shc. ed1 is the
-# terminal half and ed1gui the window; this builds ed1.
+# RStudio - an editor that drives the cc1 compiler and shc. RStudio is the
+# terminal half and RStudioGui the window; this builds the terminal one.
+#
+# The binaries were called ed1 and ed1gui until 2026-08-22, on the grounds that
+# the product name was what the pair was called and the binaries kept their own
+# names. That is reversed: one name, everywhere.
 #
 # Everything except one file is ordinary C++14 and builds anywhere. The
 # exception is the terminal, and even that is smaller than it looks: Windows 10
@@ -48,12 +52,12 @@ SRC := src/main.cpp src/editor.cpp src/buffer.cpp src/compile.cpp \
 # lldb or cdb, and src/debugger.cpp has nothing to say to it.
 SHM_SRC := src/shalimar/channel.cpp src/shalimar/session.cpp
 
-# The objects go under src/obj rather than beside the sources they came from,
+# The objects go under obj/ rather than beside the sources they came from,
 # so that a listing of src/ is the code and nothing else.
-OBJDIR := src/obj
+OBJDIR := obj
 OBJ := $(patsubst src/%.cpp,$(OBJDIR)/%.o,$(SRC) $(SHM_SRC))
 
-ed1: $(OBJ)
+RStudio: $(OBJ)
 	$(CXX) $(CXXFLAGS) -o $@ $(OBJ)
 
 # One rule for both, making whatever directory the object goes in. A second
@@ -96,8 +100,8 @@ tests/test: tests/test.cpp src/compile.cpp src/indent.cpp src/syntax.cpp \
 # The other half of the checking: the editor itself, driven by keystrokes.
 # CC1 and SHC name compilers for the build cases; without them those cases
 # are skipped rather than failed.
-session: tests/session ed1
-	CC1="$(CC1)" SHC="$(SHC)" ./tests/session ./ed1
+session: tests/session RStudio
+	CC1="$(CC1)" SHC="$(SHC)" ./tests/session ./RStudio
 
 tests/session: tests/session.cpp src/path.cpp src/path.h
 	$(CXX) $(CXXFLAGS) -Isrc -o $@ tests/session.cpp src/path.cpp
@@ -117,15 +121,15 @@ xcodeproj:
 # PRODUCT names it, so a different one can be asked for without editing this.
 PRODUCT ?= $(HOME)/cc1-studio
 
-product: ed1
+product: RStudio
 	mkdir -p "$(PRODUCT)/bin" "$(PRODUCT)/examples"
-	cp ed1 "$(PRODUCT)/bin/"
+	cp RStudio "$(PRODUCT)/bin/"
 	cp README.md "$(PRODUCT)/"
 	cp examples/*.c examples/*.cpp "$(PRODUCT)/examples/"
 	@echo "RStudio is in $(PRODUCT)"
 
 clean:
 	rm -rf $(OBJDIR)
-	rm -f ed1 tests/test tests/session
+	rm -f RStudio tests/test tests/session
 
 .PHONY: test session check xcodeproj product clean

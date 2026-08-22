@@ -41,6 +41,11 @@
   </PropertyGroup>
 
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <PropertyGroup>
+    <!-- The binary is RStudioGui.exe; the project file keeps its own
+         name, which scripts and documentation already point at. -->
+    <TargetName>RStudioGui</TargetName>
+  </PropertyGroup>
 
   <ItemDefinitionGroup>
     <ClCompile>

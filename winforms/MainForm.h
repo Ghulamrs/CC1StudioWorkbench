@@ -109,9 +109,17 @@ protected:
         }
     }
 
-    // What the pair of programs is called. The binaries stay ed1 and ed1gui;
-    // this is the name of the thing they are two halves of, and it is not
-    // CC1 Studio, which is the VS Code extension for the same compiler.
+    // What the pair of programs is called, and - since 2026-08-22 - what the
+    // binaries are called too. They were ed1 and ed1gui, on the grounds that
+    // the product name belonged to the pair and each binary kept its own; that
+    // is reversed, and there is one name now: RStudio and RStudioGui.
+    //
+    // The C++ namespace is still ed1gui. That is code identity rather than a
+    // name anybody sees, and renaming it would touch every file in here for
+    // nothing.
+    //
+    // It is not CC1 Studio, which is the VS Code extension for the same
+    // compiler.
     //
     // A function rather than a static string, because a global or static of a
     // managed type is refused outright - C3145 - since there would be nothing
@@ -858,7 +866,7 @@ private:
     // beside the editor; failing that the bare name, for PATH to answer.
     //
     // The middle one is why this is more than a getenv. The product directory
-    // holds ed1gui.exe and cc1.exe side by side, and this used to reach that
+    // holds RStudioGui.exe and cc1.exe side by side, and this used to reach that
     // cc1.exe only when the editor happened to have been started in that
     // directory - so the installed copy, started from a shortcut or the Start
     // menu, reported a compiler that was standing right next to it. Beside the

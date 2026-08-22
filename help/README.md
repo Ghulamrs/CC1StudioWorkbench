@@ -1,8 +1,12 @@
-# RStudio 1.0 — the manual
+# RStudio 1.1 — the manual
 
 Ten pages about the editor, and one about each language it drives. Every page
 stands on its own; read them in order the first time and out of order after
 that.
+
+**1.0** was the editor for C and C++; **1.1** is the release Shalimar arrived
+in, and the one this manual is for. [Page 1](01-what-it-is.md) has the
+difference in full.
 
 `Help ▸ Contents` in the editor lists these same pages with a line each, and
 `F1` shows the keys. This directory is the long form.

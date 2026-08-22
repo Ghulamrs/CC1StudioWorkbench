@@ -38,6 +38,29 @@ It is also not **CC1 Studio**, which is a different thing for the same
 compiler: that one is an extension that teaches VS Code about cc1, and this is
 an editor of our own.
 
+## Releases
+
+**1.0 — the editor for C and C++.** cc1 and `cl`, the three targets, the
+project file and its groups, the panel with its three tabs, and real debugging:
+breakpoints, stepping, variables and the call stack. Complete in itself, and
+what the name *CC1 Studio Workbench* described.
+
+**1.1 — Shalimar.** A third language, and the release this manual is for.
+Shalimar is not C with fewer rules, so it did not arrive as a suffix in a
+table: it brought its own indent dialect, because `n : n + 1` is an assignment
+here and a label there; its own way of finding the rest of a program, because
+it has no `include`; and its own debugger, because a Shalimar program stops
+itself and there is nothing to install.
+
+The same release moved the compiler from being a property of the *project* to
+being a property of a **group**, so a target can hold C and C++ together —
+which is what made C the only language with a decision in it. It also gave C++
+a compiler off Windows, which it had never had: `clang++` on a Mac and `g++` on
+the Linux box, where `auto` used to route C++ to a `cl` that was not installed.
+
+And it is why the product is called RStudio. Three languages is where *CC1
+Studio Workbench* stopped being a description.
+
 ## What it will not do
 
 Said here so that the rest of the manual does not have to keep apologising.

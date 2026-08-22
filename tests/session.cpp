@@ -1451,7 +1451,7 @@ void aDirectoryWithNoProject(const std::string& ed1) {
     // that walks them.
     Screen about = drive(ed1, "--project \"" + dir.string() + "\"",
                          kF10 + times(kRight, 8) + times(kDown, 2) + kEnter + ctrl('q'), dir);
-    check(onScreen(about, "RStudio 1.0"), "About names the product and version");
+    check(onScreen(about, "RStudio 1.1"), "About names the product and version");
     check(onScreen(about, "G. R. Akhtar"), "and who it belongs to");
     check(onScreen(about, "Islamabad"), "and where they are, which the last line must not lose");
 

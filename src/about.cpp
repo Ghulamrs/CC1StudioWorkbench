@@ -4,7 +4,10 @@ namespace editor {
 namespace about {
 
 const char* name() { return "RStudio"; }
-const char* version() { return "1.0"; }
+// 1.0 was the editor for C and C++. 1.1 is the release Shalimar arrived in,
+// and the one this product was renamed for - see "Releases" in
+// help/01-what-it-is.md.
+const char* version() { return "1.1"; }
 
 std::vector<std::string> lines() {
     std::vector<std::string> said;

@@ -41,7 +41,8 @@ Console, Debug, Assembly.
 into, Step out, Up the stack, Down the stack, Watch expression, Stop debugging.
 **Target** — the three architectures.
 **Language** — By extension, C, C++, Shalimar.
-**Tools** — By language, cc1, MSVC (cl), C++ (host), shc.
+**Tools** — By language, cc1, shc, MSVC (cl), C++ (host). Ours first, then the
+machine's.
 **Help** — Contents, Keys, About.
 
 ## The command line

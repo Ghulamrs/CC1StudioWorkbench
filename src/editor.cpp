@@ -3027,11 +3027,13 @@ void Editor::processKey(int key) {
             perform(tool_.kind == ToolAuto
                         ? ActionToolCc1
                         : (tool_.kind == ToolCc1
-                               ? ActionToolMsvc
-                               : (tool_.kind == ToolMsvc && hostCppToolchain() != ToolMsvc
-                                      ? ActionToolCxx
-                                      : (tool_.kind == ToolShc ? ActionToolAuto
-                                                               : ActionToolShc))));
+                               ? ActionToolShc
+                               : (tool_.kind == ToolShc
+                                      ? ActionToolMsvc
+                                      : (tool_.kind == ToolMsvc &&
+                                                 hostCppToolchain() != ToolMsvc
+                                             ? ActionToolCxx
+                                             : ActionToolAuto))));
             return;
         case ctrl('w'): cycleFocus(); return;
 

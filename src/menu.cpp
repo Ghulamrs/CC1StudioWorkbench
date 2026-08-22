@@ -115,11 +115,15 @@ Menu::Menu() : active_(false), dropped_(false), column_(0), item_(0) {
     // saying so.
     MenuColumn tools;
     tools.title = "Tools";
+    // Ours first, then the machine's. cc1 and shc are the two compilers this
+    // family wrote; cl and the host's C++ are what the machine already had.
+    // That is the division a reader of this menu actually has in their head,
+    // and it puts the two that are named the same way next to each other.
     tools.items.push_back({"By language", "Ctrl-K", ActionToolAuto});
     tools.items.push_back({"cc1", "", ActionToolCc1});
+    tools.items.push_back({"shc", "", ActionToolShc});
     tools.items.push_back({"MSVC (cl)", "", ActionToolMsvc});
     tools.items.push_back({"C++ (host)", "", ActionToolCxx});
-    tools.items.push_back({"shc", "", ActionToolShc});
     columns_.push_back(tools);
 
     MenuColumn help;

@@ -56,7 +56,11 @@ else
 	$(MAKE) -C $(CC1_DIR) test
 endif
 	$(MAKE) -C $(SHC_DIR) test
-	$(MAKE) check CC1=$(abspath $(CC1_DIR))/cc1 SHC=$(abspath $(SHC_DIR))/shc
+# cc1.exe and shc.exe, which is what those two build. Naming the old ones did
+# not fail - the editor's suite skips the cases that need a compiler and says
+# so quietly - so the count fell from 792 and 232 to 686 and 115 and everything
+# still read as green. A suite that skips is not a suite that passes.
+	$(MAKE) check CC1=$(abspath $(CC1_DIR))/cc1.exe SHC=$(abspath $(SHC_DIR))/shc.exe
 
 # One directory holding what you would actually run: the editor and the two
 # compilers it drives, side by side. They are built where they belong - each
@@ -65,12 +69,16 @@ endif
 # way and this keeps it that way.
 BIN := bin
 
+# Emptied first. A binary that was renamed leaves its old self here otherwise,
+# and a directory holding both cc1 and cc1.exe is one where nobody can say
+# which was run.
 bin: editor
+	rm -rf $(BIN)
 	@mkdir -p $(BIN)
-	cp $(CC1_DIR)/cc1 $(BIN)/
-	cp $(SHC_DIR)/shc $(BIN)/
-	cp RStudio $(BIN)/
-	@echo "RStudio, cc1 and shc are in $(BIN)/"
+	cp $(CC1_DIR)/cc1.exe $(BIN)/
+	cp $(SHC_DIR)/shc.exe $(BIN)/
+	cp RStudio.exe $(BIN)/
+	@echo "RStudio.exe, cc1.exe and shc.exe are in $(BIN)/"
 
 clean:
 	rm -rf $(BIN)

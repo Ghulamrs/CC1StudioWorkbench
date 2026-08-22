@@ -1,5 +1,7 @@
 # RStudio - an editor that drives the cc1 compiler and shc. RStudio is the
-# terminal half and RStudioGui the window; this builds the terminal one.
+# terminal half and the window is RStudio.exe on Windows; this builds the
+# terminal one. .exe on every machine, not only Windows: the three programs in
+# this family carry one name each wherever they are.
 #
 # The binaries were called ed1 and ed1gui until 2026-08-22, on the grounds that
 # the product name was what the pair was called and the binaries kept their own
@@ -57,7 +59,7 @@ SHM_SRC := src/shalimar/channel.cpp src/shalimar/session.cpp
 OBJDIR := obj
 OBJ := $(patsubst src/%.cpp,$(OBJDIR)/%.o,$(SRC) $(SHM_SRC))
 
-RStudio: $(OBJ)
+RStudio.exe: $(OBJ)
 	$(CXX) $(CXXFLAGS) -o $@ $(OBJ)
 
 # One rule for both, making whatever directory the object goes in. A second
@@ -100,8 +102,8 @@ tests/test: tests/test.cpp src/compile.cpp src/indent.cpp src/syntax.cpp \
 # The other half of the checking: the editor itself, driven by keystrokes.
 # CC1 and SHC name compilers for the build cases; without them those cases
 # are skipped rather than failed.
-session: tests/session RStudio
-	CC1="$(CC1)" SHC="$(SHC)" ./tests/session ./RStudio
+session: tests/session RStudio.exe
+	CC1="$(CC1)" SHC="$(SHC)" ./tests/session ./RStudio.exe
 
 tests/session: tests/session.cpp src/path.cpp src/path.h
 	$(CXX) $(CXXFLAGS) -Isrc -o $@ tests/session.cpp src/path.cpp
@@ -121,15 +123,15 @@ xcodeproj:
 # PRODUCT names it, so a different one can be asked for without editing this.
 PRODUCT ?= $(HOME)/cc1-studio
 
-product: RStudio
+product: RStudio.exe
 	mkdir -p "$(PRODUCT)/bin" "$(PRODUCT)/examples"
-	cp RStudio "$(PRODUCT)/bin/"
+	cp RStudio.exe "$(PRODUCT)/bin/"
 	cp README.md "$(PRODUCT)/"
 	cp examples/*.c examples/*.cpp "$(PRODUCT)/examples/"
 	@echo "RStudio is in $(PRODUCT)"
 
 clean:
 	rm -rf $(OBJDIR)
-	rm -f RStudio tests/test tests/session
+	rm -f RStudio.exe tests/test tests/session
 
 .PHONY: test session check xcodeproj product clean

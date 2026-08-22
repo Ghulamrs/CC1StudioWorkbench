@@ -14,9 +14,9 @@ produced, and a breakpoint works the same whichever of the three you are in.
 
 | | runs on | what it is |
 | --- | --- | --- |
-| `RStudio` | macOS, Linux | the terminal editor |
-| `RStudio.exe` | Windows | the same editor, over the Windows console |
-| `RStudioGui.exe` | Windows | the same editor in a window |
+| `RStudio.exe` | macOS, Linux | the terminal editor |
+| `RStudio.exe` | Windows | the same editor, in a window |
+| `RStudioConsole.exe` | Windows | and over the Windows console |
 
 **Every rule lives in `src/` and all three call it.** Laying a line out,
 colouring it, reading `ed1.json`, choosing a compiler, driving a debugger —

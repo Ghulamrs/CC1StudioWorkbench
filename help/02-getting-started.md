@@ -3,13 +3,14 @@
 ## Running it
 
 ```
-RStudio                          open the project you were last in
-RStudio file.c                   open a file
-RStudio --project some/dir       open a directory as the project
+RStudio.exe                          open the project you were last in
+RStudio.exe file.c                   open a file
+RStudio.exe --project some/dir       open a directory as the project
 ```
 
-On Windows the terminal editor is `RStudio.exe` and the window is
-`RStudioGui.exe`; both take the same arguments.
+On Windows `RStudio.exe` is the window - which is what somebody there runs -
+and `RStudioConsole.exe` is the same editor over the console. Both take the
+same arguments as the Unix one.
 
 **With nothing named it opens the project it was last in**, and failing that
 it makes one. The first file of the project is opened too, so you arrive

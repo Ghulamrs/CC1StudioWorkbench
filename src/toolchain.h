@@ -105,8 +105,12 @@ struct Toolchain {
     std::string shc;   // and for Shalimar
     std::string cxx;   // and this machine's C++ compiler, by name
 
+    // cc1.exe and shc.exe on every machine, which is what those two projects
+    // build everywhere now - one name each, wherever they are. cl keeps its
+    // own name because it is Microsoft's and only exists on one machine.
     Toolchain()
-        : kind(ToolAuto), cc1("cc1"), cl("cl"), shc("shc"), cxx(hostCxxName()) {}
+        : kind(ToolAuto), cc1("cc1.exe"), cl("cl"), shc("shc.exe"),
+          cxx(hostCxxName()) {}
 };
 
 // Which one actually runs, once the file's language is known.

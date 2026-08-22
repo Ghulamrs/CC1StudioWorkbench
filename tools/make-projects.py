@@ -7,8 +7,8 @@
 Three machines, three shapes, one idea: open one thing and get all three
 programs, with the editor built after the two compilers it drives.
 
-    macOS    RStudio.xcworkspace          RStudio, cc1, shc
-    Windows  RStudio.sln                  RStudio, cc1, shc
+    macOS    RStudio.xcworkspace          RStudio.exe, cc1.exe, shc.exe
+    Windows  RStudio.sln                  RStudioConsole, cc1, shc
     Linux    workspace.mk                 make -f workspace.mk
 
 Was make-xcodeproj.py while Xcode was all it wrote.
@@ -121,7 +121,7 @@ def rstudio_sources():
 def projects():
     return [
         {
-            "product": "RStudio",
+            "product": "RStudio.exe",
             "root": HERE,
             "out": os.path.join(HERE, "Editor.xcodeproj"),
             "sources": rstudio_sources(),
@@ -133,11 +133,17 @@ def projects():
             # a change to a compiler and the change to the editor that goes
             # with it are one build and one issue list, which is the whole
             # reason for a workspace rather than three windows.
-            "depends": [("cc1", "../Compiler-C/cc1.xcodeproj"),
-                        ("shc", "../Compiler-S/shc.xcodeproj")],
+            # These strings must be the *products* the other two projects use,
+            # because the remote identifiers are derived from them. Getting one
+            # wrong does not make Xcode complain - it silently drops the
+            # dependency and builds only this target, which is how renaming
+            # cc1 to cc1.exe stopped the workspace building the compilers
+            # without anything saying so.
+            "depends": [("cc1.exe", "../Compiler-C/cc1.xcodeproj"),
+                        ("shc.exe", "../Compiler-S/shc.xcodeproj")],
         },
         {
-            "product": "cc1",
+            "product": "cc1.exe",
             "root": os.path.join(SIBLINGS, "Compiler-C"),
             "out": os.path.join(SIBLINGS, "Compiler-C", "cc1.xcodeproj"),
             # Its Makefile says $(wildcard src/*.cpp) $(wildcard src/backend/*.cpp),
@@ -148,7 +154,7 @@ def projects():
             "include": "$(SRCROOT)/src $(SRCROOT)/lib",
         },
         {
-            "product": "shc",
+            "product": "shc.exe",
             "root": os.path.join(SIBLINGS, "Compiler-S"),
             "out": os.path.join(SIBLINGS, "Compiler-S", "shc.xcodeproj"),
             # SOURCES names runtime/Shortest.cpp as well as src/, which is why
@@ -614,7 +620,11 @@ else
 	$(MAKE) -C $(CC1_DIR) test
 endif
 	$(MAKE) -C $(SHC_DIR) test
-	$(MAKE) check CC1=$(abspath $(CC1_DIR))/cc1 SHC=$(abspath $(SHC_DIR))/shc
+# cc1.exe and shc.exe, which is what those two build. Naming the old ones did
+# not fail - the editor's suite skips the cases that need a compiler and says
+# so quietly - so the count fell from 792 and 232 to 686 and 115 and everything
+# still read as green. A suite that skips is not a suite that passes.
+	$(MAKE) check CC1=$(abspath $(CC1_DIR))/cc1.exe SHC=$(abspath $(SHC_DIR))/shc.exe
 
 # One directory holding what you would actually run: the editor and the two
 # compilers it drives, side by side. They are built where they belong - each
@@ -623,12 +633,16 @@ endif
 # way and this keeps it that way.
 BIN := bin
 
+# Emptied first. A binary that was renamed leaves its old self here otherwise,
+# and a directory holding both cc1 and cc1.exe is one where nobody can say
+# which was run.
 bin: editor
+	rm -rf $(BIN)
 	@mkdir -p $(BIN)
-	cp $(CC1_DIR)/cc1 $(BIN)/
-	cp $(SHC_DIR)/shc $(BIN)/
-	cp RStudio $(BIN)/
-	@echo "RStudio, cc1 and shc are in $(BIN)/"
+	cp $(CC1_DIR)/cc1.exe $(BIN)/
+	cp $(SHC_DIR)/shc.exe $(BIN)/
+	cp RStudio.exe $(BIN)/
+	@echo "RStudio.exe, cc1.exe and shc.exe are in $(BIN)/"
 
 clean:
 	rm -rf $(BIN)
@@ -652,6 +666,36 @@ def workspace_text(specs):
             + "".join(rows) + '</Workspace>\n')
 
 
+def named_sources(text, path):
+    """Every source file a generated project names, as a set.
+
+    Which files are built is the thing --check is about; the rest of a project
+    file is arrangement. That distinction is not fussiness: **Xcode rewrites a
+    .pbxproj when it builds it**, sorting the sections by identifier instead of
+    by name. A byte-for-byte check therefore fails after every Xcode build and
+    says the project has drifted when nothing has, which is a check nobody
+    would keep for long.
+    """
+    if path.endswith(".pbxproj"):
+        return set(re.findall(r'/\* ([^ *]+\.cpp) in Sources \*/', text))
+    if path.endswith(".vcxproj"):
+        return set(re.findall(r'<ClCompile Include="([^"]+)"', text))
+    return None
+
+
+def same_sources(there, wanted_text, path):
+    """Whether what is on disk builds what the Makefile says it should.
+
+    For the project formats, the source lists are compared. For everything else
+    - the workspace, the solution, workspace.mk - the whole text is, because
+    nothing rewrites those and every line in them was put there on purpose.
+    """
+    mine = named_sources(wanted_text, path)
+    if mine is None:
+        return there == wanted_text
+    return named_sources(there, path) == mine
+
+
 def main():
     checking = "--check" in sys.argv[1:]
     specs = projects()
@@ -673,10 +717,10 @@ def main():
     if "src/terminal_win.cpp" not in windows_sources:
         windows_sources.append("src/terminal_win.cpp")
 
-    wanted.append((os.path.join(HERE, "RStudio.vcxproj"),
-                   vcxproj_text("RStudio", sorted(set(windows_sources)),
+    wanted.append((os.path.join(HERE, "RStudioConsole.vcxproj"),
+                   vcxproj_text("RStudioConsole", sorted(set(windows_sources)),
                                 ["_CRT_SECURE_NO_WARNINGS"]),
-                   "RStudio.vcxproj"))
+                   "RStudioConsole.vcxproj"))
     wanted.append((os.path.join(SIBLINGS, "Compiler-S", "shc.vcxproj"),
                    vcxproj_text("shc", specs[2]["sources"], ["_CRT_SECURE_NO_WARNINGS"]),
                    "shc.vcxproj"))
@@ -686,7 +730,7 @@ def main():
         ("shc", "../Compiler-S/shc.vcxproj", guid("shc"), []),
         # the editor after both, which is the dependency this whole thing is
         # for - said in a .sln the way the workspace says it in a .xcodeproj.
-        ("RStudio", "RStudio.vcxproj", guid("RStudio"), [CC1_GUID, guid("shc")]),
+        ("RStudioConsole", "RStudioConsole.vcxproj", guid("RStudioConsole"), [CC1_GUID, guid("shc")]),
     ]
     wanted.append((os.path.join(HERE, "RStudio.sln"), solution_text(entries),
                    "RStudio.sln"))
@@ -698,7 +742,7 @@ def main():
     for path, text, what in wanted:
         if checking:
             there = open(path).read() if os.path.exists(path) else None
-            if there != text:
+            if there is None or not same_sources(there, text, path):
                 stale.append(what)
             continue
         os.makedirs(os.path.dirname(path), exist_ok=True)

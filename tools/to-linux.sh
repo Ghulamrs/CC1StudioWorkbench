@@ -39,13 +39,13 @@ WHAT="${1:-check}"
 # cc1 lives on that box too, and its own checkout is what has it. Named here
 # rather than found, so that a suite reporting "no cc1" is reporting a fact
 # about that machine and not about this script.
-CC1_THERE="${ED1_LINUX_CC1:-\$HOME/ansicc/cc1}"
+CC1_THERE="${ED1_LINUX_CC1:-\$HOME/ansicc/cc1.exe}"
 
 # And shc, which Compiler-S's own relay leaves in ~/shalimar. Both are named
 # rather than searched for, so that a suite saying "no cc1 named" is saying
 # something about that machine and not about this script having looked in the
 # wrong place - which is exactly what it said the first time.
-SHC_THERE="${ED1_LINUX_SHC:-\$HOME/shalimar/shc}"
+SHC_THERE="${ED1_LINUX_SHC:-\$HOME/shalimar/shc.exe}"
 
 # src/obj is excluded and that is not tidiness. The first run of this script
 # carried the Mac's own Mach-O objects over, make found them newer than the
@@ -58,7 +58,7 @@ SHC_THERE="${ED1_LINUX_SHC:-\$HOME/shalimar/shc}"
 # found it newer than tests/test.cpp - "cannot execute binary file", which
 # reads as a broken box and is the Mac's own binary being run on Linux.
 tar --no-mac-metadata --exclude 'src/obj' --exclude '*.o' --exclude '*.d' \
-    --exclude 'tests/test' --exclude 'tests/session' --exclude 'RStudio' \
+    --exclude 'tests/test' --exclude 'tests/session' --exclude 'RStudio.exe' \
     -czf "${TMPDIR:-/tmp}/ed1-src.tgz" \
     src tests winforms examples help Makefile workspace.mk README.md 2>/dev/null || exit 2
 
@@ -69,8 +69,8 @@ scp -q -i "$KEY" "${TMPDIR:-/tmp}/ed1-src.tgz" "$BOX:~/$DIR/" || exit 2
 # box's business rather than this script's, and that box is small.
 ssh -n -i "$KEY" "$BOX" "cd ~/$DIR && tar xzf ed1-src.tgz 2>/dev/null; find . -name '._*' -delete && \
     make -j2 2>&1 | grep -E 'error|Error' ; \
-    [ -x ./RStudio ] || { echo 'no RStudio was built'; exit 2; } ; \
-    if [ \"$WHAT\" = build ]; then echo 'built RStudio'; exit 0; fi ; \
+    [ -x ./RStudio.exe ] || { echo 'no RStudio.exe was built'; exit 2; } ; \
+    if [ \"$WHAT\" = build ]; then echo 'built RStudio.exe'; exit 0; fi ; \
     if [ \"$WHAT\" = workspace ]; then \
         make -f workspace.mk check CC1_DIR=\$HOME/ansicc SHC_DIR=\$HOME/shalimar ; \
     else \

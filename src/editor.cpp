@@ -267,7 +267,12 @@ Editor::Editor()
     if (fromEnv && *fromEnv) {
         tool_.cc1 = fromEnv;
     } else {
-        const std::string beside = path::besideProgram("cc1");
+        // cc1.exe first, which is what Compiler-C builds on every machine
+        // now; then bare cc1, because installs made before that rename still
+        // have one and an editor that stopped finding them would be the
+        // rename breaking somebody's setup for nothing.
+        std::string beside = path::besideProgram("cc1.exe");
+        if (beside.empty()) beside = path::besideProgram("cc1");
         if (!beside.empty()) tool_.cc1 = beside;
     }
 
@@ -276,7 +281,8 @@ Editor::Editor()
     if (shcFromEnv && *shcFromEnv) {
         tool_.shc = shcFromEnv;
     } else {
-        const std::string beside = path::besideProgram("shc");
+        std::string beside = path::besideProgram("shc.exe");
+        if (beside.empty()) beside = path::besideProgram("shc");
         if (!beside.empty()) tool_.shc = beside;
     }
 

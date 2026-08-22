@@ -42,9 +42,10 @@
 
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
   <PropertyGroup>
-    <!-- The binary is RStudioGui.exe; the project file keeps its own
-         name, which scripts and documentation already point at. -->
-    <TargetName>RStudioGui</TargetName>
+    <!-- On Windows the window is what somebody runs, so it takes the plain
+         name: RStudio.exe. The console editor there is RStudioConsole.exe.
+         The project file keeps its own name, which scripts point at. -->
+    <TargetName>RStudio</TargetName>
   </PropertyGroup>
 
   <ItemDefinitionGroup>

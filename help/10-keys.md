@@ -23,7 +23,7 @@ In the project pane, enter opens. In the panel, left and right change tab; on
 Console, enter goes to the line the compiler named; on Debug, enter on a frame
 looks at it and enter on the top line goes back.
 
-**`RStudioGui` differs on ten keys deliberately** — `Ctrl+PageDown` and
+**`RStudio.exe` on Windows differs on ten keys deliberately** — `Ctrl+PageDown` and
 `Ctrl+PageUp` move between files there, because `F2` and `F3` are Rename and
 Find next in a Windows application and pretending otherwise would be worse.
 
@@ -47,7 +47,7 @@ into, Step out, Up the stack, Down the stack, Watch expression, Stop debugging.
 ## The command line
 
 ```
-RStudio [file] [--project dir] [--toolchain auto|cc1|msvc|shc|c++]
+RStudio.exe [file] [--project dir] [--toolchain auto|cc1|msvc|shc|c++]
     [--config debug|release] [--cc1 path] [--cl path] [--shc path] [--cxx path]
     [--width n] [--tabs] [--case-indent] [--plain]
 ```
@@ -92,7 +92,7 @@ exist to check what is in front of you before it is committed.
 make                                     the terminal editor
 make check CC1=$HOME/... SHC=$HOME/...   both suites
 build.bat check                          the same on Windows
-msbuild winforms\RStudioGui.vcxproj /p:Configuration=Release /p:Platform=x64
+build.bat gui                            the window, as RStudio.exe
 ```
 
 Spell those paths with `$HOME` and never `~`: make hands a literal `~` to the

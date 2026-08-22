@@ -34,3 +34,8 @@ build/
 # What make -f workspace.mk bin puts together: the editor and the two
 # compilers, copied from where each was built.
 bin/
+
+# A scratch file that appeared in the root and was swept into a commit by
+# git add -A. It held an API key, and GitHub refused the push. Ignored so that
+# it cannot happen twice.
+Untitled.swift

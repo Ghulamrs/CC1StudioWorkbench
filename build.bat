@@ -3,12 +3,14 @@ rem Builds WinConsole with MSVC, which is how it is built on the machine it is
 rem meant for. There is no make on that box, and none is needed: a couple of
 rem dozen translation units and one link.
 rem
-rem RStudio.exe is this project's console editor on Windows - the same source as
+rem RStudioConsole.exe is this project's console editor on Windows.
+rem On Windows RStudio.exe is the window - which is what somebody there runs -
+rem and on a Mac or Linux, where there is no window, RStudio.exe is this one. - the same source as
 rem ed1 on Linux and macOS, over the Windows half of the terminal, and named for
 rem the machine it runs on so that the three variants can be told apart where
 rem they are installed. See "The three variants" in the README.
 rem
-rem   build            builds RStudio.exe
+rem   build            builds RStudioConsole.exe
 rem   build test       builds it, then builds and runs the unit tests
 rem   build session    builds it, then drives the editor itself with keystrokes
 rem   build check      both
@@ -31,7 +33,7 @@ if errorlevel 1 goto :fail
 if not exist obj mkdir obj
 
 cl /nologo /std:c++14 /W4 /WX /EHsc /permissive- /O2 /D_CRT_SECURE_NO_WARNINGS ^
-   /Fe:RStudio.exe /Fo:obj\ ^
+   /Fe:RStudioConsole.exe /Fo:obj\ ^
    src\main.cpp src\editor.cpp src\buffer.cpp src\compile.cpp ^
    src\indent.cpp src\menu.cpp src\tree.cpp src\syntax.cpp src\toolchain.cpp ^
    src\json.cpp src\project.cpp src\find.cpp src\utf8.cpp src\workspace.cpp src\symbols.cpp src\demangle_win.cpp ^
@@ -42,11 +44,22 @@ cl /nologo /std:c++14 /W4 /WX /EHsc /permissive- /O2 /D_CRT_SECURE_NO_WARNINGS ^
 if errorlevel 1 goto :fail
 
 if "%1"=="solution" goto :solution
+if "%1"=="gui" goto :gui
 if "%1"=="product" goto :product
 if "%1"=="test" goto :unit
 if "%1"=="check" goto :unit
 if "%1"=="session" goto :session
 goto :done
+
+:gui
+rem The window, which is C++/CLI and which the console build above never
+rem compiles. Run from here for the same reason the solution is: msbuild
+rem reaches PATH only after vcvars64.bat, which the top of this file has
+rem already found, so nothing else has to know where Visual Studio is.
+msbuild winforms\RStudioGui.vcxproj /p:Configuration=Release /p:Platform=x64 /v:minimal
+if errorlevel 1 goto :fail
+echo built RStudio.exe (the window)
+exit /b 0
 
 :solution
 rem The three programs as one solution: cc1, shc, and this editor's console
@@ -72,8 +85,8 @@ rem is copied when msbuild has made it and passed over when it has not.
 set PRODUCT=%USERPROFILE%\cc1-studio
 if not exist "%PRODUCT%\bin" mkdir "%PRODUCT%\bin"
 if not exist "%PRODUCT%\examples" mkdir "%PRODUCT%\examples"
-copy /y RStudio.exe "%PRODUCT%\bin\" >nul
-if exist winforms\x64\Release\RStudioGui.exe copy /y winforms\x64\Release\RStudioGui.exe "%PRODUCT%\bin\" >nul
+copy /y RStudioConsole.exe "%PRODUCT%\bin\" >nul
+if exist winforms\x64\Release\RStudio.exe copy /y winforms\x64\Release\RStudio.exe "%PRODUCT%\bin\" >nul
 copy /y README.md "%PRODUCT%\" >nul
 copy /y examples\*.c "%PRODUCT%\examples\" >nul
 copy /y examples\*.cpp "%PRODUCT%\examples\" >nul
@@ -105,11 +118,11 @@ if not exist obj\harness mkdir obj\harness
 cl /nologo /std:c++14 /W4 /WX /EHsc /permissive- /D_CRT_SECURE_NO_WARNINGS ^
    /I src /Fe:session.exe /Fo:obj\harness\ tests\session.cpp src\path.cpp
 if errorlevel 1 goto :fail
-session.exe RStudio.exe %CC1%
+session.exe RStudioConsole.exe %CC1%
 if errorlevel 1 goto :fail
 
 :done
-echo built RStudio.exe
+echo built RStudioConsole.exe
 exit /b 0
 
 :findvcvars

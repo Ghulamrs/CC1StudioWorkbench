@@ -12,8 +12,8 @@
   </ItemGroup>
   <PropertyGroup Label="Globals">
     <VCProjectVersion>17.0</VCProjectVersion>
-    <ProjectGuid>{9E28509C-5C1B-EDFC-7DF7-0315FE0E3134}</ProjectGuid>
-    <RootNamespace>RStudio</RootNamespace>
+    <ProjectGuid>{F8607F85-FA8D-5AC7-D978-9453C800A909}</ProjectGuid>
+    <RootNamespace>RStudioConsole</RootNamespace>
     <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
@@ -31,7 +31,7 @@
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
   <PropertyGroup>
-    <TargetName>RStudio</TargetName>
+    <TargetName>RStudioConsole</TargetName>
   </PropertyGroup>
   <ItemDefinitionGroup>
     <ClCompile>

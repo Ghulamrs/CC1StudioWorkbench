@@ -39,7 +39,7 @@ scp -q build.bat README.md "$BOX:$DIR/" || exit 2
 # The solution and the project it names. RStudio.sln reaches ../Compiler-C and
 # ../Compiler-S, so the two compilers have to be relayed too for it to build -
 # tools/to-windows.sh --solution does that and msbuilds it.
-scp -q RStudio.sln RStudio.vcxproj "$BOX:$DIR/" 2>/dev/null
+scp -q RStudio.sln RStudioConsole.vcxproj "$BOX:$DIR/" 2>/dev/null
 # help/ travels because tests/test.cpp checks Help > Contents against it: a
 # page named by the editor and absent from disk is a check that fails, and
 # skipping it on two of the three machines would be checking it in one place.
@@ -64,8 +64,8 @@ CC1_THERE='$env:USERPROFILE\Compiler-C\msvc\x64\Release\cc1.exe'
 SHC_THERE='$env:USERPROFILE\Compiler-S\shc.exe'
 
 if [ "$WHAT" = "gui" ]; then
-    say "msbuild winforms\\ed1gui.vcxproj"
-    ssh -n "$BOX" "cd $DIR; msbuild winforms\\ed1gui.vcxproj /p:Configuration=Release /p:Platform=x64 /v:minimal"
+    say "build.bat gui"
+    ssh -n "$BOX" "cd $DIR; cmd /c build.bat gui"
     exit $?
 fi
 

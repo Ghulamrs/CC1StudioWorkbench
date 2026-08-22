@@ -746,7 +746,12 @@ a build failing with a compiler that works perfectly when you run it by hand.
 
 ### The other two machines
 
-Neither has git, so the tree is relayed and built there.
+Both scripts relay this working tree and build it from clean there. The Windows
+box has no git at all; the Linux box does, and has a clone of its own at
+`~/CC1StudioWorkbench` under the old repository name - but a clone can only
+have what has been pushed, and these exist to check what is in front of you
+before it is committed. Each script builds in a directory of its own and leaves
+that clone alone.
 
 ```
 ./tools/to-linux.sh              build with g++ and run both suites
@@ -769,7 +774,7 @@ shadowed variables clang accepted. What it cannot do is Shalimar: shc does not
 run there - Compiler-S cross-compiles and ships only assembly to that box - so
 every Shalimar case skips itself with a word.
 
-Both relays copy the **build scripts and the tests** as well as the sources,
+Both scripts copy the **build scripts and the tests** as well as the sources,
 and both exclude what was built here. A stale `build.bat` and a stale
 `test.cpp` have each reported an old, smaller suite that looked green; and the
 first run of the Linux relay carried the Mac's own `.o` files over, where make

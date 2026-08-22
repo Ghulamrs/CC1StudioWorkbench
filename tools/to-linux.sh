@@ -12,10 +12,17 @@
 # clang++ or cl, which is a routing this editor now makes and nowhere else can
 # check.
 #
-# The tree goes over as a tarball and is built from clean, for the reason
-# Compiler-S's own relay gives: an object left behind from a previous relay is
-# compiled against the previous headers and the link still succeeds, because
-# the mangled names match.
+# A tarball rather than that box's own clone, which is a deliberate choice and
+# not an oversight. There *is* a clone there - ~/CC1StudioWorkbench, on the old
+# repository name - and it has git, unlike the Windows box. But a clone can only
+# ever have what has been pushed, and this script exists to check what is in the
+# working tree *before* it is committed. The clone also drifts: it was eight
+# commits behind on 2026-08-21 with a stale origin/main, which at a glance reads
+# like divergent work by somebody else.
+#
+# So: this relays and builds from clean, the clone stays as it is, and neither
+# pretends to be the other. If you want the clone up to date, push and pull it -
+# that is a different job from this one.
 #
 #   ./tools/to-linux.sh              build and run both suites
 #   ./tools/to-linux.sh build        build only
@@ -24,6 +31,8 @@ cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
 KEY="${ED1_LINUX_KEY:-$HOME/Documents/Claude/myMorningWalk.pem}"
 BOX="${ED1_LINUX_BOX:-ec2-user@52.202.164.123}"
+# Its own directory, well away from ~/CC1StudioWorkbench: this is wiped and
+# rebuilt every run, and doing that to somebody's checkout would be unforgivable.
 DIR="${ED1_LINUX_DIR:-rstudio}"
 WHAT="${1:-check}"
 

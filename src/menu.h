@@ -78,6 +78,7 @@ enum Action {
     ActionToolMsvc,
     ActionToolShc,
     ActionToolCxx,
+    ActionHelpContents,
     ActionKeys,
     ActionAbout
 };

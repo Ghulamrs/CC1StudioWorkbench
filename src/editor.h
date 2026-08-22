@@ -226,6 +226,7 @@ private:
     void newProject();
     void saveProject();
     void resetDebug();
+    void showHelpContents();
     void showKeys();
     void showAbout();
 

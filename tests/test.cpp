@@ -15,6 +15,8 @@
 #include "settings.h"
 #include "workspace.h"
 #include "debugger.h"
+#include "help.h"
+#include "about.h"
 
 // The seam the window is built on. It is tested from here because the window
 // itself only runs on Windows, where cc1 emits MASM and there is no debugging
@@ -2982,6 +2984,67 @@ void whatALinkFailureSays() {
 
 // A compiler per group: what ed1.json says, what survives being written back,
 // and the two commands that used to be one.
+// The manual's contents, against the manual.
+//
+// Help > Contents lists the pages by name and says where each one is. Nothing
+// stops those two from parting company except this: a page renamed in help/
+// and not here leaves the editor pointing at a file that is not there, and a
+// page added to help/ and not here is invisible to anybody who only ever looks
+// at the editor. Both are the house bug - documentation that outlived the
+// fact - and both are one check.
+void theManualsContents() {
+    std::printf("the manual, and what the editor says is in it\n");
+
+    if (!editor::path::isDirectory("help")) {
+        std::printf("  (no help/ from here, so the manual is not checked)\n");
+        return;
+    }
+
+    const std::vector<editor::help::Page>& pages = editor::help::pages();
+    check(pages.size() >= 13, "there are the ten pages, the languages and the appendix");
+
+    // Every page the editor names is on disk.
+    size_t missing = 0;
+    for (size_t i = 0; i < pages.size(); ++i) {
+        std::string where = editor::path::join("help", pages[i].file);
+        if (!editor::path::exists(where)) {
+            std::printf("  the editor names help/%s and it is not there\n", pages[i].file);
+            ++missing;
+        }
+    }
+    check(missing == 0, "every page Help > Contents names is a file that exists");
+
+    // And every page on disk is named by the editor. README.md is the contents
+    // in Markdown and is not itself a page.
+    size_t unlisted = 0;
+    std::vector<editor::path::Entry> inside = editor::path::entries("help");
+    for (size_t i = 0; i < inside.size(); ++i) {
+        const std::string& leaf = inside[i].name;
+        if (leaf.size() < 3 || leaf.substr(leaf.size() - 3) != ".md") continue;
+        if (leaf == "README.md") continue;
+        bool named = false;
+        for (size_t p = 0; p < pages.size(); ++p)
+            if (leaf == pages[p].file) named = true;
+        if (!named) {
+            std::printf("  help/%s exists and Help > Contents does not name it\n", leaf.c_str());
+            ++unlisted;
+        }
+    }
+    check(unlisted == 0, "and every page on disk is one the editor names");
+
+    // The panel is eighty columns wide and the contents has to fit it. A title
+    // long enough to push the third column off the edge is caught here rather
+    // than by somebody noticing a ragged screen.
+    std::vector<std::string> said = editor::help::contents();
+    size_t longest = 0;
+    for (size_t i = 0; i < said.size(); ++i)
+        if (said[i].size() > longest) longest = said[i].size();
+    check(longest <= 74, "and none of its lines is too wide for the panel");
+
+    check(said[0].find(editor::about::version()) != std::string::npos,
+          "the contents names the version, so a printed page and the editor agree");
+}
+
 void aCompilerPerGroup() {
     std::printf("a compiler per group, and the link at the end\n");
 
@@ -3644,6 +3707,7 @@ int main(int argc, char** argv) {
     theOtherShapeOfDiagnostic();
     whatALinkFailureSays();
     aCompilerPerGroup();
+    theManualsContents();
     aDirectoryInAQuotedArgument();
     whatTheProjectBuilds();
     theThirdLanguage();

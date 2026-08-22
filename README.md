@@ -727,6 +727,19 @@ second copy of the editor. Two editors that behave nearly the same are worse
 than one editor with two terminals - the same reason the window shares the core
 rather than reimplementing it.
 
+## The manual
+
+[`help/`](help/README.md) — ten pages about the editor, one about each language
+it drives, and the Shalimar specification as Appendix A. `Help ▸ Contents` in
+the editor lists the same pages with a line each; `F1` shows the keys.
+
+Appendix A is a verbatim copy of the document that lives in the Shalimar app's
+own repository, carried here because this is a separate repository and a reader
+has no `../Shalimar` to follow. That copy wins; `tools/check-help.sh` diffs the
+two and says when they have drifted, and `tests/test.cpp` checks that every
+page `Help ▸ Contents` names is a file that exists and every file is a page it
+names.
+
 ## Building and checking
 
 On a Mac or on Linux:

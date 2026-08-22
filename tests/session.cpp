@@ -69,6 +69,7 @@ void checkEqual(const std::string& got, const std::string& want, const std::stri
 
 // Keys, spelled the way the terminal sends them.
 const std::string kF5 = "\x1b[15~";
+const std::string kF1 = "\x1b[11~";
 const std::string kF6 = "\x1b[17~";
 const std::string kF7 = "\x1b[18~";
 const std::string kF8 = "\x1b[19~";
@@ -1444,10 +1445,12 @@ void aDirectoryWithNoProject(const std::string& ed1) {
 
     // Help is the last column, and About is under it. Checked from here as
     // well as in the window, since the two show the same lines from the core.
-    // Eight rights rather than seven since Language joined the bar - a count
-    // of the columns, written down in the one place that walks them.
+    // Eight rights rather than seven since Language joined the bar, and two
+    // downs rather than one since Contents joined this menu above About - a
+    // count of the columns and of the items, written down in the one place
+    // that walks them.
     Screen about = drive(ed1, "--project \"" + dir.string() + "\"",
-                         kF10 + times(kRight, 8) + kDown + kEnter + ctrl('q'), dir);
+                         kF10 + times(kRight, 8) + times(kDown, 2) + kEnter + ctrl('q'), dir);
     check(onScreen(about, "RStudio 1.1"), "About names the product and version");
     check(onScreen(about, "G. R. Akhtar"), "and who it belongs to");
     check(onScreen(about, "Islamabad"), "and where they are, which the last line must not lose");
@@ -1870,6 +1873,44 @@ void aCompilerPerGroup(const std::string& ed1, const std::string& cc1) {
     file::remove_all(dir);
 }
 
+// Help, which is the one menu whose whole job is to be readable.
+void theHelpMenu(const std::string& ed1) {
+    std::printf("the manual, from the Help menu\n");
+
+    file::path dir = freshProject("help-menu");
+    writeFile(dir / "src" / "one.c", "int main(void) { return 0; }\n");
+    std::string arguments = "\"" + (dir / "src" / "one.c").string() +
+                            "\" --project \"" + dir.string() + "\"";
+
+    // Help is the ninth column and Contents its first item, which is already
+    // selected when the menu opens - so no downs.
+    const std::string toContents = kF10 + times(kRight, 8) + kEnter;
+    Screen shown = drive(ed1, arguments, toContents + ctrl('q'), dir);
+    check(onScreen(shown, "the manual"), "Help > Contents shows the manual's contents");
+    check(onScreen(shown, "What it is"), "with the first page in it");
+    check(onScreen(shown, "three languages"), "and a line saying what that page is about");
+    check(wasShown(shown, "help/"), "and says where the pages themselves are");
+
+    // The version is not written out twice. A contents that said 1.0 while
+    // About said 1.1 is the sort of thing nobody notices for a year.
+    Screen about = drive(ed1, arguments, kF10 + times(kRight, 8) + times(kDown, 2) + kEnter +
+                                             ctrl('q'), dir);
+    check(onScreen(about, "RStudio"), "Help > About still names the product");
+
+    // F1 is the keys and is not the same thing as the contents.
+    // The keys are longer than the seven rows the panel shows and it opens at
+    // the top, so what is checked has to be near the top of the listing.
+    // wasShown does not help either: the editor writes only the rows the panel
+    // is showing, so a line below the fold never reaches the terminal at all -
+    // which is what stops it flickering and is also why it cannot be checked
+    // from out here without scrolling to it first.
+    Screen keys = drive(ed1, arguments, kF1 + ctrl('q'), dir);
+    check(onScreen(keys, "these keys"), "F1 shows the keys");
+    check(!onScreen(keys, "the manual"), "which is a different screen from the contents");
+
+    file::remove_all(dir);
+}
+
 int main(int argc, char** argv) {
 #ifdef _WIN32
     std::string ed1 = "ed1.exe";
@@ -1931,6 +1972,7 @@ int main(int argc, char** argv) {
     aShalimarProject(ed1, shc);
     stoppingShalimar(ed1, shc);
     aCompilerPerGroup(ed1, cc1);
+    theHelpMenu(ed1);
 
     std::printf("\n%d checks, %d failed\n", checks, failures);
     return failures == 0 ? 0 : 1;

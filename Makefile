@@ -39,7 +39,7 @@ SRC := src/main.cpp src/editor.cpp src/buffer.cpp src/compile.cpp \
        src/indent.cpp src/menu.cpp src/tree.cpp src/syntax.cpp \
        src/toolchain.cpp src/json.cpp src/project.cpp src/find.cpp \
        src/utf8.cpp src/workspace.cpp src/symbols.cpp src/demangle_win.cpp \
-       src/path.cpp src/process.cpp src/debugger.cpp src/settings.cpp src/about.cpp \
+       src/path.cpp src/process.cpp src/debugger.cpp src/settings.cpp src/about.cpp src/help.cpp \
        src/terminal_common.cpp \
        $(TERM_SRC)
 
@@ -82,7 +82,7 @@ test: tests/test
 tests/test: tests/test.cpp src/compile.cpp src/indent.cpp src/syntax.cpp \
             src/toolchain.cpp src/json.cpp src/project.cpp src/find.cpp \
        src/utf8.cpp src/workspace.cpp src/symbols.cpp src/demangle_win.cpp \
-            src/path.cpp src/process.cpp src/debugger.cpp src/settings.cpp src/about.cpp \
+            src/path.cpp src/process.cpp src/debugger.cpp src/settings.cpp src/about.cpp src/help.cpp \
             src/buffer.cpp \
             winforms/bridge.cpp winforms/bridge.h src/compile.h src/indent.h src/syntax.h \
             src/json.h src/project.h src/path.h src/buffer.h
@@ -90,7 +90,7 @@ tests/test: tests/test.cpp src/compile.cpp src/indent.cpp src/syntax.cpp \
 	    src/compile.cpp src/indent.cpp \
 	    src/syntax.cpp src/toolchain.cpp src/json.cpp src/project.cpp src/find.cpp \
        src/utf8.cpp src/workspace.cpp src/symbols.cpp src/demangle_win.cpp \
-	    src/path.cpp src/process.cpp src/debugger.cpp src/settings.cpp src/about.cpp \
+	    src/path.cpp src/process.cpp src/debugger.cpp src/settings.cpp src/about.cpp src/help.cpp \
 	    src/buffer.cpp $(SHM_SRC)
 
 # The other half of the checking: the editor itself, driven by keystrokes.

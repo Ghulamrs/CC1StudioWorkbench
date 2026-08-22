@@ -1,6 +1,7 @@
 #include "editor.h"
 
 #include "about.h"
+#include "help.h"
 #include "utf8.h"
 #include "symbols.h"
 #include "workspace.h"
@@ -2718,6 +2719,20 @@ void Editor::showAbout() {
     say(std::string(about::name()) + " " + about::version());
 }
 
+// The manual's contents, in the panel. Not the manual itself: ten pages of
+// prose compiled into the binary would be a second copy of what is in help/,
+// and a second copy is how documentation comes to outlive the fact. What
+// somebody at the keyboard wants is the reminder - what exists, and where.
+void Editor::showHelpContents() {
+    panelOpen_ = true;
+    tab_ = TabConsole;
+    console_.clear();
+    std::vector<std::string> said = help::contents();
+    for (size_t i = 0; i < said.size(); ++i) console_.push_back(said[i]);
+    panelOff_ = 0;
+    say("the manual is in help/ - F1 for the keys");
+}
+
 void Editor::showKeys() {
     panelOpen_ = true;
     tab_ = TabConsole;
@@ -2892,6 +2907,7 @@ void Editor::perform(Action action) {
             // is the whole content of the answer and it is one string away.
             say("compiler: " + toolchainShown(tool_, tool_.kind) + ", for every file");
             break;
+        case ActionHelpContents: showHelpContents(); break;
         case ActionKeys:         showKeys(); break;
         case ActionAbout:        showAbout(); break;
         case ActionNone:         break;

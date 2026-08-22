@@ -29,13 +29,17 @@ WHAT="${1:-check}"
 say() { printf '%s\n' "$*"; }
 
 say "copying to $BOX:$DIR"
-ssh -n "$BOX" "powershell -NoProfile -Command \"New-Item -ItemType Directory -Force -Path '\$HOME\\$DIR\\src\\shalimar','\$HOME\\$DIR\\tests','\$HOME\\$DIR\\winforms','\$HOME\\$DIR\\examples' | Out-Null\"" || exit 2
+ssh -n "$BOX" "powershell -NoProfile -Command \"New-Item -ItemType Directory -Force -Path '\$HOME\\$DIR\\src\\shalimar','\$HOME\\$DIR\\tests','\$HOME\\$DIR\\winforms','\$HOME\\$DIR\\examples','\$HOME\\$DIR\\help' | Out-Null\"" || exit 2
 
 scp -q src/*.cpp src/*.h "$BOX:$DIR/src/" || exit 2
 scp -q src/shalimar/*.cpp src/shalimar/*.h "$BOX:$DIR/src/shalimar/" || exit 2
 scp -q tests/*.cpp "$BOX:$DIR/tests/" || exit 2
 scp -q winforms/* "$BOX:$DIR/winforms/" 2>/dev/null
 scp -q build.bat README.md "$BOX:$DIR/" || exit 2
+# help/ travels because tests/test.cpp checks Help > Contents against it: a
+# page named by the editor and absent from disk is a check that fails, and
+# skipping it on two of the three machines would be checking it in one place.
+scp -q help/*.md "$BOX:$DIR/help/" || exit 2
 scp -q examples/* "$BOX:$DIR/examples/" 2>/dev/null
 
 # The shell on the other end is PowerShell, not cmd - so && is not a statement

@@ -60,7 +60,7 @@ SHC_THERE="${ED1_LINUX_SHC:-\$HOME/shalimar/shc}"
 tar --no-mac-metadata --exclude 'src/obj' --exclude '*.o' --exclude '*.d' \
     --exclude 'tests/test' --exclude 'tests/session' --exclude 'ed1' \
     -czf "${TMPDIR:-/tmp}/ed1-src.tgz" \
-    src tests winforms examples Makefile README.md 2>/dev/null || exit 2
+    src tests winforms examples help Makefile README.md 2>/dev/null || exit 2
 
 ssh -n -i "$KEY" "$BOX" "rm -rf ~/$DIR && mkdir -p ~/$DIR" || exit 2
 scp -q -i "$KEY" "${TMPDIR:-/tmp}/ed1-src.tgz" "$BOX:~/$DIR/" || exit 2

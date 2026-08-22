@@ -32,8 +32,13 @@ enum {
     ED1_KIND_CHAR, ED1_KIND_COMMENT, ED1_KIND_PREPROC, ED1_KIND_NUMBER,
     ED1_KIND_LABEL
 };
-enum { ED1_LANG_PLAIN = 0, ED1_LANG_C, ED1_LANG_CPP, ED1_LANG_ASM };
-enum { ED1_TOOL_AUTO = 0, ED1_TOOL_CC1, ED1_TOOL_MSVC };
+enum { ED1_LANG_PLAIN = 0, ED1_LANG_C, ED1_LANG_CPP, ED1_LANG_SHALIMAR, ED1_LANG_ASM };
+
+// Which language's punctuation the layout rules follow. Not the same question
+// as which language the file is - assembly and plain text are laid out by
+// neither - so it is a value of its own rather than a Language.
+enum { ED1_DIALECT_C = 0, ED1_DIALECT_SHALIMAR };
+enum { ED1_TOOL_AUTO = 0, ED1_TOOL_CC1, ED1_TOOL_MSVC, ED1_TOOL_SHC };
 enum { ED1_CONFIG_DEBUG = 0, ED1_CONFIG_RELEASE };
 
 /* Catches a crash and writes the faulting address and a symbolised stack to
@@ -44,15 +49,17 @@ void ed1_watch_for_faults(const char* logPath);
 /* ---- laying code out ---------------------------------------------------- */
 
 /* The whole buffer in, the whole buffer out, lines separated by \n. */
-char* ed1_reindent(const char* text, int width, int tabs, int caseIndent);
+char* ed1_reindent(const char* text, int width, int tabs, int caseIndent,
+                   int dialect);
 
 /* What a newline typed at row and col should be followed by. */
 char* ed1_indent_after_newline(const char* text, int row, int col,
-                               int width, int tabs, int caseIndent);
+                               int width, int tabs, int caseIndent, int dialect);
 
 /* The leading space one line should have, for the tab key and for a line whose
    own layout changed the moment a brace was typed on it. */
-char* ed1_indent_for(const char* text, int row, int width, int tabs, int caseIndent);
+char* ed1_indent_for(const char* text, int row, int width, int tabs, int caseIndent,
+                     int dialect);
 
 void ed1_free(char* what);
 
@@ -94,6 +101,9 @@ void ed1_undo_suspend(void* windowHandle);
 void ed1_undo_resume(void* windowHandle);
 
 int ed1_language_for(const char* path);
+
+/* Which layout rules a language wants. */
+int ed1_dialect_for(int language);
 
 /* One kind per byte of the line, written into kinds. `state` carries the block
    comment across lines and is read and written. Returns how many were set. */
@@ -204,13 +214,13 @@ int ed1_runs_here(int kind, const char* arch);
 const char* ed1_why_not_run(int kind, const char* arch);
 const char* ed1_host_arch(void);
 
-const char* ed1_shown_command(const char* cc1, const char* cl, int kind,
+const char* ed1_shown_command(const char* cc1, const char* cl, const char* shc, int kind,
                               const char* source, int language, const char* arch,
                               int config);
 
 typedef struct Ed1Build Ed1Build;
 
-Ed1Build* ed1_build(const char* cc1, const char* cl, int kind, const char* source,
+Ed1Build* ed1_build(const char* cc1, const char* cl, const char* shc, int kind, const char* source,
                     int language, const char* arch, int config);
 
 /* The project's own program, as against the file in front of you. Which of the
@@ -233,7 +243,7 @@ const char* ed1_project_target_program(Ed1Project* project);
 
 /* Builds it. Ask ed1_project_target_ready first: this answers null when there
    is nothing to build, and the reason is where that call left it. */
-Ed1Build* ed1_build_target(Ed1Project* project, const char* cc1, const char* cl,
+Ed1Build* ed1_build_target(Ed1Project* project, const char* cc1, const char* cl, const char* shc,
                            int kind, const char* arch, int config);
 void ed1_build_free(Ed1Build* built);
 
@@ -256,7 +266,7 @@ const char* ed1_build_error_message(Ed1Build* built);
    returns 1 is not a build that failed. */
 typedef struct Ed1Ran Ed1Ran;
 
-Ed1Ran* ed1_run(const char* cc1, const char* cl, int kind, const char* source,
+Ed1Ran* ed1_run(const char* cc1, const char* cl, const char* shc, int kind, const char* source,
                 int language, const char* arch, int config);
 
 /* Runs a program that is already built - the project's, once it has been. */
@@ -272,7 +282,7 @@ int ed1_ran_error_line(Ed1Ran* ran);
 int ed1_ran_error_column(Ed1Ran* ran);
 const char* ed1_ran_error_message(Ed1Ran* ran);
 
-const char* ed1_shown_run_command(const char* cc1, const char* cl, int kind,
+const char* ed1_shown_run_command(const char* cc1, const char* cl, const char* shc, int kind,
                                   const char* source, int language, const char* arch,
                                   int config);
 
@@ -286,7 +296,7 @@ char* ed1_about(void);
    Freeing the handle removes the program with it. */
 typedef struct Ed1Program Ed1Program;
 
-Ed1Program* ed1_build_program(const char* cc1, const char* cl, int kind, const char* source,
+Ed1Program* ed1_build_program(const char* cc1, const char* cl, const char* shc, int kind, const char* source,
                               int language, const char* arch, int config);
 void ed1_program_free(Ed1Program* built);
 

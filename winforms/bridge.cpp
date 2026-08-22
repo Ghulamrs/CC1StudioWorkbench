@@ -52,8 +52,10 @@ namespace {
 static_assert(ED1_KIND_KEYWORD == static_cast<int>(editor::KindKeyword), "kind numbering has drifted");
 static_assert(ED1_KIND_LABEL == static_cast<int>(editor::KindLabel), "kind numbering has drifted");
 static_assert(ED1_LANG_CPP == static_cast<int>(editor::LangCpp), "language numbering has drifted");
+static_assert(ED1_LANG_SHALIMAR == static_cast<int>(editor::LangShalimar), "language numbering has drifted");
 static_assert(ED1_LANG_ASM == static_cast<int>(editor::LangAsm), "language numbering has drifted");
 static_assert(ED1_TOOL_MSVC == static_cast<int>(editor::ToolMsvc), "toolchain numbering has drifted");
+static_assert(ED1_TOOL_SHC == static_cast<int>(editor::ToolShc), "toolchain numbering has drifted");
 static_assert(ED1_CONFIG_RELEASE == static_cast<int>(editor::ConfigRelease), "config numbering has drifted");
 
 // A copy the caller owns. Allocated and freed on this side of the seam, which
@@ -89,11 +91,13 @@ std::string join(const std::vector<std::string>& lines) {
     return out;
 }
 
-editor::IndentStyle styleOf(int width, int tabs, int caseIndent) {
+editor::IndentStyle styleOf(int width, int tabs, int caseIndent, int dialect) {
     editor::IndentStyle style;
     if (width >= 1 && width <= 16) style.width = static_cast<size_t>(width);
     style.tabs = tabs != 0;
     style.caseIndent = caseIndent ? 1 : 0;
+    style.dialect = dialect == ED1_DIALECT_SHALIMAR ? editor::DialectShalimar
+                                                    : editor::DialectC;
     return style;
 }
 
@@ -299,24 +303,26 @@ void ed1_undo_resume(void* windowHandle) {
 #endif
 }
 
-char* ed1_reindent(const char* text, int width, int tabs, int caseIndent) {
-    return give(join(editor::reindent(split(text), styleOf(width, tabs, caseIndent))));
+char* ed1_reindent(const char* text, int width, int tabs, int caseIndent, int dialect) {
+    return give(join(editor::reindent(split(text),
+                                      styleOf(width, tabs, caseIndent, dialect))));
 }
 
 char* ed1_indent_after_newline(const char* text, int row, int col,
-                               int width, int tabs, int caseIndent) {
+                               int width, int tabs, int caseIndent, int dialect) {
     if (row < 0) row = 0;
     if (col < 0) col = 0;
     return give(editor::indentAfterNewline(split(text), static_cast<size_t>(row),
                                            static_cast<size_t>(col),
-                                           styleOf(width, tabs, caseIndent)));
+                                           styleOf(width, tabs, caseIndent, dialect)));
 }
 
-char* ed1_indent_for(const char* text, int row, int width, int tabs, int caseIndent) {
+char* ed1_indent_for(const char* text, int row, int width, int tabs, int caseIndent,
+                     int dialect) {
     if (row < 0) row = 0;
     std::vector<std::string> lines = split(text);
     return give(editor::indentFor(lines, static_cast<size_t>(row),
-                                  styleOf(width, tabs, caseIndent)));
+                                  styleOf(width, tabs, caseIndent, dialect)));
 }
 
 void ed1_free(char* what) { std::free(what); }
@@ -368,6 +374,10 @@ char* ed1_replace_all(const char* text, const char* needle, const char* with,
 
 int ed1_language_for(const char* path) {
     return static_cast<int>(editor::languageFor(path ? path : ""));
+}
+
+int ed1_dialect_for(int language) {
+    return language == ED1_LANG_SHALIMAR ? ED1_DIALECT_SHALIMAR : ED1_DIALECT_C;
 }
 
 int ed1_highlight(const char* line, int language, int* state,
@@ -571,12 +581,13 @@ int ed1_uses_arch(int kind) {
     return editor::usesArch(static_cast<editor::ToolchainKind>(kind)) ? 1 : 0;
 }
 
-const char* ed1_shown_command(const char* cc1, const char* cl, int kind,
+const char* ed1_shown_command(const char* cc1, const char* cl, const char* shc, int kind,
                               const char* source, int language, const char* arch,
                               int config) {
     editor::Toolchain tool;
     if (cc1 && *cc1) tool.cc1 = cc1;
     if (cl && *cl) tool.cl = cl;
+    if (shc && *shc) tool.shc = shc;
 
     scratch() = editor::shownCommand(tool, static_cast<editor::ToolchainKind>(kind),
                                      source ? source : "",
@@ -597,12 +608,13 @@ const char* ed1_why_not_run(int kind, const char* arch) {
 
 const char* ed1_host_arch(void) { return editor::hostArch(); }
 
-const char* ed1_shown_run_command(const char* cc1, const char* cl, int kind,
+const char* ed1_shown_run_command(const char* cc1, const char* cl, const char* shc, int kind,
                                   const char* source, int language, const char* arch,
                                   int config) {
     editor::Toolchain tool;
     if (cc1 && *cc1) tool.cc1 = cc1;
     if (cl && *cl) tool.cl = cl;
+    if (shc && *shc) tool.shc = shc;
 
     scratch() = editor::shownProgramCommand(tool, static_cast<editor::ToolchainKind>(kind),
                                             source ? source : "",
@@ -612,11 +624,12 @@ const char* ed1_shown_run_command(const char* cc1, const char* cl, int kind,
     return scratch().c_str();
 }
 
-Ed1Ran* ed1_run(const char* cc1, const char* cl, int kind, const char* source,
+Ed1Ran* ed1_run(const char* cc1, const char* cl, const char* shc, int kind, const char* source,
                 int language, const char* arch, int config) {
     editor::Toolchain tool;
     if (cc1 && *cc1) tool.cc1 = cc1;
     if (cl && *cl) tool.cl = cl;
+    if (shc && *shc) tool.shc = shc;
 
     Ed1Ran* out = new Ed1Ran();
     out->ran = editor::runProgram(tool, static_cast<editor::ToolchainKind>(kind),
@@ -638,11 +651,12 @@ int ed1_ran_error_line(Ed1Ran* ran) { return static_cast<int>(ran->ran.diag.line
 int ed1_ran_error_column(Ed1Ran* ran) { return static_cast<int>(ran->ran.diag.col); }
 const char* ed1_ran_error_message(Ed1Ran* ran) { return ran->ran.diag.message.c_str(); }
 
-Ed1Program* ed1_build_program(const char* cc1, const char* cl, int kind, const char* source,
+Ed1Program* ed1_build_program(const char* cc1, const char* cl, const char* shc, int kind, const char* source,
                               int language, const char* arch, int config) {
     editor::Toolchain tool;
     if (cc1 && *cc1) tool.cc1 = cc1;
     if (cl && *cl) tool.cl = cl;
+    if (shc && *shc) tool.shc = shc;
 
     Ed1Program* out = new Ed1Program();
     out->built = editor::buildProgram(tool, static_cast<editor::ToolchainKind>(kind),
@@ -976,13 +990,14 @@ const char* ed1_project_target_program(Ed1Project* project) {
     return project ? project->program.c_str() : "";
 }
 
-Ed1Build* ed1_build_target(Ed1Project* project, const char* cc1, const char* cl,
+Ed1Build* ed1_build_target(Ed1Project* project, const char* cc1, const char* cl, const char* shc,
                            int kind, const char* arch, int config) {
     if (!ed1_project_target_ready(project)) return 0;
 
     editor::Toolchain tool;
     if (cc1 && *cc1) tool.cc1 = cc1;
     if (cl && *cl) tool.cl = cl;
+    if (shc && *shc) tool.shc = shc;
 
     Ed1Build* out = new Ed1Build();
     editor::Built made = editor::buildTarget(
@@ -1005,11 +1020,12 @@ Ed1Ran* ed1_run_built(const char* program) {
     return out;
 }
 
-Ed1Build* ed1_build(const char* cc1, const char* cl, int kind, const char* source,
+Ed1Build* ed1_build(const char* cc1, const char* cl, const char* shc, int kind, const char* source,
                     int language, const char* arch, int config) {
     editor::Toolchain tool;
     if (cc1 && *cc1) tool.cc1 = cc1;
     if (cl && *cl) tool.cl = cl;
+    if (shc && *shc) tool.shc = shc;
 
     Ed1Build* out = new Ed1Build();
     out->built = editor::build(tool, static_cast<editor::ToolchainKind>(kind),

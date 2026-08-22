@@ -1405,8 +1405,10 @@ void aDirectoryWithNoProject(const std::string& ed1) {
 
     // Help is the last column, and About is under it. Checked from here as
     // well as in the window, since the two show the same lines from the core.
+    // Eight rights rather than seven since Language joined the bar - a count
+    // of the columns, written down in the one place that walks them.
     Screen about = drive(ed1, "--project \"" + dir.string() + "\"",
-                         kF10 + times(kRight, 7) + kDown + kEnter + ctrl('q'), dir);
+                         kF10 + times(kRight, 8) + kDown + kEnter + ctrl('q'), dir);
     check(onScreen(about, "RStudio 1.1"), "About names the product and version");
     check(onScreen(about, "G. R. Akhtar"), "and who it belongs to");
     check(onScreen(about, "Islamabad"), "and where they are, which the last line must not lose");
@@ -1423,6 +1425,80 @@ void aDirectoryWithNoProject(const std::string& ed1) {
 
 }  // namespace
 
+// The third language, driven rather than described. Everything below asks the
+// editor to do something with a .shl and looks at what came back on the
+// screen; nothing here reaches into the core.
+void compilingShalimar(const std::string& ed1, const std::string& shc) {
+    std::printf("building Shalimar with shc\n");
+
+    if (shc.empty()) {
+        std::printf("  (no shc named, so those cases are not tried)\n");
+        return;
+    }
+
+    file::path dir = freshProject("shalimar");
+    file::path good = dir / "src" / "good.shl";
+    writeFile(good,
+              "fun <int> = twice(n: int) {\n"
+              "  return n + n\n"
+              "}\n"
+              "\n"
+              "fun <> = main() {\n"
+              "  ? twice(21)\n"
+              "}\n");
+
+    std::string arguments = "\"" + good.string() + "\" --project \"" + dir.string() +
+                            "\" --shc \"" + shc + "\"";
+
+    Screen opened = drive(ed1, arguments, ctrl('q'), dir);
+    check(onScreen(opened, "Shalimar"), "the status bar names the language");
+
+    Screen ok = drive(ed1, arguments, ctrl('b') + ctrl('q'), dir);
+    check(onScreen(ok, "lines of"), "a build that works reports what it produced");
+    check(onScreen(ok, "Assembly"), "and the assembly tab is there");
+
+    // F5 builds a program and runs it, which is the whole of what a Shalimar
+    // program is for.
+    Screen ran = drive(ed1, arguments, kF5 + ctrl('q'), dir);
+    check(wasShown(ran, "42"), "running it prints what the program prints");
+
+    // shc names the line and no column, so the caret lands at the start of it.
+    file::path bad = dir / "src" / "bad.shl";
+    writeFile(bad,
+              "fun <> = main() {\n"
+              "  ? x\n"
+              "}\n");
+    std::string broken = "\"" + bad.string() + "\" --project \"" + dir.string() +
+                         "\" --shc \"" + shc + "\"";
+    Screen refusedIt = drive(ed1, broken, ctrl('b') + ctrl('q'), dir);
+    check(onScreen(refusedIt, "Undefined variable"), "a build that fails says why");
+    check(onScreen(refusedIt, "2/3"), "and the caret lands on the line shc named");
+
+    // The Language menu, which is what makes a file whose name says nothing
+    // still a Shalimar file. Language is the seventh column and Shalimar the
+    // fourth item in it.
+    file::path anonymous = dir / "src" / "notes.txt";
+    writeFile(anonymous, "fun <> = main() {\n  ? 1\n}\n");
+    Screen asText = drive(ed1, "\"" + anonymous.string() + "\" --project \"" +
+                                   dir.string() + "\" --shc \"" + shc + "\"",
+                          ctrl('q'), dir);
+    check(onScreen(asText, "text"), "a .txt opens as plain text");
+
+    Screen asShalimar = drive(ed1, "\"" + anonymous.string() + "\" --project \"" +
+                                       dir.string() + "\" --shc \"" + shc + "\"",
+                              // Language is the seventh column, and its first
+                              // item is already selected when the menu opens -
+                              // so three downs reach the fourth, not four.
+                              kF10 + times(kRight, 6) + times(kDown, 3) +
+                                  kEnter + ctrl('b') + ctrl('q'),
+                              dir);
+    check(wasShown(asShalimar, "language: Shalimar"),
+          "and the Language menu says it is Shalimar after all");
+    check(onScreen(asShalimar, "lines of"), "which is enough for shc to build it");
+
+    file::remove_all(dir);
+}
+
 int main(int argc, char** argv) {
 #ifdef _WIN32
     std::string ed1 = "ed1.exe";
@@ -1430,12 +1506,21 @@ int main(int argc, char** argv) {
     std::string ed1 = "./ed1";
 #endif
     std::string cc1;
+    std::string shc;
 
     if (argc > 1) ed1 = argv[1];
+    // Named in the environment rather than positionally: an empty CC1 on a
+    // make line collapses, and the compiler after it then arrives as the one
+    // before - which reads as fifty debugger failures and is nothing of the
+    // kind.
     if (argc > 2) cc1 = argv[2];
     if (cc1.empty()) {
         const char* fromEnv = std::getenv("CC1");
         if (fromEnv) cc1 = fromEnv;
+    }
+    if (shc.empty()) {
+        const char* fromEnv = std::getenv("SHC");
+        if (fromEnv) shc = fromEnv;
     }
 
     // A compiler named but not there is worse than none named: every case that
@@ -1445,6 +1530,10 @@ int main(int argc, char** argv) {
     if (!cc1.empty() && !editor::path::exists(cc1)) {
         std::printf("no cc1 at %s - the cases that need one are not tried\n\n", cc1.c_str());
         cc1.clear();
+    }
+    if (!shc.empty() && !editor::path::exists(shc)) {
+        std::printf("no shc at %s - the cases that need one are not tried\n\n", shc.c_str());
+        shc.clear();
     }
 
     std::printf("driving %s\n\n", ed1.c_str());
@@ -1467,6 +1556,7 @@ int main(int argc, char** argv) {
     debugPanelPerTarget(ed1);
     runningTheProgram(ed1, cc1);
     stoppingAndStepping(ed1, cc1);
+    compilingShalimar(ed1, shc);
 
     std::printf("\n%d checks, %d failed\n", checks, failures);
     return failures == 0 ? 0 : 1;

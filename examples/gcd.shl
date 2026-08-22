@@ -1,0 +1,14 @@
+// gcd.shm
+fun <> = main() {
+  a : 48
+  b : 18
+  ? "gcd of" a b
+  while b != 0 {
+    r : a % b
+    a : b
+    b : r
+  }
+  ? "is" a
+}
+// expected: gcd of 48 18
+// expected: is 6

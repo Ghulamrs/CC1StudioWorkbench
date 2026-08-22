@@ -2846,6 +2846,167 @@ void whatTheProjectBuilds() {
     file::remove_all(bare);
 }
 
+// Shalimar: the third language, and the one that is not C with fewer rules.
+// Two of its punctuation marks would be read wrongly by a C scanner, and the
+// first of them silently - which is what most of this is about.
+void theThirdLanguage() {
+    std::printf("Shalimar, as a language the editor knows\n");
+
+    check(editor::languageFor("a.shl") == editor::LangShalimar, ".shl is Shalimar");
+    check(editor::languageFor("a.shm") == editor::LangShalimar,
+          "and so is .shm, which is what the app writes");
+    check(editor::languageFor("a.SHL") == editor::LangShalimar, "whatever the case");
+    check(editor::languageFor("a.sh") == editor::LangPlain,
+          "a shell script is not, however close the name looks");
+    checkEqual(editor::languageName(editor::LangShalimar), "Shalimar", "and it is named");
+
+    {
+        editor::SyntaxState state;
+        std::string line = "  fun <real> = area(w: real, h: real) {";
+        std::vector<unsigned char> k = editor::highlight(line, editor::LangShalimar, state);
+        check(k[2] == editor::KindKeyword, "fun is a keyword");
+        check(k[7] == editor::KindType, "and real is a type");
+    }
+    {
+        editor::SyntaxState state;
+        std::vector<unsigned char> k =
+            editor::highlight("? prec(12) sqrt(x) pi", editor::LangShalimar, state);
+        check(k[0] == editor::KindPreproc, "'?' is a command");
+        check(k[2] == editor::KindPreproc, "prec before a bracket is a directive");
+        check(k[11] == editor::KindType, "sqrt is a built-in");
+        check(k[19] == editor::KindNumber, "and pi is a constant, which is a value");
+    }
+    {
+        editor::SyntaxState state;
+        std::vector<unsigned char> k =
+            editor::highlight("?? A.row prec", editor::LangShalimar, state);
+        check(k[0] == editor::KindPreproc && k[1] == editor::KindPreproc,
+              "'?\\?' is one command and not two");
+        check(k[5] == editor::KindType, "row after a dot is an attribute");
+        check(k[9] != editor::KindPreproc,
+              "and prec with no bracket is an ordinary name");
+    }
+    {
+        // No escapes: the first closing quote ends the literal, so what
+        // follows a backslash-quote is code and not more string.
+        editor::SyntaxState state;
+        std::vector<unsigned char> k =
+            editor::highlight("s : \"a\\\" + b", editor::LangShalimar, state);
+        check(k[4] == editor::KindString, "a literal opens");
+        check(k[7] == editor::KindString, "and closes at the first quote after it");
+        check(k[9] != editor::KindString, "leaving what follows as code");
+    }
+    {
+        // The one that matters. 'x : 5' is an assignment in Shalimar and a
+        // goto label in C, and a label is laid out in the function's own
+        // column - so read as C, every assignment walks left.
+        editor::IndentStyle shalimar;
+        shalimar.dialect = editor::DialectShalimar;
+        std::vector<std::string> lines;
+        lines.push_back("fun <> = main() {");
+        lines.push_back("int n : 5");
+        lines.push_back("if n < 2 {");
+        lines.push_back("n : n + 1");
+        lines.push_back("}");
+        lines.push_back("}");
+        std::vector<std::string> out = editor::reindent(lines, shalimar);
+        checkEqual(out[1], "    int n : 5", "a declaration sits one step in");
+        checkEqual(out[3], "        n : n + 1", "and an assignment inside an if, two");
+
+        // Read as C, 'n : n + 1' is a goto label and goes in the function's
+        // own column - four spaces where it belongs at eight. The declaration
+        // above it is safe either way, because 'int n' is two words before the
+        // colon and a label is one.
+        editor::IndentStyle asC;
+        std::vector<std::string> wrong = editor::reindent(lines, asC);
+        checkEqual(wrong[3], "    n : n + 1",
+                   "which is what the C rules would have made of it");
+    }
+    {
+        // No block comment, so a '/' is a divide and nothing is carried on.
+        editor::IndentStyle style;
+        style.dialect = editor::DialectShalimar;
+        std::vector<std::string> lines;
+        lines.push_back("fun <> = main() {");
+        lines.push_back("x : 1. /* 2.");
+        lines.push_back("y : 3.");
+        lines.push_back("}");
+        std::vector<std::string> out = editor::reindent(lines, style);
+        checkEqual(out[2], "    y : 3.", "a line after a /* is laid out like any other");
+    }
+
+    // Routing, and the refusals that go with it.
+    editor::Toolchain automatic;
+    check(editor::resolve(automatic, editor::LangShalimar) == editor::ToolShc,
+          "Shalimar goes to shc");
+    check(editor::canCompile(editor::ToolShc, editor::LangShalimar), "which takes it");
+    check(!editor::canCompile(editor::ToolShc, editor::LangC),
+          "and takes nothing else");
+    check(!editor::canCompile(editor::ToolCc1, editor::LangShalimar),
+          "nor does cc1 take Shalimar");
+    check(!editor::canCompile(editor::ToolMsvc, editor::LangShalimar), "nor cl");
+    check(editor::usesArch(editor::ToolShc),
+          "shc generates for the same three architectures cc1 does");
+
+    // No debug information, for any target, by decision.
+    for (int i = 0; i < 3; ++i)
+        check(!editor::emitsDebugInfo(editor::ToolShc, editor::kArches[i]),
+              std::string("no debug information for ") + editor::kArches[i]);
+    checkEqual(editor::configFlags(editor::ToolShc, editor::ConfigDebug, "arm64-darwin"),
+               "", "and a debug build asks for nothing, having nothing to ask for");
+    checkEqual(editor::configFlags(editor::ToolShc, editor::ConfigRelease, "arm64-darwin"),
+               "", "nor a release one - Shalimar has no preprocessor to define into");
+
+    // What the Debug panel says. It has to say there is none rather than say
+    // nothing: a blank panel reads as a panel that is broken.
+    {
+        std::vector<std::string> said = editor::debugNote(editor::ToolShc, "arm64-darwin");
+        std::string all;
+        for (size_t i = 0; i < said.size(); ++i) all += said[i] + " ";
+        check(all.find("no debug information") != std::string::npos,
+              "the Debug panel says shc writes none");
+        check(all.find("decision rather than a gap") != std::string::npos,
+              "and that it is a decision rather than a gap");
+    }
+
+    // The command, and the one place it differs from cc1's.
+    {
+        editor::Toolchain tool;
+        editor::Recipe recipe = editor::assemblyRecipe(
+            tool, editor::ToolShc, "prog.shl", editor::LangShalimar, "x86_64-linux",
+            editor::ConfigDebug);
+        check(recipe.command.find("--target=x86_64-linux") != std::string::npos,
+              "shc spells the target --target= where cc1 spells it -arch");
+        check(recipe.command.find(" -g") == std::string::npos,
+              "and is never asked for -g");
+        check(recipe.assemblyPath.size() > 2 &&
+                  recipe.assemblyPath.compare(recipe.assemblyPath.size() - 2, 2, ".s") == 0,
+              "the assembly lands in a .s");
+
+        editor::Recipe masm = editor::assemblyRecipe(
+            tool, editor::ToolShc, "prog.shl", editor::LangShalimar, "x86_64-windows",
+            editor::ConfigRelease);
+        check(masm.assemblyPath.size() > 4 &&
+                  masm.assemblyPath.compare(masm.assemblyPath.size() - 4, 4, ".asm") == 0,
+              "except for the Windows target, where it is MASM and ml64 wants .asm");
+    }
+
+    // shc names neither the file nor the column, so the caller supplies one.
+    {
+        editor::Diagnostic d = editor::parseDiagnostic(
+            "Error: line 45: Index 1 out of range 0...4\n", "prog.shl");
+        check(d.present, "a Shalimar diagnostic is recognised");
+        checkEqual(d.file, "prog.shl", "and takes the file it was asked about");
+        check(d.line == 45 && d.col == 1, "the line it names, and the first column");
+        checkEqual(d.message, "Index 1 out of range 0...4", "message");
+    }
+    {
+        editor::Diagnostic d = editor::parseDiagnostic(
+            "Warning: line 3: 'f' is never called\n", "prog.shl");
+        check(!d.present, "a warning is not what the editor stands on");
+    }
+}
+
 int main(int argc, char** argv) {
     paths();
     whereTheProgramIs(argc > 0 ? argv[0] : 0);
@@ -2879,6 +3040,7 @@ int main(int argc, char** argv) {
     theOtherShapeOfDiagnostic();
     whatALinkFailureSays();
     whatTheProjectBuilds();
+    theThirdLanguage();
 
     std::printf("\n%d checks, %d failed\n", checks, failures);
     return failures == 0 ? 0 : 1;

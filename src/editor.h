@@ -71,9 +71,21 @@ public:
     void openFirstFile();
     void setCc1(const std::string& path) { tool_.cc1 = path; }
     void setCl(const std::string& path) { tool_.cl = path; }
+    void setShc(const std::string& path) { tool_.shc = path; }
     void setToolchain(ToolchainKind kind) { tool_.kind = kind; }
     void setConfig(Configuration config) { config_ = config; }
-    void setStyle(const IndentStyle& style) { style_ = style; }
+    // The dialect belongs to the file being edited and the rest of the style
+    // to the project, so a project's settings arriving must not take the
+    // language's layout rules with them.
+    // Settles what the file is read as - the menu's answer if it gave one,
+    // and the name's otherwise - and takes the layout rules with it.
+    void applyLanguage();
+
+    void setStyle(const IndentStyle& style) {
+        IndentDialect dialect = style_.dialect;
+        style_ = style;
+        style_.dialect = dialect;
+    }
     // Applied one at a time, after the project has been read, so that a flag
     // overrides the project without wiping the settings it did not mention.
     void setIndentWidth(size_t width) { style_.width = width; }
@@ -233,6 +245,10 @@ private:
     Project project_;
     std::string projectDir_;
     IndentStyle style_;
+    // What the Language menu was told, or LangCount for 'by extension'. It
+    // outlives a file switch on purpose: someone who says a .txt is Shalimar
+    // is usually about to open another one.
+    Language langChoice_ = LangCount;
     Toolchain tool_;
 
     size_t cx_, cy_, rx_;

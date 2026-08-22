@@ -414,6 +414,48 @@ so pointing it at a third compiler that speaks either one needs no new code. A
 `cl` run wants a Developer Command Prompt - that is where `cl.exe` is on PATH -
 and cl's own listing is MASM, which the assembly tab already colours.
 
+## The three languages
+
+| Language | Suffix | Compiler | Targets | Debug information |
+| --- | --- | --- | --- | --- |
+| C | `.c` `.h` | [cc1](../Compiler-C) | three | DWARF, on two of them |
+| C++ | `.cpp` `.hpp` … | `cl` | its own host | CodeView, always |
+| Shalimar | `.shl` `.shm` | [shc](../Compiler-S) | three | none, by decision |
+
+**The suffix decides, and the Language menu overrides it.** That is for the
+file whose name says the wrong thing or nothing at all - a `.txt` holding a
+program, a header with C++ in it, a Shalimar program the phone app saved as
+`.shm`. Choosing a language sets the colouring, the layout rules and, through
+Tools ▸ By language, the compiler: one choice rather than three.
+
+**Shalimar answers to two suffixes on purpose.** The app writes `.shm` and
+every program it ships is one; `.shl` is what the language is called on the
+desktop and what a new file here is given. Refusing either would mean a file
+that opens in one place and not the other.
+
+### Shalimar is not C with fewer rules
+
+It is simpler in most places - one kind of comment, one kind of literal with
+no escapes in it, no preprocessor, no character literal at all. But two of its
+marks would be read wrongly by a C scanner, and the first of them silently:
+
+```
+n : n + 1        an assignment in Shalimar, a goto label in C
+```
+
+A label is laid out in its function's own column, so a Shalimar program
+indented by the C rules walks left one statement at a time. `IndentDialect`
+in `src/indent.h` is what keeps them apart, and `tests/test.cpp` holds the
+program that shows the difference.
+
+### No debugger for Shalimar
+
+`shc` writes no debug information for any target, and that is settled rather
+than pending - see the Known limitations in `../Compiler-S/README.md`. The
+Debug panel says so in words rather than showing an empty pane, and what a
+Shalimar program has instead is a runtime error that names its line and its
+function, which the editor reads and stands the caret on.
+
 ## The project
 
 A project is one file, `ed1.json`, and there does not have to be one - without

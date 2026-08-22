@@ -87,9 +87,10 @@ tests/test: tests/test.cpp src/compile.cpp src/indent.cpp src/syntax.cpp \
 	    src/buffer.cpp
 
 # The other half of the checking: the editor itself, driven by keystrokes.
-# CC1 names a compiler for the build cases; without one they are skipped.
+# CC1 and SHC name compilers for the build cases; without them those cases
+# are skipped rather than failed.
 session: tests/session ed1
-	./tests/session ./ed1 $(CC1)
+	CC1="$(CC1)" SHC="$(SHC)" ./tests/session ./ed1
 
 tests/session: tests/session.cpp src/path.cpp src/path.h
 	$(CXX) $(CXXFLAGS) -Isrc -o $@ tests/session.cpp src/path.cpp

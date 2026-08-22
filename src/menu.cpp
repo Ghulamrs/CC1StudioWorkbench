@@ -89,15 +89,33 @@ Menu::Menu() : active_(false), dropped_(false), column_(0), item_(0) {
     target.items.push_back({"arm64-darwin", "", ActionArchDarwin});
     columns_.push_back(target);
 
+    // What the file is read as. Normally the suffix answers this and nobody
+    // has to; the menu is for the file whose suffix is wrong, missing, or
+    // borrowed - a .txt holding a program, a header with C++ in it, a
+    // Shalimar program saved as .shm by the app rather than as .shl.
+    //
+    // It sets the highlighting, the layout rules and, through 'By language',
+    // the compiler - so it is one choice rather than three.
+    MenuColumn language;
+    language.title = "Language";
+    language.items.push_back({"By extension", "", ActionLangAuto});
+    language.items.push_back({"C", "", ActionLangC});
+    language.items.push_back({"C++", "", ActionLangCpp});
+    language.items.push_back({"Shalimar", "", ActionLangShalimar});
+    language.items.push_back({"Plain text", "", ActionLangText});
+    columns_.push_back(language);
+
     // Which compiler is driven. cc1 is what this was written for; cl is here
-    // because the machine it runs on already has it, and because a front end
-    // that can only speak to one compiler is a narrower thing than it needs to
-    // be.
+    // because the machine it runs on already has it; shc is here because
+    // Shalimar is one of the three languages now. No two of them take the
+    // same language, so 'By language' is the answer rather than a preference,
+    // and the rest of this column is for overriding it.
     MenuColumn tools;
     tools.title = "Tools";
     tools.items.push_back({"By language", "Ctrl-K", ActionToolAuto});
     tools.items.push_back({"cc1", "", ActionToolCc1});
     tools.items.push_back({"MSVC (cl)", "", ActionToolMsvc});
+    tools.items.push_back({"shc", "", ActionToolShc});
     columns_.push_back(tools);
 
     MenuColumn help;

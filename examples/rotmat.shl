@@ -1,0 +1,103 @@
+// rotmat.shm
+// The three axis rotations and the
+// composite RotMat = Rz Ry Rx. Each
+// builder fills a caller's 3x3: an
+// array argument is a reference.
+//
+// Right-handed - the -sin sits in
+// the row above the row holding the
+// 1.0, counting round. rotations.shm
+// writes the same three as literals.
+fun <> = ROX(angle: real, R[][]: real) {
+  real c : cos(angle)
+  real s : sin(angle)
+  R[0][0] : 1.0  R[0][1] : 0.0  R[0][2] : 0.0
+  R[1][0] : 0.0  R[1][1] : c    R[1][2] : s
+  R[2][0] : 0.0  R[2][1] : -s   R[2][2] : c
+}
+
+fun <> = ROY(angle: real, R[][]: real) {
+  real c : cos(angle)
+  real s : sin(angle)
+  R[0][0] : c    R[0][1] : 0.0  R[0][2] : -s
+  R[1][0] : 0.0  R[1][1] : 1.0  R[1][2] : 0.0
+  R[2][0] : s    R[2][1] : 0.0  R[2][2] : c
+}
+
+fun <> = ROZ(angle: real, R[][]: real) {
+  real c : cos(angle)
+  real s : sin(angle)
+  R[0][0] : c    R[0][1] : s    R[0][2] : 0.0
+  R[1][0] : -s   R[1][1] : c    R[1][2] : 0.0
+  R[2][0] : 0.0  R[2][1] : 0.0  R[2][2] : 1.0
+}
+
+// c : a b, sized from the operands.
+// sum is hoisted out: writing c[i][j]
+// once is what lets c alias a or b.
+fun <> = matmul(a[][]: real,
+                b[][]: real,
+                c[][]: real) {
+  real sum : 0.0
+
+  for i < a.row {
+    for j < b.col {
+      sum : 0.0
+      for p < b.row {
+        sum +: a[i][p] * b[p][j]
+      }
+      c[i][j] : sum
+    }
+  }
+}
+
+fun <real> = rad(deg: real) {
+  return deg * pi / 180.0
+}
+
+fun <> = RotMat(roll: real,
+                pitch: real,
+                yaw: real,
+                R[][]: real) {
+  real X[3][3]
+  real Y[3][3]
+  real Z[3][3]
+  real T[3][3]
+
+  ROX(roll, X)
+  ROY(pitch, Y)
+  ROZ(yaw, Z)
+
+  // Right to left, so R v turns v by
+  // roll, then pitch, then yaw.
+  matmul(Z, Y, T)
+  matmul(T, X, R)
+}
+
+fun <> = main() {
+  real R[3][3]
+
+  RotMat(rad(0.0), rad(0.0), rad(90.0), R)
+  ? "yaw 90"
+  ? R
+
+  RotMat(rad(90.0), rad(0.0), rad(0.0), R)
+  ? "roll 90"
+  ? R
+
+  RotMat(rad(90.0), rad(90.0), rad(90.0), R)
+  ? "roll pitch yaw 90"
+  ? R
+}
+// expected: yaw 90
+// expected:  0.000000   1.000000   0.000000
+// expected: -1.000000   0.000000   0.000000
+// expected:  0.000000   0.000000   1.000000
+// expected: roll 90
+// expected:  1.000000   0.000000   0.000000
+// expected:  0.000000   0.000000   1.000000
+// expected:  0.000000  -1.000000   0.000000
+// expected: roll pitch yaw 90
+// expected:  0.000000   0.000000   1.000000
+// expected: -0.000000  -1.000000   0.000000
+// expected:  1.000000  -0.000000   0.000000

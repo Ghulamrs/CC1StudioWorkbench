@@ -135,7 +135,35 @@ bool parseCc1Preprocessor(const std::string& first, const std::string& caretLine
     return true;
 }
 
-Diagnostic parseDiagnostic(const std::string& text) {
+// Error: line 3: message
+//
+// shc names neither the file nor the column. The file is the one being
+// compiled - there is one, since Shalimar has no include - and the column is
+// not something the language reports: a runtime error names the statement it
+// happened in, and a compile error names the line. The caller passes the path
+// in so the editor still has somewhere to jump to.
+bool parseShalimar(const std::string& line, const std::string& source, Diagnostic& d) {
+    const std::string marker = "Error: line ";
+    if (line.compare(0, marker.size(), marker) != 0) return false;
+
+    size_t at = line.find(':', marker.size());
+    if (at == std::string::npos) return false;
+
+    size_t lineNo = static_cast<size_t>(std::atol(line.c_str() + marker.size()));
+    if (lineNo == 0) return false;
+
+    size_t message = at + 1;
+    while (message < line.size() && line[message] == ' ') ++message;
+
+    d.file = source;
+    d.line = lineNo;
+    d.col = 1;
+    d.message = line.substr(message);
+    d.present = true;
+    return true;
+}
+
+Diagnostic parseDiagnostic(const std::string& text, const std::string& source) {
     Diagnostic d;
 
     std::string previous;
@@ -147,6 +175,7 @@ Diagnostic parseDiagnostic(const std::string& text) {
         if (!line.empty() && line[line.size() - 1] == '\r') line.resize(line.size() - 1);
 
         if (parseGnu(line, d) || parseMsvc(line, d)) return d;
+        if (parseShalimar(line, source, d)) return d;
         if (parseCc1Preprocessor(previous, line, d)) return d;
 
         previous = line;
@@ -257,7 +286,7 @@ Build build(const Toolchain& tool, ToolchainKind kind, const std::string& source
     }
 
     result.ok = (status == 0);
-    result.diag = parseDiagnostic(result.output);
+    result.diag = parseDiagnostic(result.output, sourcePath);
 
     if (!result.ok && !result.diag.present && looksLikeMissingProgram(result.output)) {
         std::string hint = std::string(programOf(tool, kind)) +
@@ -320,7 +349,7 @@ Built buildProgram(const Toolchain& tool, ToolchainKind kind, const std::string&
         return result;
     }
 
-    result.diag = parseDiagnostic(result.output);
+    result.diag = parseDiagnostic(result.output, sourcePath);
     result.ok = (made == 0);
 
     if (!result.ok && !result.diag.present && looksLikeMissingProgram(result.output)) {
@@ -359,7 +388,11 @@ Built buildTarget(const Toolchain& tool, ToolchainKind kind,
         return result;
     }
 
-    result.diag = parseDiagnostic(result.output);
+    // Several sources here, and shc names none of them in a diagnostic.
+    // The first is the only honest guess, and it is right whenever a target
+    // holds one program's worth of Shalimar - which is every target that
+    // builds, since Shalimar has no separate compilation.
+    result.diag = parseDiagnostic(result.output, sources.empty() ? std::string() : sources[0]);
     result.ok = (made == 0);
 
     if (!result.ok && !result.diag.present && looksLikeMissingProgram(result.output)) {

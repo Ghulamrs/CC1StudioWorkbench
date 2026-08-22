@@ -270,7 +270,16 @@ Editor::Editor()
         if (!beside.empty()) tool_.cc1 = beside;
     }
 
-    console_.push_back("cc1 output appears here.  Ctrl-B builds.");
+    // shc is found the same way, and for the same reason.
+    const char* shcFromEnv = std::getenv("SHC");
+    if (shcFromEnv && *shcFromEnv) {
+        tool_.shc = shcFromEnv;
+    } else {
+        const std::string beside = path::besideProgram("shc");
+        if (!beside.empty()) tool_.shc = beside;
+    }
+
+    console_.push_back("Compiler output appears here.  Ctrl-B builds.");
     resetDebug();
 }
 
@@ -404,7 +413,7 @@ void Editor::open(const std::string& path) {
         case Buffer::Failed:  say(error); break;
     }
     cx_ = cy_ = rowoff_ = coloff_ = 0;
-    lang_ = languageFor(path);
+    applyLanguage();
 
     size_t at = tree_.find(path);
     if (at < tree_.size()) treeSel_ = at;
@@ -1654,7 +1663,7 @@ void Editor::renameFile() {
         now.lines = lines;
     }
 
-    lang_ = languageFor(buf_.path());
+    applyLanguage();
     refreshTree();
 }
 
@@ -2674,6 +2683,28 @@ void Editor::perform(Action action) {
                     ? std::string("target: ") + kArches[arch_]
                     : std::string("target is a cc1 setting - cl builds for its own host"));
             break;
+        case ActionLangAuto:
+            langChoice_ = LangCount;
+            applyLanguage();
+            say(std::string("language: chosen by the name - this one is ") +
+                languageName(lang_));
+            break;
+        case ActionLangC:
+        case ActionLangCpp:
+        case ActionLangShalimar:
+        case ActionLangText: {
+            static const Language chosen[] = {LangC, LangCpp, LangShalimar, LangPlain};
+            langChoice_ = chosen[action - ActionLangC];
+            applyLanguage();
+            resetDebug();   // which language it is decides which compiler runs
+            say(std::string("language: ") + languageName(lang_) + ", for every file");
+            break;
+        }
+        case ActionToolShc:
+            tool_.kind = ToolShc;
+            resetDebug();
+            say("compiler: shc, for every file");
+            break;
         case ActionToolAuto:
             tool_.kind = ToolAuto;
             resetDebug();   // which compiler it is decides what the panel says
@@ -2694,6 +2725,14 @@ void Editor::perform(Action action) {
         case ActionAbout:        showAbout(); break;
         case ActionNone:         break;
     }
+}
+
+void Editor::applyLanguage() {
+    lang_ = (langChoice_ == LangCount) ? languageFor(buf_.path()) : langChoice_;
+    // Shalimar is not C with fewer rules: ':' is its assignment where C reads
+    // a label, and reading one as the other would walk every assignment out
+    // to the function's own column.
+    style_.dialect = (lang_ == LangShalimar) ? DialectShalimar : DialectC;
 }
 
 std::string Editor::prompt(const std::string& text, bool& cancelled) {
@@ -2791,9 +2830,12 @@ void Editor::processKey(int key) {
         case ctrl('k'):
             // Round the three rather than between two, so automatic is never
             // more than two presses away from wherever you are.
-            perform(tool_.kind == ToolAuto ? ActionToolCc1
-                                           : (tool_.kind == ToolCc1 ? ActionToolMsvc
-                                                                    : ActionToolAuto));
+            perform(tool_.kind == ToolAuto
+                        ? ActionToolCc1
+                        : (tool_.kind == ToolCc1
+                               ? ActionToolMsvc
+                               : (tool_.kind == ToolMsvc ? ActionToolShc
+                                                         : ActionToolAuto)));
             return;
         case ctrl('w'): cycleFocus(); return;
 

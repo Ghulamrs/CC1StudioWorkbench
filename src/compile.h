@@ -106,7 +106,10 @@ Ran runProgram(const Toolchain& tool, ToolchainKind kind, const std::string& sou
 //
 // Both are recognised without being told which to expect, so pointing the
 // editor at a third compiler that speaks either one needs no new code.
-Diagnostic parseDiagnostic(const std::string& text);
+// `source` is the file being compiled, and is used only by the one compiler
+// that does not name it: shc writes 'Error: line 3: ...' and nothing more,
+// because Shalimar has no include and so only ever has one file to mean.
+Diagnostic parseDiagnostic(const std::string& text, const std::string& source = std::string());
 
 }  // namespace editor
 

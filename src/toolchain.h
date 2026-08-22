@@ -16,6 +16,7 @@ enum ToolchainKind {
     ToolAuto = 0,   // the file's language chooses
     ToolCc1,        // C, and the three architectures cc1 generates for
     ToolMsvc,       // C and C++, on the host cl was installed for
+    ToolShc,        // Shalimar, and the same three architectures
     ToolCount
 };
 
@@ -25,6 +26,10 @@ enum ToolchainKind {
 //   cl   /Od /D_DEBUG    or  /O2 /DNDEBUG - a real difference in the code
 //   cc1  -g -D_DEBUG=1   or  -DNDEBUG=1   - the define, and on the two targets
 //        that can carry it, real debug information. cc1 still has no -O.
+//   shc  nothing either way. Shalimar has no preprocessor, so there is no
+//        define to set, and no debug information by decision rather than by
+//        omission - the language is for numeric programs written on a phone,
+//        and a symbolic debugger is not something they reach for.
 //
 // The define is not nothing: it is what assert and every #ifdef NDEBUG in the
 // source are looking for.
@@ -72,13 +77,16 @@ struct Toolchain {
     ToolchainKind kind;
     std::string cc1;   // the program to run for the cc1 toolchain
     std::string cl;    // the program to run for the MSVC one
+    std::string shc;   // and for Shalimar
 
-    Toolchain() : kind(ToolAuto), cc1("cc1"), cl("cl") {}
+    Toolchain() : kind(ToolAuto), cc1("cc1"), cl("cl"), shc("shc") {}
 };
 
 // Which one actually runs, once the file's language is known. This is the whole
-// of the routing rule: cc1 is a C compiler, so C++ goes to the one that can
-// take it, and C goes to the compiler this editor was written for.
+// of the routing rule: each language goes to the compiler that can take it -
+// C to cc1, which this editor was written for, C++ to cl, and Shalimar to shc.
+// No two of them overlap, so 'by language' is not a preference here; it is the
+// answer, and naming a compiler by hand is how to override it.
 ToolchainKind resolve(const Toolchain& tool, Language lang);
 
 const char* toolchainName(ToolchainKind kind);

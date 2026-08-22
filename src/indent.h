@@ -7,18 +7,30 @@
 
 namespace editor {
 
-// Brace-directed layout for C, in the shape Shalimar's indenter settled on:
-// text in, text out, no screen anywhere near it, so a test can reach every rule
-// without a terminal. C needs four things Shalimar's language did not - escapes
-// inside literals, block comments that outlive their line, the preprocessor,
-// and switch labels - and each is a named rule below rather than a special case
+// Brace-directed layout, in the shape Shalimar's indenter settled on: text in,
+// text out, no screen anywhere near it, so a test can reach every rule without
+// a terminal. C needs four things Shalimar's language does not - escapes inside
+// literals, block comments that outlive their line, the preprocessor, and
+// switch labels - and each is a named rule below rather than a special case
 // buried in the scanner.
+//
+// Which of the two is being laid out. Shalimar is not C with fewer rules by
+// accident: two of its own punctuation marks would be read wrongly by the C
+// scanner, and one of them silently. 'x : 5' is an assignment there and a goto
+// label here, and a label is laid out in its function's own column - so a
+// Shalimar program indented as C would walk left one statement at a time.
+enum IndentDialect {
+    DialectC = 0,
+    DialectShalimar
+};
+
 struct IndentStyle {
     size_t width = 4;       // cc1's own sources indent by four, and have no tab in them
     bool tabs = false;
     // K&R puts a case label in its switch's own column, which is what an ANSI C
     // compiler's editor should default to. One step in is the other common taste.
     size_t caseIndent = 0;
+    IndentDialect dialect = DialectC;
 };
 
 // What a line leaves behind for the line after it.
@@ -49,7 +61,8 @@ struct LineFacts {
     std::string code;            // the line with strings and comments taken out
 };
 
-LineFacts examine(const std::string& line, const IndentState& in);
+LineFacts examine(const std::string& line, const IndentState& in,
+                  IndentDialect dialect = DialectC);
 IndentState advance(const IndentState& in, const LineFacts& f);
 
 // The level a line sits at, in steps rather than columns. A line inside a block
@@ -62,7 +75,8 @@ std::string indentString(int level, const IndentStyle& style);
 std::string withoutLeadingSpace(const std::string& line);
 
 // The state the text arrives in at the start of `row`.
-IndentState stateBefore(const std::vector<std::string>& lines, size_t row);
+IndentState stateBefore(const std::vector<std::string>& lines, size_t row,
+                        IndentDialect dialect = DialectC);
 
 // The leading space `row` should have, or the line unchanged when it is kKeep.
 std::string indentFor(const std::vector<std::string>& lines, size_t row,

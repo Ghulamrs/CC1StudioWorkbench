@@ -122,6 +122,7 @@ bool importMsvcEnvironment() {
 
 ToolchainKind resolve(const Toolchain& tool, Language lang) {
     if (tool.kind != ToolAuto) return tool.kind;
+    if (lang == LangShalimar) return ToolShc;
     // cc1 is a C compiler. Everything it cannot take goes to the one that can.
     return (lang == LangCpp) ? ToolMsvc : ToolCc1;
 }
@@ -130,15 +131,21 @@ const char* toolchainName(ToolchainKind kind) {
     switch (kind) {
         case ToolMsvc: return "cl";
         case ToolCc1:  return "cc1";
+        case ToolShc:  return "shc";
         default:       return "auto";
     }
 }
 
 const char* programOf(const Toolchain& tool, ToolchainKind kind) {
-    return (kind == ToolMsvc) ? tool.cl.c_str() : tool.cc1.c_str();
+    if (kind == ToolMsvc) return tool.cl.c_str();
+    if (kind == ToolShc) return tool.shc.c_str();
+    return tool.cc1.c_str();
 }
 
-bool usesArch(ToolchainKind kind) { return kind == ToolCc1; }
+// cc1 and shc both generate for the same three; cl generates for the one it
+// was installed as, and offering a choice that does nothing would be the
+// status bar telling a lie.
+bool usesArch(ToolchainKind kind) { return kind == ToolCc1 || kind == ToolShc; }
 
 const char* configName(Configuration config) {
     return config == ConfigRelease ? "release" : "debug";
@@ -152,12 +159,19 @@ bool optimises(ToolchainKind kind) { return kind == ToolMsvc; }
 bool emitsDebugInfo(ToolchainKind kind, const std::string& arch) {
     // cl has always been able to. What was missing was being asked.
     if (kind == ToolMsvc) return true;
+    // shc writes none for any target, and that is settled rather than
+    // pending: see the Known limitations in ../Compiler-S/README.md.
     if (kind != ToolCc1) return false;
     return arch == "x86_64-linux" || arch == "arm64-darwin";
 }
 
 std::string configFlags(ToolchainKind kind, Configuration config,
                         const std::string& arch) {
+    // shc takes neither. Shalimar has no preprocessor, so debug and release
+    // are the same program - and saying so by giving it nothing is better
+    // than inventing a flag it would refuse.
+    if (kind == ToolShc) return std::string();
+
     // /Zi is what makes cl's debug build a debug build. Without it the word
     // meant the optimiser was off and a macro was defined, and nothing that
     // could stop on a line - the same thing that used to be wrong for cc1.
@@ -178,6 +192,11 @@ std::vector<std::string> debugNote(ToolchainKind kind, const std::string& arch) 
         said.push_back("editor is not that debugger: it builds to assembly and stops, so");
         said.push_back("nothing has been assembled, linked or run. What the build did leave");
         said.push_back("behind is the assembly, and this is what is in it.");
+    } else if (kind == ToolShc) {
+        said.push_back("shc writes no debug information for any target, and that is a");
+        said.push_back("decision rather than a gap: what a Shalimar program has instead is");
+        said.push_back("a runtime error that names its line and its function. This is the");
+        said.push_back("assembly the build produced, read back out of itself.");
     } else if (kind == ToolCc1) {
         said.push_back("cc1 writes no debug information for " + arch + ": it generates MASM");
         said.push_back("there, and MASM carries no line table. So there is nothing to step");
@@ -192,12 +211,20 @@ std::vector<std::string> debugNote(ToolchainKind kind, const std::string& arch) 
 }
 
 bool canCompile(ToolchainKind kind, Language lang) {
+    if (lang == LangShalimar) return kind == ToolShc;
+    if (kind == ToolShc) return false;   // shc compiles Shalimar and nothing else
     if (lang == LangCpp) return kind == ToolMsvc;
     if (lang == LangC) return true;
     return false;   // assembly and plain text are not compiled from here
 }
 
 std::string refusal(ToolchainKind kind, Language lang) {
+    if (lang == LangShalimar && kind != ToolShc)
+        return std::string(toolchainName(kind)) +
+               " does not compile Shalimar - Ctrl-K for automatic, and it picks shc";
+    if (kind == ToolShc && lang != LangShalimar)
+        return std::string("shc compiles Shalimar, not ") + languageName(lang) +
+               " - Ctrl-K for automatic";
     if (lang == LangCpp && kind == ToolCc1)
         return "cc1 compiles C, not C++ - Ctrl-K for automatic, and it picks cl";
     if (lang != LangC && lang != LangCpp)
@@ -296,6 +323,16 @@ Recipe targetRecipe(const Toolchain& tool, ToolchainKind kind,
         return recipe;
     }
 
+    // shc takes one program at a time. Shalimar has no separate compilation
+    // and no way to name another file, so a target made of Shalimar is one
+    // source however many the group holds - the first is the program.
+    if (kind == ToolShc) {
+        recipe.command = quote(programOf(tool, kind)) +
+                         (sources.empty() ? std::string() : " " + quote(sources[0])) +
+                         " -o " + quote(program);
+        return recipe;
+    }
+
     // cc1 compiles, assembles and links the lot when it is given neither -S
     // nor -c, and -arch is left off for the same reason as below.
     recipe.command = quote(programOf(tool, kind)) + named + " -o " + quote(program) +
@@ -333,10 +370,11 @@ Recipe programRecipe(const Toolchain& tool, ToolchainKind kind,
         return recipe;
     }
 
-    // With neither -S nor -c, cc1 compiles, assembles and links. -arch is left
-    // off rather than passed as the host's own: the host is what it does by
-    // default, and naming it would only invite a cross target to be named here
-    // too, which would stop at the assembly and produce nothing to run.
+    // With neither -S nor -c, cc1 and shc both compile, assemble and link.
+    // The target is left off rather than passed as the host's own: the host is
+    // what either does by default, and naming it would only invite a cross
+    // target to be named here too, which would stop at the assembly and
+    // produce nothing to run.
     recipe.command = quote(program) + " " + quote(source) + " -o " +
                      quote(recipe.assemblyPath) + configFlags(kind, config, arch);
     return recipe;
@@ -379,6 +417,16 @@ Recipe assemblyRecipe(const Toolchain& tool, ToolchainKind kind,
         return recipe;
     }
 
+    // shc spells the target --target= where cc1 spells it -arch, and writes
+    // MASM under the extension ml64 expects rather than under .s. Nothing else
+    // about the two invocations differs.
+    if (kind == ToolShc) {
+        recipe.assemblyPath = stem + (arch == "x86_64-windows" ? ".asm" : ".s");
+        recipe.command = quote(program) + " -S " + quote(source) + " -o " +
+                         quote(recipe.assemblyPath) + " --target=" + arch;
+        return recipe;
+    }
+
     recipe.assemblyPath = stem + ".s";
     recipe.command = quote(program) + " -S " + quote(source) + " -o " +
                      quote(recipe.assemblyPath) + " -arch " + arch +
@@ -394,6 +442,8 @@ std::string shownCommand(const Toolchain& tool, ToolchainKind kind,
         return program + " /c /diagnostics:column /FAs" +
                ((lang == LangCpp) ? " /TP /EHsc /std:c++14" : " /TC") +
                configFlags(kind, config, arch) + " " + source;
+    if (kind == ToolShc)
+        return program + " -S " + source + " --target=" + arch;
     return program + " -S " + source + " -arch " + arch +
            configFlags(kind, config, arch);
 }

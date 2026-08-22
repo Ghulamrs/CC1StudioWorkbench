@@ -24,14 +24,23 @@ enum Language {
     LangPlain = 0,
     LangC,
     LangCpp,
-    LangAsm    // what cc1 writes, so the assembly tab is coloured too
+    LangShalimar,
+    LangAsm,   // what cc1 and shc write, so the assembly tab is coloured too
+    LangCount
 };
 
 // Chosen from the file's name. A .h is treated as C here rather than C++: this
-// is a C compiler's editor, and the C++ keywords it would add are the ones you
-// least want highlighted in a C header.
+// editor began as a C compiler's, and the C++ keywords it would add are the
+// ones you least want highlighted in a C header.
+//
+// Shalimar answers to two suffixes. The app writes .shm and every program it
+// ships is one; .shl is what the language is called on the desktop. Refusing
+// either would mean a file that opens in one place and not the other.
 Language languageFor(const std::string& path);
 const char* languageName(Language lang);
+
+// The suffix a new file of this language is given, without the dot.
+const char* languageSuffix(Language lang);
 
 // What a line leaves behind - a block comment, or a string carried on with a
 // backslash. Highlighting a line needs the same running state the indenter

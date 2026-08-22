@@ -68,9 +68,15 @@ enum Action {
     ActionArchWindows,
     ActionArchLinux,
     ActionArchDarwin,
+    ActionLangAuto,
+    ActionLangC,
+    ActionLangCpp,
+    ActionLangShalimar,
+    ActionLangText,
     ActionToolAuto,
     ActionToolCc1,
     ActionToolMsvc,
+    ActionToolShc,
     ActionKeys,
     ActionAbout
 };

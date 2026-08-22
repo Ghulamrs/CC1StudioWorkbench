@@ -57,6 +57,29 @@ const char* const kCppTypes[] = {
     "exception", "runtime_error", "logic_error", "bad_alloc",
     "function", "thread", "mutex", "atomic", "chrono", 0};
 
+// Shalimar's whole vocabulary. Thirteen words, and three of them - int, real
+// and char - are the names of the conversions as well, which is resolved by
+// position rather than by spelling.
+const char* const kShalimarKeywords[] = {
+    "if", "elseif", "else", "while", "for", "to", "step", "fun", "return",
+    "break", "continue", 0};
+
+const char* const kShalimarTypes[] = {
+    "int", "real", "char", 0};
+
+// The twenty built-ins. Not keywords - a program cannot define a function of
+// the same name, which is close enough to being reserved that colouring them
+// tells the truth.
+const char* const kShalimarBuiltins[] = {
+    "abs", "sqrt", "log", "exp", "hypot", "sin", "cos", "tan", "asin", "acos",
+    "atan", "atan2", "pow", "round", "ceil", "floor", "trunc", "max", "min",
+    "len", 0};
+
+// Read-only and reserved: neither can be declared, assigned, taken as a
+// parameter name, or used as a loop counter. One name, one meaning - so
+// colouring them as the numbers they are is not a guess.
+const char* const kShalimarConstants[] = { "pi", "e", 0 };
+
 bool inList(const char* const* list, const std::string& word) {
     for (size_t i = 0; list[i]; ++i)
         if (word == list[i]) return true;
@@ -146,9 +169,91 @@ void markAsm(const std::string& line, std::vector<unsigned char>& kind) {
     }
 }
 
+// Shalimar, which is simpler than C in exactly the places a highlighter cares
+// about: one kind of comment, one kind of literal, no escapes inside it, no
+// preprocessor, and no character literal at all - an apostrophe is not a token
+// there, so it colours nothing.
+void markShalimar(const std::string& line, std::vector<unsigned char>& kind) {
+    size_t i = 0;
+
+    // '?' and '??' are commands and must be the first token on their line, so
+    // they are looked for only there. Nothing else in the language carries
+    // layout, and this is the one place it does.
+    while (i < line.size() && (line[i] == ' ' || line[i] == '\t')) ++i;
+    if (i < line.size() && line[i] == '?') {
+        kind[i] = KindPreproc;
+        if (i + 1 < line.size() && line[i + 1] == '?') kind[++i] = KindPreproc;
+        ++i;
+    }
+
+    for (; i < line.size(); ++i) {
+        char c = line[i];
+
+        if (c == '/' && i + 1 < line.size() && line[i + 1] == '/') {
+            for (size_t j = i; j < line.size(); ++j) kind[j] = KindComment;
+            return;
+        }
+
+        // No escapes: the first closing quote always ends it, and a literal
+        // that reaches the end of the line was never closed.
+        if (c == '"') {
+            size_t j = i;
+            kind[j] = KindString;
+            for (++j; j < line.size(); ++j) {
+                kind[j] = KindString;
+                if (line[j] == '"') break;
+            }
+            i = (j < line.size()) ? j : line.size() - 1;
+            continue;
+        }
+
+        if (digit(c) && (i == 0 || !identChar(line[i - 1]))) {
+            size_t j = i;
+            while (j < line.size() && (identChar(line[j]) || line[j] == '.')) ++j;
+            for (size_t m = i; m < j; ++m) kind[m] = KindNumber;
+            i = j - 1;
+            continue;
+        }
+
+        if (identChar(c) && !digit(c)) {
+            const bool afterDot = i > 0 && line[i - 1] == '.';
+            size_t j = i;
+            while (j < line.size() && identChar(line[j])) ++j;
+            std::string word = line.substr(i, j - i);
+
+            unsigned char what = KindNormal;
+            if (afterDot) {
+                // row, col and dim mean something only here. Everywhere else
+                // they are ordinary names, and 'row : 9' declares a variable.
+                if (word == "row" || word == "col" || word == "dim") what = KindType;
+            } else if (inList(kShalimarKeywords, word)) {
+                what = KindKeyword;
+            } else if (inList(kShalimarTypes, word)) {
+                what = KindType;
+            } else if (inList(kShalimarConstants, word)) {
+                what = KindNumber;
+            } else if (inList(kShalimarBuiltins, word)) {
+                what = KindType;
+            } else if (word == "prec") {
+                // Also contextual: a directive at the head of a print item and
+                // an ordinary name anywhere else, told apart by the bracket.
+                size_t k = j;
+                while (k < line.size() && line[k] == ' ') ++k;
+                if (k < line.size() && line[k] == '(') what = KindPreproc;
+            }
+
+            if (what != KindNormal)
+                for (size_t m = i; m < j; ++m) kind[m] = what;
+            i = j - 1;
+            continue;
+        }
+    }
+}
+
 }  // namespace
 
 Language languageFor(const std::string& path) {
+    if (endsWith(path, ".shl") || endsWith(path, ".shm")) return LangShalimar;
     if (endsWith(path, ".c")) return LangC;
     if (endsWith(path, ".h")) return LangC;
     if (endsWith(path, ".cpp") || endsWith(path, ".cc") || endsWith(path, ".cxx") ||
@@ -161,10 +266,21 @@ Language languageFor(const std::string& path) {
 
 const char* languageName(Language lang) {
     switch (lang) {
-        case LangC:   return "C";
-        case LangCpp: return "C++";
-        case LangAsm: return "asm";
-        default:      return "text";
+        case LangC:        return "C";
+        case LangCpp:      return "C++";
+        case LangShalimar: return "Shalimar";
+        case LangAsm:      return "asm";
+        default:           return "text";
+    }
+}
+
+const char* languageSuffix(Language lang) {
+    switch (lang) {
+        case LangC:        return "c";
+        case LangCpp:      return "cpp";
+        case LangShalimar: return "shl";
+        case LangAsm:      return "s";
+        default:           return "txt";
     }
 }
 
@@ -183,7 +299,10 @@ const char* colourFor(unsigned char kind) {
 }
 
 void advanceState(const std::string& line, Language lang, SyntaxState& state) {
-    if (lang == LangPlain || lang == LangAsm) {
+    // Shalimar has no block comment and no literal that outlives its line, so
+    // nothing it writes can leave anything behind. That is the same reason
+    // plain text and assembly need no walk.
+    if (lang == LangPlain || lang == LangAsm || lang == LangShalimar) {
         state.comment = false;
         return;
     }
@@ -223,6 +342,10 @@ std::vector<unsigned char> highlight(const std::string& line, Language lang,
     }
     if (lang == LangAsm) {
         markAsm(line, kind);
+        return kind;
+    }
+    if (lang == LangShalimar) {
+        markShalimar(line, kind);
         return kind;
     }
 

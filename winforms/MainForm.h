@@ -146,6 +146,7 @@ private:
     String^ arch_;
     String^ cc1_;
     String^ cl_;
+    String^ shc_;
     int toolKind_;
     int config_;
     int indentWidth_;
@@ -241,6 +242,12 @@ private:
     ToolStripMenuItem^ toolAutoItem_;
     ToolStripMenuItem^ toolCc1Item_;
     ToolStripMenuItem^ toolClItem_;
+    ToolStripMenuItem^ toolShcItem_;
+    ToolStripMenuItem^ langAutoItem_;
+    ToolStripMenuItem^ langCItem_;
+    ToolStripMenuItem^ langCppItem_;
+    ToolStripMenuItem^ langShalimarItem_;
+    ToolStripMenuItem^ langTextItem_;
     ToolStripMenuItem^ debugConfigItem_;
     ToolStripMenuItem^ releaseConfigItem_;
     ToolStripMenuItem^ numbersItem_;
@@ -296,7 +303,9 @@ private:
         // could build from one and not from the other.
         cc1_ = Named("CC1", "cc1");
         cl_ = Named("CL", "cl");
+        shc_ = Named("SHC", "shc");
         toolKind_ = ED1_TOOL_AUTO;
+        languageChoice_ = -1;
         config_ = ED1_CONFIG_DEBUG;
         debugger_ = ed1_debugger_new();
         built_ = nullptr;
@@ -567,6 +576,29 @@ private:
         }
         bar->Items->Add(target);
 
+        // What the file is read as. The suffix answers it normally; this is
+        // for the file whose suffix is wrong, missing, or borrowed - a .txt
+        // holding a program, a Shalimar program the app saved as .shm. It
+        // sets the colouring, the layout rules and, through 'By language',
+        // the compiler, so it is one choice rather than three.
+        ToolStripMenuItem^ language = gcnew ToolStripMenuItem("Lan&guage");
+        langAutoItem_ = gcnew ToolStripMenuItem(
+            "By extension", nullptr, gcnew EventHandler(this, &MainForm::OnLangAuto));
+        language->DropDownItems->Add(langAutoItem_);
+        langCItem_ = gcnew ToolStripMenuItem(
+            "C", nullptr, gcnew EventHandler(this, &MainForm::OnLangC));
+        language->DropDownItems->Add(langCItem_);
+        langCppItem_ = gcnew ToolStripMenuItem(
+            "C++", nullptr, gcnew EventHandler(this, &MainForm::OnLangCpp));
+        language->DropDownItems->Add(langCppItem_);
+        langShalimarItem_ = gcnew ToolStripMenuItem(
+            "Shalimar", nullptr, gcnew EventHandler(this, &MainForm::OnLangShalimar));
+        language->DropDownItems->Add(langShalimarItem_);
+        langTextItem_ = gcnew ToolStripMenuItem(
+            "Plain text", nullptr, gcnew EventHandler(this, &MainForm::OnLangText));
+        language->DropDownItems->Add(langTextItem_);
+        bar->Items->Add(language);
+
         ToolStripMenuItem^ tools = gcnew ToolStripMenuItem("Too&ls");
         toolAutoItem_ = gcnew ToolStripMenuItem(
             "By language", nullptr, gcnew EventHandler(this, &MainForm::OnToolAuto));
@@ -580,6 +612,10 @@ private:
             "MSVC (cl)", nullptr, gcnew EventHandler(this, &MainForm::OnToolCl));
         toolClItem_->ShortcutKeyDisplayString = "Ctrl+K";
         tools->DropDownItems->Add(toolClItem_);
+        toolShcItem_ = gcnew ToolStripMenuItem(
+            "shc", nullptr, gcnew EventHandler(this, &MainForm::OnToolShc));
+        toolShcItem_->ShortcutKeyDisplayString = "Ctrl+K";
+        tools->DropDownItems->Add(toolShcItem_);
         tools->DropDownItems->Add(gcnew ToolStripSeparator());
         // Here rather than on View: View is what is shown at this moment, and
         // this is a choice made once and kept, like the compiler above it.
@@ -1272,11 +1308,21 @@ private:
 
     // ---- laying out and colouring -----------------------------------------
 
+    // What the Language menu was told, or -1 for 'by extension'. It outlives
+    // a file being closed on purpose: someone who says a .txt is Shalimar is
+    // usually about to open another one.
+    int languageChoice_;
+
     int LanguageNow() {
+        if (languageChoice_ >= 0) return languageChoice_;
         array<Byte>^ bytes = Utf8Of(path_ == nullptr ? "" : path_);
         pin_ptr<Byte> pinned = &bytes[0];
         return ed1_language_for(reinterpret_cast<const char*>(pinned));
     }
+
+    // Shalimar is not C with fewer rules: ':' is its assignment where C reads
+    // a label, and laying one out as the other walks every assignment left.
+    int DialectNow() { return ed1_dialect_for(LanguageNow()); }
 
     // Lay out what is selected, or the whole file when nothing is - the same
     // rule the terminal half follows, and for the same reason: the whole file
@@ -1288,7 +1334,8 @@ private:
         pin_ptr<Byte> pinned = &bytes[0];
 
         String^ laid = TakeUtf8(ed1_reindent(reinterpret_cast<const char*>(pinned),
-                                             indentWidth_, indentTabs_, indentCase_));
+                                             indentWidth_, indentTabs_, indentCase_,
+                                             DialectNow()));
 
         int caret = text_->SelectionStart;
         int length = text_->SelectionLength;
@@ -1359,7 +1406,7 @@ private:
         // calls, on the same text.
         String^ lead = TakeUtf8(ed1_indent_after_newline(
             reinterpret_cast<const char*>(pinned), row, column, indentWidth_, indentTabs_,
-            indentCase_));
+            indentCase_, DialectNow()));
 
         e->SuppressKeyPress = true;
         text_->SelectedText = "\r\n" + lead;
@@ -1833,7 +1880,8 @@ private:
         array<Byte>^ text = WholeText();
         pin_ptr<Byte> textPin = &text[0];
         String^ want = TakeUtf8(ed1_indent_for(reinterpret_cast<const char*>(textPin), row,
-                                               indentWidth_, indentTabs_, indentCase_));
+                                               indentWidth_, indentTabs_, indentCase_,
+                                               DialectNow()));
         if (want == line->Substring(0, lead)) return;
 
         int start = text_->GetFirstCharIndexFromLine(row);
@@ -2616,13 +2664,16 @@ private:
         pin_ptr<Byte> cc1 = &cc1Bytes[0];
         array<Byte>^ clBytes = Utf8Of(cl_);
         pin_ptr<Byte> cl = &clBytes[0];
+        array<Byte>^ shcBytes = Utf8Of(shc_);
+        pin_ptr<Byte> shc = &shcBytes[0];
         array<Byte>^ archBytes = Utf8Of(arch_);
         pin_ptr<Byte> arch = &archBytes[0];
 
         console_->Text =
             "$ " +
             FromUtf8(ed1_shown_command(reinterpret_cast<const char*>(cc1),
-                                       reinterpret_cast<const char*>(cl), kind,
+                                       reinterpret_cast<const char*>(cl),
+                                       reinterpret_cast<const char*>(shc), kind,
                                        reinterpret_cast<const char*>(source), language,
                                        reinterpret_cast<const char*>(arch), config_)) +
             "\r\n";
@@ -2630,7 +2681,8 @@ private:
         Application::DoEvents();
 
         Ed1Build* built = ed1_build(reinterpret_cast<const char*>(cc1),
-                                    reinterpret_cast<const char*>(cl), kind,
+                                    reinterpret_cast<const char*>(cl),
+                                       reinterpret_cast<const char*>(shc), kind,
                                     reinterpret_cast<const char*>(source), language,
                                     reinterpret_cast<const char*>(arch), config_);
 
@@ -2692,6 +2744,8 @@ private:
         pin_ptr<Byte> cc1 = &cc1Bytes[0];
         array<Byte>^ clBytes = Utf8Of(cl_);
         pin_ptr<Byte> cl = &clBytes[0];
+        array<Byte>^ shcBytes = Utf8Of(shc_);
+        pin_ptr<Byte> shc = &shcBytes[0];
         array<Byte>^ archBytes = Utf8Of(arch_);
         pin_ptr<Byte> arch = &archBytes[0];
 
@@ -2703,7 +2757,8 @@ private:
         console_->Text =
             "$ " +
             FromUtf8(ed1_shown_run_command(reinterpret_cast<const char*>(cc1),
-                                           reinterpret_cast<const char*>(cl), kind,
+                                           reinterpret_cast<const char*>(cl),
+                                       reinterpret_cast<const char*>(shc), kind,
                                            reinterpret_cast<const char*>(source), language,
                                            reinterpret_cast<const char*>(arch), config_)) +
             "\r\n";
@@ -2711,7 +2766,8 @@ private:
         Application::DoEvents();
 
         Ed1Ran* ran = ed1_run(reinterpret_cast<const char*>(cc1),
-                              reinterpret_cast<const char*>(cl), kind,
+                              reinterpret_cast<const char*>(cl),
+                                       reinterpret_cast<const char*>(shc), kind,
                               reinterpret_cast<const char*>(source), language,
                               reinterpret_cast<const char*>(arch), config_);
 
@@ -2799,9 +2855,12 @@ private:
         pin_ptr<Byte> cc1 = &cc1Bytes[0];
         array<Byte>^ clBytes = Utf8Of(cl_);
         pin_ptr<Byte> cl = &clBytes[0];
+        array<Byte>^ shcBytes = Utf8Of(shc_);
+        pin_ptr<Byte> shc = &shcBytes[0];
 
         Ed1Build* made = ed1_build_target(project_, reinterpret_cast<const char*>(cc1),
-                                          reinterpret_cast<const char*>(cl), kind,
+                                          reinterpret_cast<const char*>(cl),
+                                       reinterpret_cast<const char*>(shc), kind,
                                           reinterpret_cast<const char*>(arch), config_);
         if (made == nullptr) {
             what_->Text = FromUtf8(ed1_project_target_why(project_));
@@ -2927,9 +2986,12 @@ private:
                 pin_ptr<Byte> cc1 = &cc1Bytes[0];
                 array<Byte>^ clBytes = Utf8Of(cl_);
                 pin_ptr<Byte> cl = &clBytes[0];
+                array<Byte>^ shcBytes = Utf8Of(shc_);
+                pin_ptr<Byte> shc = &shcBytes[0];
 
                 built_ = ed1_build_program(reinterpret_cast<const char*>(cc1),
-                                           reinterpret_cast<const char*>(cl), workKind_,
+                                           reinterpret_cast<const char*>(cl),
+                                           reinterpret_cast<const char*>(shc), workKind_,
                                            reinterpret_cast<const char*>(source),
                                            workLanguage_,
                                            reinterpret_cast<const char*>(arch), config_);
@@ -3072,6 +3134,8 @@ private:
         pin_ptr<Byte> cc1 = &cc1Bytes[0];
         array<Byte>^ clBytes = Utf8Of(cl_);
         pin_ptr<Byte> cl = &clBytes[0];
+        array<Byte>^ shcBytes = Utf8Of(shc_);
+        pin_ptr<Byte> shc = &shcBytes[0];
 
         console_->Text = "$ building for the debugger\r\n";
         panel_->SelectedIndex = 0;
@@ -3581,6 +3645,14 @@ private:
         toolAutoItem_->Checked = toolKind_ == ED1_TOOL_AUTO;
         toolCc1Item_->Checked = toolKind_ == ED1_TOOL_CC1;
         toolClItem_->Checked = toolKind_ == ED1_TOOL_MSVC;
+        toolShcItem_->Checked = toolKind_ == ED1_TOOL_SHC;
+        if (langAutoItem_ != nullptr) {
+            langAutoItem_->Checked = languageChoice_ < 0;
+            langCItem_->Checked = languageChoice_ == ED1_LANG_C;
+            langCppItem_->Checked = languageChoice_ == ED1_LANG_CPP;
+            langShalimarItem_->Checked = languageChoice_ == ED1_LANG_SHALIMAR;
+            langTextItem_->Checked = languageChoice_ == ED1_LANG_PLAIN;
+        }
         debugConfigItem_->Checked = config_ == ED1_CONFIG_DEBUG;
         releaseConfigItem_->Checked = config_ == ED1_CONFIG_RELEASE;
         SayBuild();
@@ -3598,6 +3670,7 @@ private:
     void NextTool() {
         if (toolKind_ == ED1_TOOL_AUTO) OnToolCc1(nullptr, nullptr);
         else if (toolKind_ == ED1_TOOL_CC1) OnToolCl(nullptr, nullptr);
+        else if (toolKind_ == ED1_TOOL_MSVC) OnToolShc(nullptr, nullptr);
         else OnToolAuto(nullptr, nullptr);
     }
 
@@ -3647,6 +3720,31 @@ private:
         ShowChoices();
         RefreshDebugTab();
         what_->Text = "compiler: cl";
+    }
+    void OnToolShc(Object^, EventArgs^) {
+        toolKind_ = ED1_TOOL_SHC;
+        ShowChoices();
+        RefreshDebugTab();
+        what_->Text = "compiler: shc";
+    }
+
+    void ChooseLanguage(int language, String^ said) {
+        languageChoice_ = language;
+        ShowChoices();
+        RefreshDebugTab();   // which language it is decides which compiler runs
+        Recolour();
+        what_->Text = said;
+    }
+    void OnLangAuto(Object^, EventArgs^) {
+        ChooseLanguage(-1, "language: chosen by the name");
+    }
+    void OnLangC(Object^, EventArgs^) { ChooseLanguage(ED1_LANG_C, "language: C"); }
+    void OnLangCpp(Object^, EventArgs^) { ChooseLanguage(ED1_LANG_CPP, "language: C++"); }
+    void OnLangShalimar(Object^, EventArgs^) {
+        ChooseLanguage(ED1_LANG_SHALIMAR, "language: Shalimar");
+    }
+    void OnLangText(Object^, EventArgs^) {
+        ChooseLanguage(ED1_LANG_PLAIN, "language: plain text");
     }
 };
 

@@ -47,7 +47,9 @@
       "tests/test.cpp"
     ],
     "Examples": [
+      "examples/gcd.shl",
       "examples/hello.c",
+      "examples/rotmat.shl",
       "examples/smart.cpp"
     ],
     "Build": [

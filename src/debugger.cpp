@@ -442,6 +442,41 @@ DebuggerKind dbg_for(ToolchainKind kind, const std::string& arch) {
 
 bool dbg_stopsItself(ToolchainKind kind) { return kind == ToolShc; }
 
+DebugPlan dbg_planFor(const Toolchain& tool, const std::vector<Part>& parts,
+                      const std::string& arch) {
+    DebugPlan plan;
+    if (parts.empty()) return plan;
+
+    plan.kind = toolchainOf(tool, parts[0]);
+    for (size_t i = 0; i < parts.size(); ++i) {
+        ToolchainKind each = toolchainOf(tool, parts[i]);
+        DebuggerKind theirs = dbg_for(each, arch);
+        if (theirs == DebuggerNone) {
+            // Named by its group, which is what somebody reading the console
+            // can act on. A part with no group is one compiler's whole share,
+            // so the compiler's name is the honest thing to call it.
+            plan.blind.push_back(parts[i].group.empty() ? std::string(toolchainName(each))
+                                                        : parts[i].group);
+            continue;
+        }
+        if (plan.engine == DebuggerNone) { plan.engine = theirs; plan.kind = each; }
+    }
+
+    // Asked after that loop and before anything refuses, because both of those
+    // are about a debugger and there is none here to have or to lack.
+    plan.stopsItself = dbg_stopsItself(toolchainOf(tool, parts[0]));
+    if (plan.stopsItself) {
+        plan.kind = ToolShc;
+        // The loop above put every Shalimar group in `blind`, since dbg_for
+        // rightly answers none for shc - and then the program stops in them.
+        // "carries no debug information, the debugger cannot stop in it"
+        // printed over a program that is about to stop is worse than saying
+        // nothing. It carries none and stops anyway; that is the language.
+        plan.blind.clear();
+    }
+    return plan;
+}
+
 std::string dbg_whyNot(ToolchainKind kind, const std::string& arch) {
     if (dbg_for(kind, arch) != DebuggerNone) return std::string();
 

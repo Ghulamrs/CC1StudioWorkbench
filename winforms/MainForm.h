@@ -140,6 +140,10 @@ protected:
             ed1_program_free(built_);
             built_ = nullptr;
         }
+        if (targetBuilt_ != nullptr) {
+            ed1_build_free(targetBuilt_);
+            targetBuilt_ = nullptr;
+        }
         if (debugger_ != nullptr) {
             ed1_debugger_free(debugger_);
             debugger_ = nullptr;
@@ -177,6 +181,14 @@ private:
     int workResult_;        // what it came back with
     int workKind_;          // and the compiler and language it was told to use
     int workLanguage_;
+    // What the debugger is to attach to, chosen before the slow part starts: a
+    // single file's temporary program, or the project's own. The project's is
+    // built where the project keeps it and is not the editor's to remove.
+    String^ workProgram_;
+    // A project build's result. Not an Ed1Program, and the difference matters:
+    // freeing one of those removes the program with it, which is right for the
+    // temporary thing a single file makes and quite wrong for the project's.
+    Ed1Build* targetBuilt_;
     // Breakpoints, filed under OneName so that one file has one set of them
     // however its path was spelled - the same rule that keeps one file to one
     // tab. breakNames_ holds the spelling to hand a debugger, since OneName is
@@ -322,6 +334,8 @@ private:
         config_ = ED1_CONFIG_DEBUG;
         debugger_ = ed1_debugger_new();
         built_ = nullptr;
+        targetBuilt_ = nullptr;
+        workProgram_ = nullptr;
         busy_ = false;
         pending_ = 0;
         workResult_ = 0;
@@ -511,6 +525,12 @@ private:
         ToolStripMenuItem^ debug = gcnew ToolStripMenuItem("&Debug");
         debug->DropDownItems->Add(Item("Start / continue", Keys::F8,
                                        gcnew EventHandler(this, &MainForm::OnDebug)));
+        // Under it and with no key of its own, as in the terminal: the project's
+        // own program rather than the file in front of you. Which of the two you
+        // meant is said by which one you asked for, never guessed - the same
+        // choice Ctrl-B and F4 offer for building.
+        debug->DropDownItems->Add("Debug project", nullptr,
+                                  gcnew EventHandler(this, &MainForm::OnDebugProject));
         // Starting it, walking it, looking at it, leaving it. The terminal's
         // Debug menu is grouped the same way and by the same four ideas.
         debug->DropDownItems->Add(gcnew ToolStripSeparator());
@@ -3010,6 +3030,7 @@ private:
     literal int WorkStepInto = 5;
     literal int WorkStepOut = 6;
     literal int WorkResume = 7;
+    literal int WorkBuildTarget = 8;
 
     // Run on the worker thread. It touches native handles and reads String^
     // members, which are immutable, and no control at all - a control touched
@@ -3038,15 +3059,39 @@ private:
                 workResult_ = ed1_program_ok(built_);
                 break;
             }
-            case WorkStart:
+            case WorkBuildTarget: {
+                // The project's own program, from the sources its build entry
+                // names. The kind handed over is the editor's override and not
+                // a resolved compiler: a target of C and C++ has one compiler
+                // per group, and naming one here would send both groups to it.
+                array<Byte>^ cc1Bytes = Utf8Of(cc1_);
+                pin_ptr<Byte> cc1 = &cc1Bytes[0];
+                array<Byte>^ clBytes = Utf8Of(cl_);
+                pin_ptr<Byte> cl = &clBytes[0];
+                array<Byte>^ shcBytes = Utf8Of(shc_);
+                pin_ptr<Byte> shc = &shcBytes[0];
+
+                targetBuilt_ = ed1_build_target(project_, reinterpret_cast<const char*>(cc1),
+                                                reinterpret_cast<const char*>(cl),
+                                                reinterpret_cast<const char*>(shc),
+                                                toolKind_,
+                                                reinterpret_cast<const char*>(arch), config_);
+                workResult_ = (targetBuilt_ != nullptr && ed1_build_ok(targetBuilt_) != 0)
+                                  ? 1 : 0;
+                break;
+            }
+            case WorkStart: {
                 // The compiler and the target, not a debugger: which of the
                 // two halves this is - gdb, lldb or cdb, or a Shalimar program
                 // with its own session - is decided on the native side, where
                 // the terminal half decides it too.
+                array<Byte>^ programBytes = Utf8Of(workProgram_);
+                pin_ptr<Byte> program = &programBytes[0];
                 workResult_ = ed1_debugger_start(debugger_, workKind_,
                                                  reinterpret_cast<const char*>(arch),
-                                                 ed1_program_path(built_));
+                                                 reinterpret_cast<const char*>(program));
                 break;
+            }
             case WorkGo:       ed1_debugger_run(debugger_); break;
             case WorkResume:   ed1_debugger_resume(debugger_); break;
             case WorkStepOver: ed1_debugger_step_over(debugger_); break;
@@ -3135,7 +3180,15 @@ private:
         }
     }
 
-    void OnDebug(Object^, EventArgs^) {
+    void OnDebug(Object^, EventArgs^) { Debug(false); }
+    void OnDebugProject(Object^, EventArgs^) { Debug(true); }
+
+    // Starting it, or carrying on from where it stopped. `project` chooses what
+    // goes under the debugger: the file in front of you, or the program the
+    // project says it builds - the same two things Ctrl-B and F4 choose
+    // between, asked the same way and never guessed. The terminal half takes
+    // the same argument and reads the same way.
+    void Debug(bool project) {
         if (ed1_debugger_running(debugger_) != 0) {
             // Carrying on can take as long as the program takes to reach the
             // next breakpoint, which is why this is not done here either.
@@ -3144,33 +3197,73 @@ private:
             return;
         }
 
-        if (path_ == nullptr) { what_->Text = "open a file first"; return; }
         ForgetError();   // this build is about to say its own
-        OnSave(nullptr, nullptr);
-
-        int language = LanguageNow();
-        int kind = ed1_resolve(toolKind_, language);
-        if (ed1_can_compile(kind, language) == 0) {
-            what_->Text = FromUtf8(ed1_refusal(kind, language));
-            return;
-        }
 
         array<Byte>^ archBytes = Utf8Of(arch_);
         pin_ptr<Byte> arch = &archBytes[0];
+        array<Byte>^ cc1Bytes = Utf8Of(cc1_);
+        pin_ptr<Byte> cc1 = &cc1Bytes[0];
+        array<Byte>^ clBytes = Utf8Of(cl_);
+        pin_ptr<Byte> cl = &clBytes[0];
+        array<Byte>^ shcBytes = Utf8Of(shc_);
+        pin_ptr<Byte> shc = &shcBytes[0];
 
+        int kind = 0;
+        int language = 0;
+
+        if (project) {
+            // Settled before anything else is asked, because these refusals -
+            // no build entry, a group of two languages - are about the project
+            // rather than about debugging, and they read better said first.
+            if (ed1_project_target_ready(project_) == 0) {
+                String^ why = FromUtf8(ed1_project_target_why(project_));
+                String^ detail = FromUtf8(ed1_project_target_detail(project_));
+                what_->Text = why;
+                console_->Text = detail->Length > 0 ? why + "\r\n\r\n" + detail : why;
+                panel_->SelectedIndex = 0;
+                return;
+            }
+            SaveEveryDirty();
+            language = ed1_project_target_language(project_);
+
+            // Which compiler's debug information is read, when the program may
+            // be linked from more than one - and which groups carry none. The
+            // core answers it; the window does not walk the parts itself.
+            if (ed1_project_debug_plan(project_, reinterpret_cast<const char*>(cc1),
+                                       reinterpret_cast<const char*>(cl),
+                                       reinterpret_cast<const char*>(shc), toolKind_,
+                                       reinterpret_cast<const char*>(arch)) == 0) {
+                what_->Text = FromUtf8(ed1_project_why_not_debug(project_));
+                return;
+            }
+            kind = ed1_project_debug_kind(project_);
+        } else {
+            if (path_ == nullptr) { what_->Text = "open a file first"; return; }
+            OnSave(nullptr, nullptr);
+
+            language = LanguageNow();
+            kind = ed1_resolve(toolKind_, language);
+            if (ed1_can_compile(kind, language) == 0) {
+                what_->Text = FromUtf8(ed1_refusal(kind, language));
+                return;
+            }
+            // Asked in this order, and the order is the point: a Shalimar
+            // program stops itself, so there is no debugger here to have or to
+            // lack, and ed1_debugger_for rightly answers none for it. Reading
+            // that as a refusal is what this window did, and it refused the one
+            // language that needs nothing installed.
+            if (ed1_debugger_stops_itself(kind) == 0 &&
+                ed1_debugger_for(kind, reinterpret_cast<const char*>(arch)) == 0) {
+                what_->Text = FromUtf8(
+                    ed1_no_debugger_because(kind, reinterpret_cast<const char*>(arch)));
+                return;
+            }
+        }
+
+        // Both of them: a program that cannot be run here cannot be stopped
+        // here either, whatever debug information it carries.
         if (ed1_runs_here(kind, reinterpret_cast<const char*>(arch)) == 0) {
             what_->Text = FromUtf8(ed1_why_not_run(kind, reinterpret_cast<const char*>(arch)));
-            return;
-        }
-        // Asked in this order, and the order is the point: a Shalimar program
-        // stops itself, so there is no debugger here to have or to lack, and
-        // ed1_debugger_for rightly answers none for it. Reading that as a
-        // refusal is what this window did, and it refused the one language
-        // that needs nothing installed.
-        if (ed1_debugger_stops_itself(kind) == 0 &&
-            ed1_debugger_for(kind, reinterpret_cast<const char*>(arch)) == 0) {
-            what_->Text = FromUtf8(
-                ed1_no_debugger_because(kind, reinterpret_cast<const char*>(arch)));
             return;
         }
         if (config_ != ED1_CONFIG_DEBUG) {
@@ -3182,45 +3275,53 @@ private:
             return;
         }
 
-        array<Byte>^ sourceBytes = Utf8Of(path_);
-        pin_ptr<Byte> source = &sourceBytes[0];
-        array<Byte>^ cc1Bytes = Utf8Of(cc1_);
-        pin_ptr<Byte> cc1 = &cc1Bytes[0];
-        array<Byte>^ clBytes = Utf8Of(cl_);
-        pin_ptr<Byte> cl = &clBytes[0];
-        array<Byte>^ shcBytes = Utf8Of(shc_);
-        pin_ptr<Byte> shc = &shcBytes[0];
+        console_->Text = project ? "$ building the project for the debugger\r\n"
+                                 : "$ building for the debugger\r\n";
+        if (project) {
+            int howMany = ed1_project_target_sources(project_);
+            for (int i = 0; i < howMany; ++i)
+                console_->Text += "    " +
+                    FromUtf8(ed1_project_target_source(project_, i)) + "\r\n";
 
-        console_->Text = "$ building for the debugger\r\n";
+            // Said before the build rather than after it, because it is about
+            // what the session will be able to do and whoever pressed this is
+            // about to find out the hard way otherwise.
+            int blind = ed1_project_blind_groups(project_);
+            for (int i = 0; i < blind; ++i)
+                console_->Text += "  (" + FromUtf8(ed1_project_blind_group(project_, i)) +
+                    " carries no debug information - the debugger cannot stop in it)\r\n";
+        }
         panel_->SelectedIndex = 0;
         what_->Text = "building for the debugger ...";
         Application::DoEvents();
 
         if (built_ != nullptr) { ed1_program_free(built_); built_ = nullptr; }
+        if (targetBuilt_ != nullptr) { ed1_build_free(targetBuilt_); targetBuilt_ = nullptr; }
 
         // cl runs on the other thread; this one goes on painting.
         workKind_ = kind;
         workLanguage_ = language;
-        if (!WhileBusy(WorkBuild)) return;
+        if (!WhileBusy(project ? WorkBuildTarget : WorkBuild)) return;
 
-        console_->Text += FromUtf8(ed1_program_output(built_))->Replace("\n", "\r\n");
-
-        if (workResult_ == 0) {
-            if (ed1_program_has_error(built_) != 0) {
-                int line = ed1_program_error_line(built_);
-                int column = ed1_program_error_column(built_);
-                String^ message = FromUtf8(ed1_program_error_message(built_));
-                RememberError(line, column, message, nullptr);
-                GoTo(line, column);
-                panel_->SelectedIndex = 0;   // the compiler's words are on the Console
-                what_->Text = String::Format("{0}:{1}: error: {2}", line, column, message);
-            } else {
-                what_->Text = FromUtf8(ed1_toolchain_name(kind)) + " built no program - see the console";
-            }
-            ed1_program_free(built_);
-            built_ = nullptr;
+        // A project build answers null when there was nothing to build, and
+        // the reason is where ed1_project_target_ready left it. Asked before
+        // anything reads the build, because there is nothing there to read.
+        if (project && targetBuilt_ == nullptr) {
+            what_->Text = FromUtf8(ed1_project_target_why(project_));
             return;
         }
+
+        console_->Text += FromUtf8(project ? ed1_build_output(targetBuilt_)
+                                           : ed1_program_output(built_))->Replace("\n", "\r\n");
+        ShowConsoleEnd();
+
+        if (workResult_ == 0) { DebugBuildFailed(project, kind); return; }
+
+        // The project's program stays where the project built it; a single
+        // file's is a temporary thing made to be stepped through, and the
+        // handle that owns it takes it away again.
+        workProgram_ = project ? FromUtf8(ed1_project_target_program(project_))
+                               : FromUtf8(ed1_program_path(built_));
 
         what_->Text = ed1_debugger_stops_itself(kind) != 0
                           ? "starting the program ..."   // nothing else is started
@@ -3233,14 +3334,52 @@ private:
             // not exist for this language is the worse of the two.
             what_->Text =
                 FromUtf8(ed1_why_it_did_not_start(kind, reinterpret_cast<const char*>(arch)));
-            ed1_program_free(built_);
-            built_ = nullptr;
+            EndDebugging();
             return;
         }
 
         SetEveryBreakpoint();
         if (!WhileBusy(WorkGo)) return;
         ShowStop();
+    }
+
+    // What a build that produced nothing has to say. The two builds report
+    // differently - a project build names the file, since it is several files
+    // and not the one in front of you - so this is the one place that knows
+    // which of them was asked for.
+    void DebugBuildFailed(bool project, int kind) {
+        bool told = project ? ed1_build_has_error(targetBuilt_) != 0
+                            : ed1_program_has_error(built_) != 0;
+        if (told) {
+            int line = project ? ed1_build_error_line(targetBuilt_)
+                               : ed1_program_error_line(built_);
+            int column = project ? ed1_build_error_column(targetBuilt_)
+                                 : ed1_program_error_column(built_);
+            String^ message = FromUtf8(project ? ed1_build_error_message(targetBuilt_)
+                                               : ed1_program_error_message(built_));
+            String^ where = project ? FromUtf8(ed1_build_error_file(targetBuilt_)) : nullptr;
+
+            // A project build's error is as likely as not in a file nothing has
+            // opened, so it is opened before the caret is put in it.
+            if (where != nullptr && where->Length > 0) {
+                if (!System::IO::Path::IsPathRooted(where)) {
+                    array<Byte>^ relative = Utf8Of(where);
+                    pin_ptr<Byte> relativePin = &relative[0];
+                    where = FromUtf8(ed1_project_absolute(
+                        project_, reinterpret_cast<const char*>(relativePin)));
+                }
+                if (System::IO::File::Exists(where)) OpenPath(where);
+            }
+
+            RememberError(line, column, message, where);
+            GoTo(line, column);
+            panel_->SelectedIndex = 0;   // the compiler's words are on the Console
+            what_->Text = String::Format("{0}:{1}: error: {2}", line, column, message);
+        } else {
+            what_->Text = FromUtf8(ed1_toolchain_name(kind)) +
+                          " built no program - see the console";
+        }
+        EndDebugging();
     }
 
     // What cannot be chosen just now, worked out as the menu opens. The three
@@ -3281,7 +3420,13 @@ private:
 
     void EndDebugging() {
         ed1_debugger_stop(debugger_);
+        // Freeing an Ed1Program removes the program with it, which is right:
+        // that one is the temporary thing a single file's build made. The
+        // project's program is the project's and stays where it was built, so
+        // what is let go of there is the record of the build and nothing else.
         if (built_ != nullptr) { ed1_program_free(built_); built_ = nullptr; }
+        if (targetBuilt_ != nullptr) { ed1_build_free(targetBuilt_); targetBuilt_ = nullptr; }
+        workProgram_ = nullptr;
         stopFile_ = nullptr;
         stopLine_ = 0;
         lookingFile_ = nullptr;

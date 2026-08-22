@@ -6,6 +6,7 @@
 #include <vector>
 
 #include "process.h"
+#include "project.h"
 #include "toolchain.h"
 
 namespace editor {
@@ -59,6 +60,32 @@ DebuggerKind dbg_for(ToolchainKind kind, const std::string& arch);
 // why it is here rather than written out as a comparison against ToolShc in
 // each of them.
 bool dbg_stopsItself(ToolchainKind kind);
+
+// How a program linked from more than one compiler is stepped through.
+//
+// Debug information does not mix: cl writes CodeView, cc1 writes DWARF on two
+// targets and nothing on the third, and shc writes none anywhere by decision.
+// So a program built from two groups can have a debugger that sees one of them
+// and not the other, and the honest thing is to start it and say which part is
+// invisible - not to refuse the whole program because one group is.
+//
+// Both front ends ask for this rather than walking the parts themselves. The
+// terminal walked them inline and the window could not walk them at all, which
+// is the shape every divergence here has had.
+struct DebugPlan {
+    ToolchainKind kind;     // whose debug information is being read
+    DebuggerKind engine;    // what reads it; DebuggerNone when nothing does
+    bool stopsItself;       // ... or the program carries its own session
+    std::vector<std::string> blind;   // the groups whose code carries none
+
+    DebugPlan() : kind(ToolAuto), engine(DebuggerNone), stopsItself(false) {}
+
+    // Whether F8 can do anything at all with this.
+    bool possible() const { return stopsItself || engine != DebuggerNone; }
+};
+
+DebugPlan dbg_planFor(const Toolchain& tool, const std::vector<Part>& parts,
+                      const std::string& arch);
 
 // Why there is none, when there is none - in the terms that apply to this
 // compiler and this target rather than in general.

@@ -417,7 +417,15 @@ Recipe targetRecipe(const Toolchain& tool, ToolchainKind kind,
     // The project has already narrowed this to one program; the rest of the
     // group is where to look.
     if (kind == ToolShc) {
-        recipe.command = quote(programOf(tool, kind)) + named + " -o " + quote(program);
+        // configFlags, and it is not decoration: for shc a debug configuration
+        // is --debug, which links the runtime that can stop the program. This
+        // branch returned before reaching it, so a Shalimar *project* was
+        // built release whatever the configuration said - and Debug project
+        // then started a program with no debugger in it and reported that it
+        // did not arm. The same fault the single-file path had before shc grew
+        // --debug, in the one recipe that had been written since.
+        recipe.command = quote(programOf(tool, kind)) + named + " -o " + quote(program) +
+                         configFlags(kind, config, arch);
         return recipe;
     }
 

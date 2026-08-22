@@ -210,6 +210,11 @@ struct Ed1Project {
     std::string why;
     std::string detail;
     int language;
+    // How that target is stepped through, worked out once and read one string
+    // at a time - the managed side can hold neither the plan nor its list of
+    // groups. `whyNot` is empty when there is nothing standing in the way.
+    editor::DebugPlan plan;
+    std::string whyNot;
 };
 
 struct Ed1Build {
@@ -1171,6 +1176,47 @@ const char* ed1_project_target_source(Ed1Project* project, int index) {
 
 const char* ed1_project_target_program(Ed1Project* project) {
     return project ? project->program.c_str() : "";
+}
+
+int ed1_project_debug_plan(Ed1Project* project, const char* cc1, const char* cl,
+                           const char* shc, int kind, const char* arch) {
+    if (!project) return 0;
+    project->plan = editor::DebugPlan();
+    project->whyNot.clear();
+    if (!ed1_project_target_ready(project)) {
+        project->whyNot = project->why;
+        return 0;
+    }
+
+    editor::Toolchain tool;
+    if (cc1 && *cc1) tool.cc1 = cc1;
+    if (cl && *cl) tool.cl = cl;
+    if (shc && *shc) tool.shc = shc;
+    tool.kind = static_cast<editor::ToolchainKind>(kind);
+
+    project->plan = editor::dbg_planFor(tool, project->parts, arch ? arch : "");
+    if (project->plan.possible()) return 1;
+
+    project->whyNot = editor::dbg_whyNot(project->plan.kind, arch ? arch : "");
+    return 0;
+}
+
+int ed1_project_debug_kind(Ed1Project* project) {
+    return project ? static_cast<int>(project->plan.kind) : static_cast<int>(editor::ToolAuto);
+}
+
+const char* ed1_project_why_not_debug(Ed1Project* project) {
+    return project ? project->whyNot.c_str() : "";
+}
+
+int ed1_project_blind_groups(Ed1Project* project) {
+    return project ? static_cast<int>(project->plan.blind.size()) : 0;
+}
+
+const char* ed1_project_blind_group(Ed1Project* project, int index) {
+    if (!project || index < 0 || index >= static_cast<int>(project->plan.blind.size()))
+        return "";
+    return project->plan.blind[static_cast<size_t>(index)].c_str();
 }
 
 Ed1Build* ed1_build_target(Ed1Project* project, const char* cc1, const char* cl, const char* shc,

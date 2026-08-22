@@ -2663,39 +2663,21 @@ void Editor::debug(bool project) {
         if (!runsHere(each, kArches[arch_])) { say(whyNotRun(each, kArches[arch_])); return; }
     }
 
-    // Which debugger, when there may be more than one compiler in the program.
-    // Debug information does not mix: cl writes CodeView, cc1 writes DWARF on
-    // two targets and nothing on the third, and shc writes none anywhere by
-    // decision. So a program linked from two compilers has a debugger that can
-    // see part of it, and the honest thing is to start it and say which part -
-    // not to refuse a whole program because one group is invisible.
-    ToolchainKind kind = toolchainOf(tool_, parts[0]);
-    DebuggerKind engine = DebuggerNone;
-    std::vector<std::string> blind;
-    for (size_t i = 0; i < parts.size(); ++i) {
-        ToolchainKind each = toolchainOf(tool_, parts[i]);
-        DebuggerKind theirs = dbg_for(each, kArches[arch_]);
-        if (theirs == DebuggerNone) {
-            blind.push_back(parts[i].group.empty() ? std::string(toolchainName(each))
-                                                   : parts[i].group);
-            continue;
-        }
-        if (engine == DebuggerNone) { engine = theirs; kind = each; }
-    }
-
-    // Shalimar is asked about after that and before the refusals, because both
-    // of them are about a debugger and there is no debugger here to have or to
-    // lack. A Shalimar program carries its own position - shm_line(unit, line)
-    // before every statement, in every build - and a debug build offers it to a
-    // session inside the program. So what "no debugger" would have said is not
-    // true of it, and what "built without -g" would have said is not either:
-    // there is no -g, and what a debug build changes is which runtime archive
-    // is linked. That last one still has to be said, because a release build
-    // genuinely cannot be stopped - it has no code for it - so the sentence is
-    // the same shape with the true reason in it.
-    const bool stopsItself = dbg_stopsItself(toolchainOf(tool_, parts[0]));
-    if (stopsItself) kind = ToolShc;
-    if (!stopsItself && engine == DebuggerNone) {
+    // Which debugger, when there may be more than one compiler in the program,
+    // and which groups it will be blind in. Worked out in the core so that the
+    // window asks the same question rather than answering it a second way -
+    // see dbg_planFor, which is also where Shalimar is asked about before
+    // anything can refuse it for lacking a debugger it never needed.
+    //
+    // A release build still has to be refused, because it genuinely cannot be
+    // stopped: it has no code for it. The sentence is the same shape with the
+    // true reason in it, and shc has never had a -g to leave out.
+    const DebugPlan plan = dbg_planFor(tool_, parts, kArches[arch_]);
+    ToolchainKind kind = plan.kind;
+    const DebuggerKind engine = plan.engine;
+    const bool stopsItself = plan.stopsItself;
+    const std::vector<std::string>& blind = plan.blind;
+    if (!plan.possible()) {
         say(dbg_whyNot(kind, kArches[arch_]));
         return;
     }

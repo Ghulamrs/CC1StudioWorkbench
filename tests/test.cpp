@@ -3822,6 +3822,147 @@ void theWindowStoppingShalimar() {
     editor::path::removeTree(dir);
 }
 
+// How the window is told a project's program is stepped through - which is a
+// different question from how one file is, and the one the window could not
+// ask at all until it had a Debug project item.
+void theWindowsProjectDebug() {
+    std::printf("what the window asks about debugging a project\n");
+
+    file::path dir = file::temp_directory_path() / "ed1-bridge-debug";
+    file::remove_all(dir);
+    file::create_directories(dir);
+    writeSource((dir / "add.c").string(), "int add(int a, int b) { return a + b; }\n");
+    writeSource((dir / "main.c").string(),
+                "int add(int, int);\nint main(void) { return add(1, 2); }\n");
+    writeSource((dir / "ed1.json").string(),
+                "{\n  \"name\": \"sums\",\n"
+                "  \"groups\": { \"Sources\": [\"add.c\", \"main.c\"] },\n"
+                "  \"build\": { \"target\": \"sums\", \"groups\": [\"Sources\"] }\n}\n");
+
+    const std::string host = editor::hostArch();
+    Ed1Project* project = ed1_project_new();
+    char trouble[512] = {0};
+    check(ed1_project_load(project, dir.string().c_str(), trouble, sizeof trouble) != 0,
+          "a project that says what it builds loads");
+
+    int can = ed1_project_debug_plan(project, "cc1", "cl", "shc", editor::ToolAuto,
+                                     host.c_str());
+    if (ed1_debugger_for(editor::ToolCc1, host.c_str()) == 0) {
+        // Windows, where cc1 generates MASM and MASM carries no line table.
+        check(can == 0, "a C project cannot be debugged where nothing reads what cc1 writes");
+        check(std::string(ed1_project_why_not_debug(project)).find("MASM") != std::string::npos,
+              "and the reason names the MASM that has no line table");
+    } else {
+        check(can != 0, "a C project can be debugged where cc1's DWARF can be read");
+        check(ed1_project_debug_kind(project) == editor::ToolCc1,
+              "through cc1, whose debug information it is");
+        check(ed1_project_blind_groups(project) == 0,
+              "with no group the debugger would be blind in");
+    }
+
+    // Two languages, two compilers, and debug information that does not mix.
+    // Which groups are invisible depends on the machine, so what is checked is
+    // the rule rather than a number: every part with no debugger of its own is
+    // named, and the one being read is a part that has one.
+    writeSource((dir / "extra.cpp").string(), "int twice(int n) { return n * 2; }\n");
+    writeSource((dir / "ed1.json").string(),
+                "{\n  \"name\": \"sums\",\n"
+                "  \"groups\": { \"Sources\": [\"add.c\", \"main.c\", \"extra.cpp\"] },\n"
+                "  \"build\": { \"target\": \"sums\", \"groups\": [\"Sources\"] }\n}\n");
+    check(ed1_project_load(project, dir.string().c_str(), trouble, sizeof trouble) != 0,
+          "a project of both languages loads");
+    can = ed1_project_debug_plan(project, "cc1", "cl", "shc", editor::ToolAuto, host.c_str());
+
+    int parts = ed1_project_target_parts(project);
+    int sightless = 0;
+    for (int i = 0; i < parts; ++i) {
+        int theirs = ed1_project_part_toolchain(project, i, "cc1", "cl", "shc",
+                                                editor::ToolAuto);
+        if (ed1_debugger_for(theirs, host.c_str()) == 0) ++sightless;
+    }
+    check(ed1_project_blind_groups(project) == sightless,
+          "every part with no debugger of its own is named as one the debugger is blind in");
+    check(can != 0 || sightless == parts,
+          "and the program is refused only when none of its parts can be seen at all");
+    if (can != 0)
+        check(ed1_debugger_for(ed1_project_debug_kind(project), host.c_str()) != 0,
+              "the compiler chosen to read is one whose debug information can be read");
+
+    ed1_project_free(project);
+    file::remove_all(dir);
+
+    // Shalimar, which is the case none of the above describes: no debugger
+    // anywhere, nothing missing, and the program stops itself. It has to come
+    // out possible on every machine this runs on - that is the whole point of
+    // asking dbg_stopsItself before dbg_for.
+    const char* shc = std::getenv("SHC");
+    file::path shmDir = file::temp_directory_path() / "ed1-bridge-debug-shm";
+    file::remove_all(shmDir);
+    file::create_directories(shmDir);
+    writeSource((shmDir / "steps.shl").string(),
+                "fun <int> = twice(n: int) {\n"
+                "  int d : n + n\n"
+                "  return d\n"
+                "}\n"
+                "\n"
+                "fun <> = main() {\n"
+                "  int a : 1\n"
+                "  int b : twice(a)\n"
+                "  ? b\n"
+                "}\n");
+    writeSource((shmDir / "ed1.json").string(),
+                "{\n  \"name\": \"steps\",\n"
+                "  \"groups\": { \"Sources\": [\"steps.shl\"] },\n"
+                "  \"build\": { \"target\": \"steps\", \"groups\": [\"Sources\"] }\n}\n");
+
+    Ed1Project* shm = ed1_project_new();
+    check(ed1_project_load(shm, shmDir.string().c_str(), trouble, sizeof trouble) != 0,
+          "a Shalimar project loads");
+    check(ed1_project_debug_plan(shm, "cc1", "cl", shc && *shc ? shc : "shc",
+                                 editor::ToolAuto, host.c_str()) != 0,
+          "and can be debugged on every machine, needing nothing installed");
+    check(ed1_project_debug_kind(shm) == editor::ToolShc, "by shc, which reads nothing");
+
+    // The fix this test exists for. The walk over the parts puts every group
+    // with no debugger into the blind list, and shc has none - so a Shalimar
+    // project was told its own group carried no debug information and that the
+    // debugger could not stop in it, immediately before stopping in it.
+    check(ed1_project_blind_groups(shm) == 0,
+          "and is not warned that the debugger cannot stop where it is about to stop");
+
+    if (shc && *shc) {
+        // And the whole of the window's new path: build the project's program,
+        // attach to that rather than to a temporary one, and stop in it.
+        Ed1Build* made = ed1_build_target(shm, "cc1", "cl", shc, editor::ToolAuto,
+                                          host.c_str(), editor::ConfigDebug);
+        check(made != nullptr && ed1_build_ok(made) != 0, "the project's program builds");
+        if (made != nullptr && ed1_build_ok(made) != 0) {
+            std::string program = ed1_project_target_program(shm);
+            check(editor::path::exists(program),
+                  "and is left where the project keeps it, for a debugger to open");
+
+            Ed1Debugger* debugger = ed1_debugger_new();
+            check(ed1_debugger_start(debugger, ed1_project_debug_kind(shm), host.c_str(),
+                                     program.c_str()) != 0,
+                  "the session starts on the project's own program");
+            check(ed1_debugger_break(debugger,
+                                     (shmDir / "steps.shl").string().c_str(), 8) != 0,
+                  "a breakpoint is set in one of its files");
+            ed1_debugger_run(debugger);
+            check(ed1_stop_stopped(debugger) != 0 && ed1_stop_line(debugger) == 8,
+                  "and it stops there");
+            ed1_debugger_stop(debugger);
+            ed1_debugger_free(debugger);
+        }
+        if (made != nullptr) ed1_build_free(made);
+    } else {
+        std::printf("  (no $SHC, so the project's program is not built and stopped)\n");
+    }
+
+    ed1_project_free(shm);
+    file::remove_all(shmDir);
+}
+
 int main(int argc, char** argv) {
     paths();
     whereTheProgramIs(argc > 0 ? argv[0] : 0);
@@ -3862,6 +4003,7 @@ int main(int argc, char** argv) {
     theThirdLanguage();
     steppingShalimar();
     theWindowStoppingShalimar();
+    theWindowsProjectDebug();
 
     std::printf("\n%d checks, %d failed\n", checks, failures);
     return failures == 0 ? 0 : 1;

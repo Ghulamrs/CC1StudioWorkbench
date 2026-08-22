@@ -252,6 +252,26 @@ int ed1_project_part_toolchain(Ed1Project* project, int index, const char* cc1,
 const char* ed1_project_target_source(Ed1Project* project, int index);
 const char* ed1_project_target_program(Ed1Project* project);
 
+/* How the project's program is stepped through, which is not answered by
+   asking about one compiler: a target built from two groups can have a
+   debugger that sees one of them and not the other.
+
+   ed1_project_debug_plan works it out and answers 1 when F8 can do anything at
+   all. When it answers 0, ed1_project_why_not_debug is the reason. After a 1,
+   ed1_project_debug_kind is the compiler to start with - which is not always
+   the one the target's language would suggest - and the blind groups are the
+   ones whose code carries no debug information, worth saying before the build
+   rather than after somebody has tried to stop in one.
+
+   The plan is kept on the project, as the parts are, so the strings outlive
+   the call. Ask ed1_project_target_ready first, as with the build. */
+int ed1_project_debug_plan(Ed1Project* project, const char* cc1, const char* cl,
+                           const char* shc, int kind, const char* arch);
+int ed1_project_debug_kind(Ed1Project* project);
+const char* ed1_project_why_not_debug(Ed1Project* project);
+int ed1_project_blind_groups(Ed1Project* project);
+const char* ed1_project_blind_group(Ed1Project* project, int index);
+
 /* Builds it. Ask ed1_project_target_ready first: this answers null when there
    is nothing to build, and the reason is where that call left it. */
 Ed1Build* ed1_build_target(Ed1Project* project, const char* cc1, const char* cl, const char* shc,

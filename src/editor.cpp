@@ -1809,6 +1809,15 @@ void Editor::watchExpression() {
     std::string what = prompt("watch: ", cancelled);
     if (cancelled || what.empty()) { say("nothing to watch"); return; }
 
+    // A watch is an expression handed to a debugger to work out, and a
+    // Shalimar program has nothing to hand it to: it reports where it is, not
+    // what is in it. Refusing plainly beats accepting one and showing it blank
+    // for the rest of the session.
+    if (shm_.running()) {
+        say("a Shalimar program says where it is, not what is in it - nothing to watch with");
+        return;
+    }
+
     debugger_.addWatch(what);
     panelOpen_ = true;
     tab_ = TabDebug;
@@ -1870,8 +1879,17 @@ void Editor::editVariable(size_t which) {
 // pressing enter on the frame, reached from the text where the caret already
 // is - which is where a person is when the question occurs to them.
 void Editor::lookAlongStack(int by) {
-    if (!debugger_.running() || stack_.empty()) {
+    if (!debugging() || stack_.empty()) {
         say("nothing is stopped, so there is no stack to walk");
+        return;
+    }
+    // Shalimar knows how deep it is and not what it is standing in - the
+    // compiler emits no table of callers - so frames() gives back one frame
+    // that says the depth. There is nothing to walk to, and saying so is
+    // better than the "nothing called ..." below, which would name that
+    // depth as if it were a function.
+    if (shm_.running()) {
+        say("a Shalimar program reports how deep it is, not what called it");
         return;
     }
     if (by > 0) {
@@ -1894,12 +1912,12 @@ void Editor::lookAlongStack(int by) {
 void Editor::lookAt(size_t which) {
     if (which >= stack_.size()) return;
 
-    if (!debugger_.selectFrame(which)) {
+    if (!shm_.running() && !debugger_.selectFrame(which)) {
         say("the debugger would not go to that frame");
         return;
     }
     looking_ = which;
-    locals_ = debugger_.locals();
+    if (!shm_.running()) locals_ = debugger_.locals();
     writeDebugTab();
     panelOff_ = 0;
 
@@ -2201,20 +2219,31 @@ void Editor::toggleBreak() {
     std::set<size_t>& here = file.lines;
     if (here.count(line)) {
         here.erase(line);
-        if (debugger_.running()) {
+        if (debugging()) {
             // The whole set is put back rather than one taken away: neither
             // debugger promises the numbering of what it hands out, and there
-            // are never enough breakpoints here for it to matter.
-            debugger_.clearBreakpoints();
-            for (std::set<size_t>::iterator it = here.begin(); it != here.end(); ++it)
-                debugger_.breakAt(file.path, *it);
+            // are never enough breakpoints here for it to matter. A Shalimar
+            // session does promise it - a breakpoint there is a file and a
+            // line and nothing hands a number back - but it is put back the
+            // same way, because one rule that is right everywhere beats two
+            // that are each right in one place.
+            if (shm_.running()) {
+                shm_.clearBreakpoints();
+                for (std::set<size_t>::iterator it = here.begin(); it != here.end(); ++it)
+                    shm_.breakAt(file.path, *it);
+            } else {
+                debugger_.clearBreakpoints();
+                for (std::set<size_t>::iterator it = here.begin(); it != here.end(); ++it)
+                    debugger_.breakAt(file.path, *it);
+            }
         }
         say("breakpoint off line " + number(line));
         return;
     }
 
     here.insert(line);
-    if (debugger_.running()) debugger_.breakAt(file.path, line);
+    if (shm_.running()) shm_.breakAt(file.path, line);
+    else if (debugger_.running()) debugger_.breakAt(file.path, line);
     say("breakpoint on line " + number(line));
 }
 
@@ -2275,7 +2304,13 @@ void Editor::showStop(const Stop& where) {
     // the debugger's own stream mixed with the debugger's words, so it has to
     // be taken out of them - see dbg_programOutput. Stepping over a printf now
     // shows the line it printed, which is most of what stepping is for.
-    const std::string printed = dbg_programOutput(debugger_.kind(), where.said);
+    // A Shalimar session needs none of that taking apart. Its channel keeps
+    // the program's standard output away from the protocol on standard error,
+    // so `said` is already the program's own printing and nothing else - which
+    // is the whole reason that channel is not editor::Process.
+    const std::string printed = debuggingShalimar()
+                                    ? where.said
+                                    : dbg_programOutput(debugger_.kind(), where.said);
     if (!printed.empty()) sayLines(console_, printed);
 
     if (where.exited) {
@@ -2340,8 +2375,17 @@ void Editor::showStop(const Stop& where) {
         if (!full.empty()) open(full);
     }
 
-    locals_ = debugger_.locals();
-    stack_ = debugger_.frames();
+    // Shalimar has no variables to read - the compiler emits no table of a
+    // function's names against its frame slots, and docs/DEBUGGING.md in
+    // Compiler-S says so plainly rather than leaving it to be discovered. An
+    // empty list is the truth here, and the tab says why below.
+    if (debuggingShalimar()) {
+        locals_.clear();
+        stack_ = shm_.frames();
+    } else {
+        locals_ = debugger_.locals();
+        stack_ = debugger_.frames();
+    }
 
     if (path::filename(where.file) == path::filename(buf_.path()) && where.line > 0) {
         cy_ = where.line - 1;
@@ -2376,7 +2420,15 @@ void Editor::writeDebugTab() {
     }
 
     if (locals_.empty()) {
-        debug_.push_back("  (nothing in scope here)");
+        // Empty means two different things. Under a debugger it means this
+        // place has no variables; under a Shalimar session it means no place
+        // ever will, because the compiler emits no table of a function's names
+        // against its frame slots. Saying which is the difference between a
+        // gap and a decision, and the second is not something to keep
+        // rediscovering.
+        debug_.push_back(debuggingShalimar()
+                             ? "  (a Shalimar program says where it is, not what is in it)"
+                             : "  (nothing in scope here)");
     } else {
         for (size_t i = 0; i < locals_.size(); ++i)
             debug_.push_back(dbg_variableLine(locals_[i]));
@@ -2408,7 +2460,10 @@ void Editor::writeDebugTab() {
 
     // Setting a variable needs no stack at all, so it is said whether or not
     // there is one: a program standing in main has one frame and variables
-    // like any other.
+    // like any other. None of that is true of Shalimar, and offering the keys
+    // for it would be the panel promising what pressing them refuses.
+    if (debuggingShalimar()) return;
+
     debug_.push_back("Ctrl-W puts the cursor in the panel; Enter on a variable sets it");
     if (!watching.empty())
         debug_.push_back("Enter on a watch changes it, and an empty answer takes it away");
@@ -2418,7 +2473,11 @@ void Editor::writeDebugTab() {
     }
 }
 
+bool Editor::debuggingShalimar() const { return shm_.running(); }
+bool Editor::debugging() const { return debugger_.running() || shm_.running(); }
+
 void Editor::debug(bool project) {
+    if (shm_.running()) { showStop(shm_.resume()); return; }
     if (debugger_.running()) { showStop(debugger_.resume()); return; }
 
     // What is going under the debugger, and in what language. For the project
@@ -2448,12 +2507,24 @@ void Editor::debug(bool project) {
     if (!canCompile(kind, lang)) { say(refusal(kind, lang)); return; }
     if (!runsHere(kind, kArches[arch_])) { say(whyNotRun(kind, kArches[arch_])); return; }
 
-    if (dbg_for(kind, kArches[arch_]) == DebuggerNone) {
+    // Shalimar is asked about first, because both refusals below are about a
+    // debugger and there is no debugger here to have or to lack. A Shalimar
+    // program carries its own position - shm_line(unit, line) before every
+    // statement, in every build - and a debug build offers it to a session
+    // inside the program. So what "no debugger" would have said is not true of
+    // it, and what "built without -g" would have said is not either: there is
+    // no -g, and what a debug build changes is which runtime archive is
+    // linked. That last one still has to be said, because a release build
+    // genuinely cannot be stopped - it has no code for it - so the sentence
+    // is the same shape with the true reason in it.
+    const bool shalimar = (kind == ToolShc);
+    if (!shalimar && dbg_for(kind, kArches[arch_]) == DebuggerNone) {
         say(dbg_whyNot(kind, kArches[arch_]));
         return;
     }
     if (config_ != ConfigDebug) {
-        say("release is built without -g - Ctrl-D for debug, then F8");
+        say(shalimar ? "release links a runtime with no debugger in it - Ctrl-D, then F8"
+                     : "release is built without -g - Ctrl-D for debug, then F8");
         return;
     }
     if (project) {
@@ -2505,7 +2576,20 @@ void Editor::debug(bool project) {
         return;
     }
 
-    if (!debugger_.start(dbg_for(kind, kArches[arch_]), debugBuilt_.program)) {
+    if (shalimar) {
+        // Nothing is started here except the program itself. If it will not
+        // arm, the reason is almost always that it was built without --debug -
+        // a release build runs and never says #ready - so that is what is
+        // said rather than "could not be started", which would send whoever
+        // read it looking for a debugger to install.
+        if (!shm_.start(debugBuilt_.program)) {
+            console_.push_back("the program did not arm - it has no debugger in it");
+            say("built without --debug, so there is nothing in it to stop - Ctrl-D, then F8");
+            if (debugTemporary_) removeProgram(debugBuilt_);
+            debugBuilt_ = Built();
+            return;
+        }
+    } else if (!debugger_.start(dbg_for(kind, kArches[arch_]), debugBuilt_.program)) {
         const char* named = dbg_name(dbg_for(kind, kArches[arch_]));
         console_.push_back(std::string(named) + " could not be started");
         say(std::string(named) + " could not be started - is it installed?");
@@ -2519,15 +2603,24 @@ void Editor::debug(bool project) {
          file != breaks_.end(); ++file)
         for (std::set<size_t>::iterator line = file->second.lines.begin();
              line != file->second.lines.end(); ++line)
-            if (debugger_.breakAt(file->second.path, *line)) ++set;
+            if (shalimar ? shm_.breakAt(file->second.path, *line)
+                         : debugger_.breakAt(file->second.path, *line)) ++set;
 
-    console_.push_back(std::string("started ") + dbg_name(debugger_.kind()) + " with " +
-                       number(set) + " breakpoint" + (set == 1 ? "" : "s"));
-    showStop(debugger_.run());
+    console_.push_back(std::string("started ") +
+                       (shalimar ? "the program itself" : dbg_name(debugger_.kind())) +
+                       " with " + number(set) + " breakpoint" + (set == 1 ? "" : "s"));
+    showStop(shalimar ? shm_.run() : debugger_.run());
 }
 
 void Editor::debugStep(Action how) {
-    if (!debugger_.running()) { say("nothing is running - F8 starts it"); return; }
+    if (!debugging()) { say("nothing is running - F8 starts it"); return; }
+
+    if (shm_.running()) {
+        if (how == ActionStepInto)      showStop(shm_.stepInto());
+        else if (how == ActionStepOut)  showStop(shm_.stepOut());
+        else                            showStop(shm_.stepOver());
+        return;
+    }
 
     if (how == ActionStepInto)      showStop(debugger_.stepInto());
     else if (how == ActionStepOut)  showStop(debugger_.stepOut());
@@ -2536,6 +2629,7 @@ void Editor::debugStep(Action how) {
 
 void Editor::debugStop() {
     if (debugger_.running()) debugger_.stop();
+    if (shm_.running()) shm_.stop();
     if (debugTemporary_) removeProgram(debugBuilt_);
     debugBuilt_ = Built();
     stopFile_.clear();
@@ -2652,7 +2746,7 @@ void Editor::perform(Action action) {
         case ActionFrameDown:    lookAlongStack(-1); break;
         case ActionWatch:        watchExpression(); break;
         case ActionDebugStop:
-            if (debugger_.running()) { debugStop(); say("debugging stopped"); }
+            if (debugging()) { debugStop(); say("debugging stopped"); }
             else say("nothing is running");
             break;
         case ActionConfigDebug:

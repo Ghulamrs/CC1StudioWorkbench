@@ -840,7 +840,7 @@ void buildingTheProject(const std::string& ed1, const std::string& cc1) {
               "  \"build\": { \"target\": \"sums\", \"groups\": [\"Sources\"] }\n}\n");
     Screen mixed = drive(ed1, arguments, kF4 + ctrl('q'), dir);
     check(onScreen(mixed, "both C and C++"), "a project of both languages is refused");
-    check(onScreen(mixed, "cc1 compiles the C"), "with the reason in the console");
+    check(onScreen(mixed, "own compiler"), "with the reason in the console");
     check(!onScreen(mixed, "error:"), "and no compiler is run to find that out");
 
     // Debugging the project is the same choice again: the program under the
@@ -1604,6 +1604,80 @@ void aShalimarProject(const std::string& ed1, const std::string& shc) {
     file::remove_all(dir);
 }
 
+// Stopping a Shalimar program from the Debug menu, which is a different thing
+// from stopping a C one and not a second copy of it. There is no gdb, no lldb
+// and no cdb here: the program stops itself, so this runs on every machine the
+// suite runs on - including Windows, where cc1's own target cannot be debugged
+// at all and every check in stoppingAndStepping is skipped.
+void stoppingShalimar(const std::string& ed1, const std::string& shc) {
+    std::printf("stopping a Shalimar program from the editor\n");
+
+    if (shc.empty()) {
+        std::printf("  (no shc named, so those cases are not tried)\n");
+        return;
+    }
+
+    file::path dir = freshProject("shmdebug");
+    file::path file = dir / "src" / "steps.shl";
+    writeFile(file,
+              "fun <int> = twice(n: int) {\n"      // 1
+              "  int d : n + n\n"                  // 2
+              "  return d\n"                       // 3
+              "}\n"                                // 4
+              "\n"                                 // 5
+              "fun <> = main() {\n"                // 6
+              "  int a : 1\n"                      // 7
+              "  int b : twice(a)\n"               // 8
+              "  ? b\n"                            // 9
+              "}\n");                              // 10
+
+    std::string arguments = "\"" + file.string() + "\" --project \"" + dir.string() +
+                            "\" --shc \"" + shc + "\"";
+
+    // The caret starts on line 1; line 8 is the call.
+    const std::string toTheCall = times(kDown, 7);
+
+    Screen stopped = drive(ed1, arguments, toTheCall + kF9 + kF8 + ctrl('q'), dir);
+    check(onScreen(stopped, "stopped at steps.shl:8"),
+          "F8 runs it and it stops on the line, with no debugger anywhere near it");
+    check(onScreen(stopped, "> 8"), "the gutter marks where it is standing");
+
+    // What it says in place of variables, which is the one thing this cannot
+    // do and the one thing worth saying out loud. An empty list would have
+    // read as "this line has none" rather than "there are none to have".
+    check(onScreen(stopped, "not what is in it"),
+          "and the tab says why there are no variables, rather than showing none");
+
+    Screen inside = drive(ed1, arguments, toTheCall + kF9 + kF8 + kF6 + ctrl('q'), dir);
+    check(onScreen(inside, "steps.shl:2"), "F6 steps into the call");
+
+    // Out of the call is the statement *after* the one that made it: the call's
+    // own statement was entered before the call was made, and stepping out
+    // looks for the next statement shallower than where it is.
+    Screen back = drive(ed1, arguments, toTheCall + kF9 + kF8 + kF6 + kF7 + kF7 + ctrl('q'), dir);
+    check(onScreen(back, "steps.shl:9"), "and stepping on comes back past the call");
+
+    // The program's own printing reaches the console, which is the point of
+    // the channel keeping the two streams apart: a #stop in the middle of a
+    // half-written line would have been unreadable and would have changed what
+    // the program appeared to print.
+    Screen printed = drive(ed1, arguments,
+                           toTheCall + kF9 + kF8 + kF8 + ctrl('q'), dir);
+    check(wasShown(printed, "returned"), "carrying on to the end says so");
+
+    // Release links a runtime with no debugger in it, so F8 has nothing to
+    // stop. That is the boundary, and the message says the true reason rather
+    // than "built without -g", which shc has never had.
+    //
+    // Ctrl-D is the toggle rather than the debug half of a pair, and debug is
+    // where a project starts - so one press is release.
+    Screen release = drive(ed1, arguments, ctrl('d') + toTheCall + kF9 + kF8 + ctrl('q'), dir);
+    check(wasShown(release, "no debugger in it"),
+          "and a release build says what it has not got, not what shc has never had");
+
+    file::remove_all(dir);
+}
+
 int main(int argc, char** argv) {
 #ifdef _WIN32
     std::string ed1 = "ed1.exe";
@@ -1663,6 +1737,7 @@ int main(int argc, char** argv) {
     stoppingAndStepping(ed1, cc1);
     compilingShalimar(ed1, shc);
     aShalimarProject(ed1, shc);
+    stoppingShalimar(ed1, shc);
 
     std::printf("\n%d checks, %d failed\n", checks, failures);
     return failures == 0 ? 0 : 1;

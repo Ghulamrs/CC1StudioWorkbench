@@ -40,6 +40,23 @@ Built, linked into `ed1`, and driven against a real program by
 stop, a step in, a step out, the program's own printing coming back with it,
 and a release build refusing to be stopped because it has no code for it.
 
-**Not yet wired to the Debug menu.** The editor still routes every `Debug ▸
-Start` to `debugger_`. The routing is a handful of lines in `editor.cpp` and
-is the next thing; it was left undone rather than done in a hurry.
+**Wired to the Debug menu.** F9 sets a breakpoint, F8 builds and starts,
+F7 and F6 step, and the Debug tab shows where the program is standing — the
+same keys as the other three languages, routed by `Editor::debugging()` and
+`Editor::debuggingShalimar()` rather than by a flag the editor keeps, so there
+is nothing that can fall out of step with what is actually running.
+
+Three things the routing had to say rather than assume:
+
+- **`shc --debug` is what a debug configuration means here.** `configFlags`
+  used to give shc nothing and say debug and release were the same program.
+  They were, until shc grew `--debug`; after that, F8 built a release binary
+  and found nothing in it to stop. The compiler's output is still identical
+  between the two — what changes is which runtime archive is linked.
+- **The refusals about a debugger do not apply.** `dbg_for` answers
+  `DebuggerNone` for shc and is right to: there is no gdb, lldb or cdb in this
+  at all. So Shalimar is asked about before that check, not after it.
+- **No variables, and the tab says so.** An empty list would have read as
+  "this line has none" rather than "there are none to have". Watches and
+  walking the stack refuse in the same voice, and the tab does not offer keys
+  for them.

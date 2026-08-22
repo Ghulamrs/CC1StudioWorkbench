@@ -167,10 +167,19 @@ bool emitsDebugInfo(ToolchainKind kind, const std::string& arch) {
 
 std::string configFlags(ToolchainKind kind, Configuration config,
                         const std::string& arch) {
-    // shc takes neither. Shalimar has no preprocessor, so debug and release
-    // are the same program - and saying so by giving it nothing is better
-    // than inventing a flag it would refuse.
-    if (kind == ToolShc) return std::string();
+    // Shalimar has no preprocessor, so there is no define to set either way,
+    // and shc emits no debug information for any target by decision. What it
+    // does have is --debug, and it is not a flag about the code: the assembly
+    // is byte-identical between the two and what changes is which runtime
+    // archive is linked - the debug one can stop the program, the release one
+    // has no code for it at all. So the configuration is real here, it is
+    // just real about something else.
+    //
+    // This used to return nothing for shc and say debug and release were the
+    // same program. They were, until shc grew --debug; F8 on a Shalimar file
+    // then built a release binary and found nothing in it to stop.
+    if (kind == ToolShc)
+        return config == ConfigDebug ? std::string(" --debug") : std::string();
 
     // /Zi is what makes cl's debug build a debug build. Without it the word
     // meant the optimiser was off and a macro was defined, and nothing that
@@ -194,9 +203,12 @@ std::vector<std::string> debugNote(ToolchainKind kind, const std::string& arch) 
         said.push_back("behind is the assembly, and this is what is in it.");
     } else if (kind == ToolShc) {
         said.push_back("shc writes no debug information for any target, and that is a");
-        said.push_back("decision rather than a gap: what a Shalimar program has instead is");
-        said.push_back("a runtime error that names its line and its function. This is the");
-        said.push_back("assembly the build produced, read back out of itself.");
+        said.push_back("decision rather than a gap: a Shalimar program carries its own");
+        said.push_back("position instead - shm_line before every statement, in every");
+        said.push_back("build - which is what names the line of a runtime error and what");
+        said.push_back("F8 stops on. So there is a debugger here and no debug format. What");
+        said.push_back("it cannot do is read a variable. This is the assembly the build");
+        said.push_back("produced, read back out of itself.");
     } else if (kind == ToolCc1) {
         said.push_back("cc1 writes no debug information for " + arch + ": it generates MASM");
         said.push_back("there, and MASM carries no line table. So there is nothing to step");

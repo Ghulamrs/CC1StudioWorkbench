@@ -19,6 +19,8 @@
 #include "terminal.h"
 #include "tree.h"
 
+#include "shalimar/session.h"
+
 namespace editor {
 
 // A tab is eight columns because that is what the terminal itself does with
@@ -186,6 +188,12 @@ private:
     void debug(bool project);
     void debugStep(Action how);
     void debugStop();
+    // Whether a program is standing still under either of the two, and which
+    // one it is. Every place that used to ask debugger_.running() has to ask
+    // this instead, because "is something being debugged" stopped being a
+    // question with one place to look the moment Shalimar could be stopped.
+    bool debugging() const;
+    bool debuggingShalimar() const;
     // Where a file a debugger named can actually be opened from, and how to
     // put text that has newlines in it into a panel that holds lines.
     std::string whereThatFileIs(const std::string& named) const;
@@ -284,6 +292,13 @@ private:
         std::set<size_t> lines;
     };
     Debugger debugger_;
+    // The other half of stopping a program, and it is a different half rather
+    // than a second copy: a Shalimar program stops itself, so there is no gdb,
+    // lldb or cdb here and nothing of debugger_ that could have been extended
+    // to do it - src/shalimar/README.md says why. Which of the two is live is
+    // asked of them rather than written down, so there is no third thing that
+    // can fall out of step with what is actually running.
+    shalimar::Session shm_;
     std::map<std::string, FileBreaks> breaks_;
     Built debugBuilt_;
     // Whether that program is the editor's own temporary one, and so the

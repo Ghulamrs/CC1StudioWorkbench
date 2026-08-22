@@ -2954,8 +2954,15 @@ void theThirdLanguage() {
     for (int i = 0; i < 3; ++i)
         check(!editor::emitsDebugInfo(editor::ToolShc, editor::kArches[i]),
               std::string("no debug information for ") + editor::kArches[i]);
+    // But a debug build is still a real thing, and this used to say it was
+    // not. shc emits no debug information and never will; what --debug changes
+    // is which runtime archive is linked, and only the debug one has any code
+    // in it for stopping the program. The assembly is identical either way.
     checkEqual(editor::configFlags(editor::ToolShc, editor::ConfigDebug, "arm64-darwin"),
-               "", "and a debug build asks for nothing, having nothing to ask for");
+               " --debug",
+               "and a debug build links the runtime that can stop it, having no -g to ask for");
+    checkEqual(editor::configFlags(editor::ToolShc, editor::ConfigRelease, "arm64-darwin"),
+               "", "while release asks for nothing and cannot be stopped at all");
     checkEqual(editor::configFlags(editor::ToolShc, editor::ConfigRelease, "arm64-darwin"),
                "", "nor a release one - Shalimar has no preprocessor to define into");
 
